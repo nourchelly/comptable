@@ -1,0 +1,161 @@
+/* Style pour la page de connexion */
+.image {
+    display: flex;
+    width: 107%;
+    height: 107%;
+    float: left; /* Pour placer l'image à gauche */
+    margin-right: 20px; /* Ajoute une marge à droite pour l'espace */
+  }
+  .images {
+    display: flex;
+    width: 100%; /* La largeur maximale de l'image est égale à la largeur de son conteneur */
+    height: 70px;
+    float: center; /* La hauteur maximale de l'image est limitée à 200 pixels */
+  
+   
+  }
+  .image1{
+    display: flex;
+    width: 100%; /* La largeur maximale de l'image est égale à la largeur de son conteneur */
+    height: 70px;
+    float: right;
+  }
+.small-label {
+  font-size: 0.85rem;
+  font-weight: 500;
+}
+
+.custom-width {
+  width: 80% !important; /* Réduction de la largeur des inputs */
+  margin: 0 auto; /* Centrage horizontal */
+}
+
+.alert-image {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 70px; /* Réduction de la taille de l’image */
+  height: auto;
+}
+
+  /* Style pour le formulaire de connexion */
+  .loginForm {
+      background-color: rgba(1, 32, 93, 0.6);
+      color: white;
+      padding: 20px;
+      border-radius: 10px;
+      box-shadow: 0 0 10px rgba(0, 0, 0, 0.3);
+      width: 300px;
+  }
+  
+  .employee_image {
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+  }
+  .bi-graph-up {
+      color: #dc3545; /* Remplacez "red" par la couleur de votre choix */
+  }
+  .bi-person{
+      color: #dc3545;
+  }
+  
+  .bi-person-circle{
+      color: #dc3545;
+  }
+  .bi-cash-coin{
+      color:#dc3545;
+  }
+  
+  /* Style pour le conteneur principal */
+  .text-center.pb-1.font-weight-light {
+      background-color: #f0f0f0;
+      padding: 10px;
+      border-radius: 5px;
+    }
+    
+    /* Style pour les icônes */
+    
+    
+    /* Style pour les titres */
+    
+    
+    /* Style pour les conteneurs des éléments */
+    .p-3.d-flex.justify-content-around.mt-3 {
+      background-color: #fff;
+      box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+    }
+    
+    /* Style pour les conteneurs individuels */
+    .px-3.pt-2.pb-3.border.shadow-sm.w-25 {
+      background-color: #f9f9f9;
+      border: 1px solid #ccc;
+      border-radius: 5px;
+    }
+    
+    /* Style pour les sous-titres */
+    .text-center.pb-1 h5 {
+      color: green;
+    }
+  /* Style pour le conteneur principal */
+  .admin-list-container {
+      margin-top: 20px;
+      padding: 15px;
+      background-color: #f8f9fa; /* gris très clair */
+      border-radius: 10px;
+    }
+    
+    /* Style pour le titre */
+    .admin-list-title {
+      font-size: 24px;
+      font-weight: bold;
+      color: #343a40; /* noir */
+    }
+    
+    /* Style pour la table */
+    .admin-list-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 15px;
+    }
+    
+    /* Style pour l'en-tête de la table */
+    .admin-list-table th {
+      background-color: #dc3545; /* bleu */
+      color: #ffffff; /* blanc */
+      padding: 10px;
+    }
+    
+    /* Style pour les cellules de la table */
+    .admin-list-table td {
+      border: 1px solid #dee2e6; /* gris très clair */
+      padding: 10px;
+    }
+    
+    /* Style pour les lignes impaires */
+    .admin-list-table tbody tr:nth-child(odd) {
+      background-color: #f8f9fa; /* gris très clair */
+    }
+    
+    /* Style pour les lignes paires */
+    .admin-list-table tbody tr:nth-child(even) {
+      background-color: #ffffff; /* blanc */
+    }
+    .film_image{
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+    }
+    .movie-image {
+      max-width: 80%;
+      max-height: 420px;
+      object-fit: cover;
+    }
+    
+  
+    
+  
+    
+    
+  
+  
