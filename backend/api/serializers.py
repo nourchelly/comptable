@@ -13,19 +13,25 @@ class UserSerializer(serializers.ModelSerializer):
 class RegisterSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True, required=True, validators=[validate_password])
     confirm_password = serializers.CharField(write_only=True, required=True)
-    
+    role = serializers.ChoiceField(choices=['Comptable', 'Directeur financier'])
+
     class Meta:
-        model = CustomUser
+        model = User
         fields = ('username', 'email', 'password', 'confirm_password', 'role')
-    
+
     def validate(self, attrs):
         if attrs['password'] != attrs['confirm_password']:
             raise serializers.ValidationError({'password': "Les mots de passe ne correspondent pas !"})
         return attrs
-    
+
     def create(self, validated_data):
-        validated_data.pop('confirm_password')
-        user = CustomUser.objects.create_user(**validated_data)
+        validated_data.pop('confirm_password')  # On enlève 'confirm_password' avant la création
+        user = User.objects.create_user(
+            username=validated_data['username'],
+            email=validated_data['email'],
+            password=validated_data['password'],
+            role=validated_data['role']
+        )
         return user
 
 class LoginSerializer(serializers.Serializer):
@@ -34,12 +40,18 @@ class LoginSerializer(serializers.Serializer):
 
     def validate(self, data):
         user = User.objects.filter(username=data["username"]).first()
-        if user and user.check_password(data["password"]):
-            tokens = RefreshToken.for_user(user)
-            return {
-                "username": user.username,
-                "role": user.role,
-                "access": str(tokens.access_token),
-                "refresh": str(tokens),
-            }
-        raise serializers.ValidationError("Identifiants invalides")
+
+        if user is None:
+            raise serializers.ValidationError("Utilisateur non trouvé")
+        
+        if not user.check_password(data["password"]):  # Correction ici
+            raise serializers.ValidationError("Le mot de passe est incorrect")
+
+        tokens = RefreshToken.for_user(user)  # Correction d'indentation
+        
+        return {
+            "username": user.username,
+            "role": user.role,
+            "access": str(tokens.access_token),
+            "refresh": str(tokens),
+        }

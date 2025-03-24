@@ -1,0 +1,76 @@
+/* Contact.css */
+
+/* Animation pour le formulaire et les informations */
+.animate__animated {
+    animation-duration: 1s;
+  }
+  
+  /* Style pour le formulaire */
+  .form-control {
+    border-radius: 8px;
+    border: 1px solid #ddd;
+    padding: 10px;
+    font-size: 1rem;
+    transition: border-color 0.3s ease;
+  }
+  
+  .form-control:focus {
+    border-color: #04629D;
+    box-shadow: 0 0 5px rgba(4, 98, 157, 0.5);
+  }
+  
+  /* Style pour les labels */
+  .form-label {
+    font-weight: 500;
+    color: #333;
+    margin-bottom: 8px;
+  }
+  
+  /* Style pour le bouton d'envoi */
+  .btn-primary {
+    background-color: #04629D;
+    border: none;
+    padding: 12px;
+    font-size: 1rem;
+    font-weight: 500;
+    transition: background-color 0.3s ease;
+  }
+  
+  .btn-primary:hover {
+    background-color: #034a7a;
+  }
+  
+  /* Style pour la section des informations de contact */
+  .bg-white {
+    background-color: #fff;
+    border-radius: 10px;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  }
+  
+  /* Style pour les icônes */
+  .text-primary {
+    color: #04629D !important;
+  }
+  
+  /* Style pour la carte Google Maps */
+  iframe {
+    border-radius: 10px;
+    border: none;
+  }
+  
+  /* Style pour le footer */
+  footer {
+    background-color: #333;
+    color: #fff;
+    padding: 20px 0;
+  }
+  
+  footer a {
+    color: #fff;
+    text-decoration: none;
+    transition: color 0.3s ease;
+  }
+  
+  footer a:hover {
+    color: #04629D;
+  }

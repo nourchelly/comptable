@@ -1,0 +1,57 @@
+/* Services.css */
+
+/* Animation pour les cartes */
+.animate__animated {
+    animation-duration: 1s;
+  }
+  
+  /* Style pour les cartes */
+  .card {
+    transition: transform 0.3s ease, box-shadow 0.3s ease;
+    border: none;
+    border-radius: 15px;
+  }
+  
+  .card:hover {
+    transform: translateY(-10px);
+    box-shadow: 0 10px 20px rgba(0, 0, 0, 0.15);
+  }
+  
+  /* Style pour les icônes */
+  .icon-container {
+    display: inline-block;
+    padding: 20px;
+    border-radius: 50%;
+    background-color: rgba(4, 98, 157, 0.1);
+  }
+  
+  /* Style pour le bouton CTA */
+  .btn-primary {
+    background-color: #04629D;
+    border: none;
+    padding: 12px 24px;
+    font-size: 1rem;
+    font-weight: 500;
+    transition: background-color 0.3s ease;
+  }
+  
+  .btn-primary:hover {
+    background-color: #034a7a;
+  }
+  
+  /* Style pour le footer */
+  footer {
+    background-color: #333;
+    color: #fff;
+    padding: 20px 0;
+  }
+  
+  footer a {
+    color: #fff;
+    text-decoration: none;
+    transition: color 0.3s ease;
+  }
+  
+  footer a:hover {
+    color: #04629D;
+  }

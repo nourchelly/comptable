@@ -1,7 +1,10 @@
 import './App.css';
 import 'bootstrap/dist/css/bootstrap.min.css';
+import 'animate.css';
 import { Routes, Route } from 'react-router-dom';
 import Home from './Components/Home';
+import Contact from './Components/Contact';
+import Services from './Components/Services';
 import Login from './Components/Login';
 import Signup from './Components/Signup';
 import Dashboard from './Components/Dashboard';
@@ -18,6 +21,8 @@ function App() {
     <div className="App">
       <Routes>
         <Route path="/home" element={<Home />} />
+        <Route path="/contact" element={<Contact/>} />
+        <Route path="/services" element={<Services />} />
         <Route path="/login" element={<Login />} />
         <Route path="/signup" element={<Signup />} />
         <Route path="/forgot-password" element={<ForgotPassword />} />

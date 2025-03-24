@@ -45,6 +45,7 @@ class LoginView(APIView):
             # Générer les tokens JWT
             refresh = RefreshToken.for_user(user)
             return Response({
+                "loginStatus": True,
                 "refresh": str(refresh),
                 "access": str(refresh.access_token),
                 "role": user.role,
@@ -62,7 +63,23 @@ def forgot_password(request):
     return Response({"message": "Réinitialisation de mot de passe"})
 
 
-@api_view(['POST'])
-def logout(request):
-    # Implémenter la logique de déconnexion (par exemple, blacklister le token)
-    return Response({"message": "Déconnexion réussie"})
+class LogoutView(APIView):
+    permission_classes = [IsAuthenticated]  # Permet seulement aux utilisateurs authentifiés de se déconnecter
+
+    def post(self, request):
+        try:
+            # Récupère le refresh token du client (en général il est envoyé dans le cookie ou dans le body)
+            refresh_token = request.data.get('refresh_token')
+            if refresh_token:
+                # Invalider le refresh token en le blacklistant
+                token = RefreshToken(refresh_token)
+                token.blacklist()
+                
+                # Optionnellement, supprimer le refresh token du cookie (si tu l'utilises)
+                response = JsonResponse({'Status': 'Déconnexion réussie'})
+                response.delete_cookie('refresh_token')  # Supprimer le cookie contenant le refresh token
+                return response
+            else:
+                return Response({'detail': 'Aucun token fourni'}, status=400)
+        except Exception as e:
+            return Response({'detail': 'Erreur lors de la déconnexion'}, status=500)

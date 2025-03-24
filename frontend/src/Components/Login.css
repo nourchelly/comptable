@@ -1,0 +1,10 @@
+/* Login.css */
+
+/* Désactiver les effets de focus et d'activation */
+.btn:focus, .btn:active {
+    outline: none !important;
+    box-shadow: none !important;
+    background-color: transparent !important;
+    border-color: #dee2e6 !important;
+    color: #000 !important;
+  }

@@ -3,9 +3,11 @@ import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { FaEye, FaEyeSlash } from 'react-icons/fa';
 
+
 const Login = () => {
     const [values, setValues] = useState({
-        name: '',
+        username: '',
+        email: '',
         password: '',
     });
     const [role, setRole] = useState(''); // état pour gérer le rôle sélectionné
@@ -18,18 +20,25 @@ const Login = () => {
     const handleSubmit = (event) => {
         event.preventDefault();
         const data = { ...values, role }; // Ajout du rôle dans les données envoyées
-        axios.post('http://127.0.0.1:8000/auth/login', data)
-    .then(result => {
-        if (result.data.loginStatus) {
-            localStorage.setItem("valid", true);
-            localStorage.setItem("token", result.data.access);
-            navigate('/dashboard');
-        } else {
-            setError(result.data.Error);
-        }
-    })
-    .catch(err => console.log(err));
-
+        axios.post('http://127.0.0.1:8000/api/login/', data)
+            .then(result => {
+                if (result.data.loginStatus) {
+                    localStorage.setItem("valid", true);
+                    localStorage.setItem("token", result.data.access);
+                    
+                    // Redirection en fonction du rôle
+                    if (role === 'admin') {
+                        navigate('/dashboard');
+                    } else if (role === 'comptable') {
+                        navigate('/dashboard_comptable');
+                    } else if (role === 'directeur') {
+                        navigate('/dashboard_directeur');
+                    }
+                } else {
+                    setError(result.data.Error);
+                }
+            })
+            .catch(err => console.log(err));
     };
 
     const togglePasswordVisibility = () => {
@@ -58,7 +67,6 @@ const Login = () => {
                 </div>
 
                 <div className='col-md-7'>
-                    
                     <div className='p-4'>
                         <h3 className='text-center' style={{ color: '#0056b3' }}>Connexion</h3>
                         {error && <div className="alert alert-danger text-center" role="alert">{error}</div>}
@@ -151,20 +159,59 @@ const Login = () => {
                             </div>
 
                             <div className="mb-3 d-flex flex-column">
-                                <button 
-                                    className="btn mb-2 text-dark border d-flex align-items-center justify-content-center" 
-                                    style={{ backgroundColor: 'transparent' }}
-                                >
-                                    <img src="images/google-logo.png" alt="Logo Google" style={{ width: '20px', marginRight: '10px' }} />
-                                    Continuer avec Google
-                                </button>
-                                <button 
-                                    className="btn mb-3 text-dark border d-flex align-items-center justify-content-center" 
-                                    style={{ backgroundColor: 'transparent' }}
-                                >
-                                    <img src="images/mail-logo.png" alt="Logo Mail" style={{ width: '20px', marginRight: '10px' }} />
-                                    S'inscrire avec un e-mail
-                                </button>
+                            <button 
+  className="btn mb-2 text-dark border d-flex align-items-center justify-content-center" 
+  style={{ 
+    backgroundColor: 'transparent', 
+    outline: 'none', 
+    boxShadow: 'none', 
+    borderColor: '#dee2e6', 
+    color: '#000', 
+    transition: 'none' // Désactiver les transitions
+  }}
+  onFocus={(e) => {
+    e.target.style.backgroundColor = 'transparent';
+    e.target.style.color = '#000';
+  }}
+  onMouseDown={(e) => {
+    e.target.style.backgroundColor = 'transparent';
+    e.target.style.color = '#000';
+  }}
+  onMouseUp={(e) => {
+    e.target.style.backgroundColor = 'transparent';
+    e.target.style.color = '#000';
+  }}
+>
+  <img src="images/google-logo.png" alt="Logo Google" style={{ width: '20px', marginRight: '10px' }} />
+  Continuer avec Google
+</button>
+
+<button 
+  className="btn mb-3 text-dark border d-flex align-items-center justify-content-center" 
+  style={{ 
+    backgroundColor: 'transparent', 
+    outline: 'none', 
+    boxShadow: 'none', 
+    borderColor: '#dee2e6', 
+    color: '#000', 
+    transition: 'none' // Désactiver les transitions
+  }}
+  onFocus={(e) => {
+    e.target.style.backgroundColor = 'transparent';
+    e.target.style.color = '#000';
+  }}
+  onMouseDown={(e) => {
+    e.target.style.backgroundColor = 'transparent';
+    e.target.style.color = '#000';
+  }}
+  onMouseUp={(e) => {
+    e.target.style.backgroundColor = 'transparent';
+    e.target.style.color = '#000';
+  }}
+>
+  <img src="images/mail-logo.png" alt="Logo Mail" style={{ width: '20px', marginRight: '10px' }} />
+  S'inscrire avec un e-mail
+</button>
                             </div>
 
                             <button 

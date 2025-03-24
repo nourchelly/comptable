@@ -60,24 +60,36 @@ const Signup = () => {
             setError("Le mot de passe ne respecte pas les critères requis !");
             return;
         }
+    
+        const userData = {
+            username: values.username,  // Vérifie si ton backend attend 'username' au lieu de 'name'
+            email: values.email,
+            password: values.password,
+            confirm_password: values.confirmPassword,
+            role: values.role
+        };
+    
+        console.log("Données envoyées au serveur :", userData); // Ajoute cette ligne pour voir les données dans la console
+    
         try {
-            const response = await axios.post('http://localhost:3000/auth/signup', {
-                name: values.username,
-                email: values.email,
-                password: values.password,
-                role: values.role
+            const response = await axios.post('http://127.0.0.1:8000/api/signup/', userData, {
+                headers: { "Content-Type": "application/json" }
             });
+    
+            console.log("Réponse du serveur :", response.data);
+    
             if (response.data.loginStatus) {
                 alert("Votre compte a été créé avec succès !");
-                navigate('/client_login');
+                navigate('/login');
             } else {
                 setError(response.data.Error);
             }
         } catch (error) {
-            console.error("Erreur lors de la création du compte :", error);
-            setError("Une erreur s'est produite lors de la création du compte.");
+            console.error("Erreur lors de la création du compte :", error.response?.data || error.message);
+            setError(error.response?.data?.message || "Une erreur s'est produite lors de la création du compte.");
         }
     };
+    
 
     const togglePasswordVisibility = () => {
         setShowPassword(!showPassword);

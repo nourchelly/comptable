@@ -1,21 +1,29 @@
 import React from "react";
 import { Link, Outlet, useLocation, useNavigate } from "react-router-dom";
 import axios from "axios";
-import "./style.css";
+import { FaHome, FaUser, FaCog, FaCheckCircle, FaSignOutAlt, FaSearch, FaBell, FaUserCircle } from "react-icons/fa";
+import "./Dashboard.css"; // Fichier CSS pour les styles personnalisés
 
 const Dashboard = () => {
   const navigate = useNavigate();
   const location = useLocation();
 
   const handleLogout = () => {
-    axios.get("http://localhost:3000/auth/logout")
+    const refreshToken = localStorage.getItem('refresh_token');
+    
+    axios.post("http://127.0.0.1:8000/api/logout/", { refresh_token: refreshToken })
       .then(result => {
-        if (result.data.Status) {
+        if (result.data.Status === 'Déconnexion réussie') {
           localStorage.removeItem("valid");
+          localStorage.removeItem("refresh_token");
           navigate("/login");
+        } else {
+          console.log('Erreur dans la déconnexion:', result.data);
         }
       })
-      .catch(err => console.error(err));
+      .catch(err => {
+        console.error('Erreur lors de la déconnexion:', err.response ? err.response.data : err);
+      });
   };
 
   const getPageTitle = () => {
@@ -29,7 +37,7 @@ const Dashboard = () => {
   };
 
   return (
-    <div className="container-fluid" style={{ backgroundColor: "#F5F7FA" }}>
+    <div className="container-fluid dashboard-container">
       <div className="row flex-nowrap">
         {/* Sidebar */}
         <div className="col-auto col-md-3 col-xl-2 px-sm-2 px-0 bg-white border-end min-vh-100">
@@ -40,37 +48,37 @@ const Dashboard = () => {
             
             {/* Menu */}
             <ul className="nav nav-pills flex-column mb-0 w-100">
-              <li className="w-100 d-flex align-items-center">
+              <li className="w-100 mb-3"> {/* Ajout de margin-bottom */}
                 <Link to="/dashboard" 
-                  className={`nav-link px-0 ${location.pathname === "/dashboard" ? "fw-bold text-primary" : "text-dark"}`}>
-                  <i className="bi bi-house-door me-2"></i> {/* Icône tableau de bord */}
+                  className={`nav-link px-3 py-2 ${location.pathname === "/dashboard" ? "fw-bold text-primary bg-light" : "text-dark"}`}>
+                  <FaHome className="me-2" /> {/* Icône tableau de bord */}
                   <span className="d-none d-sm-inline">Tableau de bord</span>
                 </Link>
               </li>
-              <li className="w-100 d-flex align-items-center">
+              <li className="w-100 mb-3"> {/* Ajout de margin-bottom */}
                 <Link to="/dashboard/comptes" 
-                  className={`nav-link px-0 ${location.pathname === "/dashboard/comptes" ? "fw-bold text-primary" : "text-dark"}`}>
-                  <i className="bi bi-person-bounding-box me-2"></i> {/* Icône comptes */}
+                  className={`nav-link px-3 py-2 ${location.pathname === "/dashboard/comptes" ? "fw-bold text-primary bg-light" : "text-dark"}`}>
+                  <FaUser className="me-2" /> {/* Icône comptes */}
                   <span className="d-none d-sm-inline"> Comptes</span>
                 </Link>
               </li>
-              <li className="w-100 d-flex align-items-center">
+              <li className="w-100 mb-3"> {/* Ajout de margin-bottom */}
                 <Link to="/dashboard/profil" 
-                  className={`nav-link px-0 ${location.pathname === "/dashboard/profil" ? "fw-bold text-primary" : "text-dark"}`}>
-                  <i className="bi bi-gear-fill me-2"></i> {/* Icône profil */}
+                  className={`nav-link px-3 py-2 ${location.pathname === "/dashboard/profil" ? "fw-bold text-primary bg-light" : "text-dark"}`}>
+                  <FaCog className="me-2" /> {/* Icône profil */}
                   <span className="d-none d-sm-inline">Profil</span>
                 </Link>
               </li>
-              <li className="w-100 d-flex align-items-center">
+              <li className="w-100 mb-3"> {/* Ajout de margin-bottom */}
                 <Link to="/dashboard/validation" 
-                  className={`nav-link px-0 ${location.pathname === "/dashboard/validation" ? "fw-bold text-primary" : "text-dark"}`}>
-                  <i className="bi bi-check-circle-fill me-2"></i> {/* Icône validations */}
+                  className={`nav-link px-3 py-2 ${location.pathname === "/dashboard/validation" ? "fw-bold text-primary bg-light" : "text-dark"}`}>
+                  <FaCheckCircle className="me-2" /> {/* Icône validations */}
                   <span className="d-none d-sm-inline">Validations</span>
                 </Link>
               </li>
-              <li className="w-100 d-flex align-items-center">
-                <button className="nav-link px-0 text-dark border-0 bg-transparent" onClick={handleLogout}>
-                  <i className="bi bi-box-arrow-right me-2"></i> {/* Icône déconnexion */}
+              <li className="w-100 mb-3"> {/* Ajout de margin-bottom */}
+                <button className="nav-link px-3 py-2 text-dark border-0 bg-transparent w-100 text-start" onClick={handleLogout}>
+                  <FaSignOutAlt className="me-2" /> {/* Icône déconnexion */}
                   <span className="d-none d-sm-inline">Déconnexion</span>
                 </button>
               </li>
@@ -80,22 +88,23 @@ const Dashboard = () => {
 
         {/* Main Content */}
         <div className="col p-0">
-          <div className="p-2 d-flex justify-content-between align-items-center shadow bg-white">
+          <div className="p-3 d-flex justify-content-between align-items-center shadow bg-white">
             {/* Titre de la page */}
-            <h5 className="m-0 ps-3">{getPageTitle()}</h5>
+            <h5 className="m-0 ps-3 fw-bold" style={{ fontFamily: "'Montserrat', sans-serif" }}>{getPageTitle()}</h5>
 
             {/* Barre de recherche et icônes */}
             <div className="d-flex align-items-center gap-3 pe-3">
               <div className="position-relative">
                 <input type="text" placeholder="Rechercher" className="form-control w-100 pe-5" />
-                <i className="bi bi-search position-absolute top-50 end-0 translate-middle-y me-3"></i> {/* Icône de recherche */}
+                <FaSearch className="position-absolute top-50 end-0 translate-middle-y me-3 text-muted" /> {/* Icône de recherche */}
               </div>
-              <i className="bi bi-gear-fill text-muted"></i> {/* Icône des paramètres */}
-              <i className="bi bi-bell-fill text-danger"></i> {/* Icône des notifications */}
-              <i className="bi bi-person-circle text-primary"></i> {/* Icône de profil */}
+              <FaBell className="text-muted" /> {/* Icône des notifications */}
+              <FaUserCircle className="text-primary" /> {/* Icône de profil */}
             </div>
           </div>
-          <Outlet />
+          <div className="p-4"> {/* Ajout de padding pour le contenu principal */}
+            <Outlet />
+          </div>
         </div>
       </div>
     </div>
