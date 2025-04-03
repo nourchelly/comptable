@@ -1,57 +1,54 @@
 from rest_framework import serializers
-from django.contrib.auth import get_user_model
-from rest_framework_simplejwt.tokens import RefreshToken
 from .models import CustomUser
-from django.contrib.auth.password_validation import validate_password
-User = get_user_model()
+from django.contrib.auth.hashers import make_password
 
 class UserSerializer(serializers.ModelSerializer):
     class Meta:
         model = CustomUser
-        fields = ['id', 'username', 'email', 'role']
+        fields = ['id', 'username', 'email', 'role', 'is_active', 'date_joined']
 
-class RegisterSerializer(serializers.ModelSerializer):
-    password = serializers.CharField(write_only=True, required=True, validators=[validate_password])
-    confirm_password = serializers.CharField(write_only=True, required=True)
-    role = serializers.ChoiceField(choices=['Comptable', 'Directeur financier'])
 
-    class Meta:
-        model = User
-        fields = ('username', 'email', 'password', 'confirm_password', 'role')
-
-    def validate(self, attrs):
-        if attrs['password'] != attrs['confirm_password']:
-            raise serializers.ValidationError({'password': "Les mots de passe ne correspondent pas !"})
-        return attrs
+class RegisterSerializer(serializers.Serializer):
+    username = serializers.CharField(max_length=150)
+    email = serializers.EmailField()
+    password = serializers.CharField(write_only=True, min_length=8)
+    confirm_password = serializers.CharField(write_only=True, min_length=8)
+    role = serializers.ChoiceField(
+        choices=["comptable", "directeur"],  # Seulement ces 2 choix possibles
+        default="comptable",
+        required=False
+    )
+    def validate_role(self, value):
+        if isinstance(value, list):  # Gestion du cas où role serait un tableau
+            value = value[0]
+        if value not in ['comptable', 'directeur']:
+            raise serializers.ValidationError("Le rôle doit être 'comptable' ou 'directeur'")
+        return value
+    def validate(self, data):
+        if data['password'] != data['confirm_password']:
+            raise serializers.ValidationError("Les mots de passe ne correspondent pas")
+        return data
 
     def create(self, validated_data):
-        validated_data.pop('confirm_password')  # On enlève 'confirm_password' avant la création
-        user = User.objects.create_user(
-            username=validated_data['username'],
-            email=validated_data['email'],
-            password=validated_data['password'],
-            role=validated_data['role']
-        )
-        return user
+        # Supprime le champ confirm_password avant création
+        validated_data.pop('confirm_password', None)
+        return CustomUser.create_user(**validated_data)
 
 class LoginSerializer(serializers.Serializer):
-    username = serializers.CharField()
-    password = serializers.CharField(write_only=True)
+    email = serializers.EmailField()
+    password = serializers.CharField()
 
-    def validate(self, data):
-        user = User.objects.filter(username=data["username"]).first()
-
-        if user is None:
-            raise serializers.ValidationError("Utilisateur non trouvé")
+    def validate(self, attrs):
+        email = attrs.get('email')
+        password = attrs.get('password')
         
-        if not user.check_password(data["password"]):  # Correction ici
-            raise serializers.ValidationError("Le mot de passe est incorrect")
+        if email and password:
+            return attrs
+        raise serializers.ValidationError("Email et mot de passe requis")
 
-        tokens = RefreshToken.for_user(user)  # Correction d'indentation
-        
-        return {
-            "username": user.username,
-            "role": user.role,
-            "access": str(tokens.access_token),
-            "refresh": str(tokens),
-        }
+class ForgotPasswordSerializer(serializers.Serializer):
+    email = serializers.EmailField()
+
+class ResetPasswordSerializer(serializers.Serializer):
+    token = serializers.CharField()
+    new_password = serializers.CharField()

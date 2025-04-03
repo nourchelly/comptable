@@ -66,7 +66,7 @@ const Signup = () => {
             email: values.email,
             password: values.password,
             confirm_password: values.confirmPassword,
-            role: values.role
+            role: values.role  || 'comptable'
         };
     
         console.log("Données envoyées au serveur :", userData); // Ajoute cette ligne pour voir les données dans la console
@@ -101,7 +101,7 @@ const Signup = () => {
 
     return (
         <div className="container d-flex justify-content-center align-items-center vh-100">
-            <div className="row shadow-lg rounded p-4" style={{ maxWidth: '900px', backgroundColor: '#f8f9fa' }}>
+            <div className="row shadow-lg rounded p-3" style={{ maxWidth: '940px', backgroundColor: '#f8f9fa' }}>
                 <div className="col-md-7">
                     <div className="p-4">
                         <h3 className="text-center" style={{ color: '#1D3557' }}>Créer un compte individuel !</h3>

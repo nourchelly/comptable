@@ -2,17 +2,26 @@ import axios from "axios";
 import React, { useEffect, useState } from "react";
 import { FaExclamationTriangle, FaCheckCircle, FaTimesCircle } from "react-icons/fa";
 import "./style.css";
+import { useNavigate } from "react-router-dom";
 
 const Signaler = () => {
   const [motif, setMotif] = useState("");
   const [description, setDescription] = useState("");
   const [file, setFile] = useState(null);
+  const navigate = useNavigate();
 
   useEffect(() => {
     axios
       .get("http://localhost:3000/auth/signalercompte")
       .catch((err) => console.log("Erreur lors du chargement des comptes :", err));
   }, []);
+
+  const handleCancel = () => {
+    setMotif("");
+    setDescription("");
+    setFile(null);
+    navigate('/dashboard/comptes');
+  };
 
   const handleSubmit = async () => {
     if (!motif || !description) {
@@ -48,7 +57,7 @@ const Signaler = () => {
   return (
     <div className="container mt-5">
       <div className="row justify-content-center">
-        <div className="col-md-9 p-5 shadow rounded bg-white position-relative text-start" style={{ borderRadius: "15px" }}>
+        <div className="col-md-12 p-8" style={{ borderRadius: "15px" }}>
           <h3 className="text-center" style={{ color: "#011BAD", textDecoration: "underline" }}>
             <FaExclamationTriangle className="me-2 text-danger" /> Signaler Compte
           </h3>
@@ -82,15 +91,15 @@ const Signaler = () => {
               />
             </div>
           </div>
-          <div className="d-flex justify-content-end mt-4">
+          <div className="d-flex justify-content-end mt-5">
             <button className="btn btn-success me-5" onClick={handleSubmit}>
               <FaCheckCircle className="me-1" /> Confirmer
             </button>
-            <button className="btn btn-danger" onClick={() => { setMotif(""); setDescription(""); setFile(null); }}>
+            <button className="btn btn-danger" onClick={handleCancel}>
               <FaTimesCircle className="me-1" /> Annuler
             </button>
           </div>
-          <img src="/images/co.jpg" alt="Alerte" className="position-absolute" style={{ right: "25px", bottom: "90px", width: "280px" }} />
+          <img src="/images/co.jpg" alt="Alerte" className="position-absolute" style={{ right: "25px", bottom: "120px", width: "280px" }} />
         </div>
       </div>
     </div>

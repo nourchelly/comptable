@@ -1,44 +1,76 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { FaEye, FaEyeSlash } from 'react-icons/fa';
 
-
 const Login = () => {
     const [values, setValues] = useState({
-        username: '',
         email: '',
-        password: '',
+        password: ''
     });
-    const [role, setRole] = useState(''); // état pour gérer le rôle sélectionné
+    const [role, setRole] = useState('');
     const [error, setError] = useState(null);
     const [showPassword, setShowPassword] = useState(false);
     const navigate = useNavigate();
 
-    axios.defaults.withCredentials = true;
-
-    const handleSubmit = (event) => {
-        event.preventDefault();
-        const data = { ...values, role }; // Ajout du rôle dans les données envoyées
-        axios.post('http://127.0.0.1:8000/api/login/', data)
-            .then(result => {
-                if (result.data.loginStatus) {
-                    localStorage.setItem("valid", true);
-                    localStorage.setItem("token", result.data.access);
-                    
-                    // Redirection en fonction du rôle
-                    if (role === 'admin') {
-                        navigate('/dashboard');
-                    } else if (role === 'comptable') {
-                        navigate('/dashboard_comptable');
-                    } else if (role === 'directeur') {
-                        navigate('/dashboard_directeur');
-                    }
-                } else {
-                    setError(result.data.Error);
-                }
+    useEffect(() => {
+        axios.get('http://127.0.0.1:8000/api/csrf/')
+            .then(response => {
+                console.log("CSRF Token:", response.data.csrfToken);
+                axios.defaults.headers.common['X-CSRFToken'] = response.data.csrfToken;
             })
-            .catch(err => console.log(err));
+            .catch(error => console.error("Erreur CSRF:", error));
+            axios.defaults.withCredentials = true;
+        }, []);
+ 
+
+    const handleSubmit = async (event) => {
+        event.preventDefault();
+        console.log("Envoi au serveur:", {
+            email: values.email,
+            password: values.password,
+            role: role
+          });
+        if (!values.email || !values.password || !role) {
+            setError("Veuillez remplir tous les champs");
+            return;
+        }
+    
+        try {
+            const response = await axios.post('http://127.0.0.1:8000/api/login/', {
+                email: values.email.trim(),
+                password: values.password,
+                role: role
+            }, {
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            });
+            console.log("Réponse du serveur:", response.data);
+    
+            if (response.data.loginStatus) {
+                localStorage.setItem("authToken", response.data.access);
+                localStorage.setItem("userRole", response.data.role);
+                localStorage.setItem("userId", response.data.user_id);
+                switch(response.data.role) {
+                    case 'admin': navigate('/dashboard'); break;
+                    case 'comptable': navigate('/dashboardcomptable'); break;
+                    case 'directeur': navigate('/dashboarddirecteur'); break;
+                    default: navigate('/');
+                }
+            } else {
+                setError(response.data.Error || "Erreur de connexion");
+            }
+        } catch (err) {
+            console.error("Détails erreur:", err.response?.data);
+            setError(err.response?.data?.Error || "Le serveur ne répond pas");
+        }
+    };
+
+    const reachGoogle = () => {
+        const ClientID = "568574926215-avudpdrdvbm00nhhe695ufft3gmndhfp.apps.googleusercontent.com";
+        const CallBackURI = "http://localhost:3000/";
+        window.location.replace("");
     };
 
     const togglePasswordVisibility = () => {
@@ -50,7 +82,6 @@ const Login = () => {
     };
 
     const handleRoleChange = (selectedRole) => {
-        // Si on clique sur un rôle, on l'assigne et on désélectionne les autres
         setRole(role === selectedRole ? '' : selectedRole);
     };
 
@@ -72,14 +103,15 @@ const Login = () => {
                         {error && <div className="alert alert-danger text-center" role="alert">{error}</div>}
                         <form onSubmit={handleSubmit} className='text-center'>
                             <div className='mb-3 text-start'>
-                                <label htmlFor='name' className='form-label text-muted'>Nom d'utilisateur ou adresse e-mail</label>
+                                <label htmlFor='email' className='form-label text-muted'>Adresse e-mail</label>
                                 <input 
-                                    type='text' 
-                                    name='name' 
+                                    type='email'
+                                    name='email'
                                     autoComplete='off' 
-                                    placeholder="Entrez votre nom d'utilisateur ou adresse e-mail" 
-                                    onChange={(e) => setValues({ ...values, name: e.target.value })}
+                                    placeholder="Entrez votre adresse e-mail" 
+                                    onChange={(e) => setValues({ ...values, email: e.target.value })}
                                     className='form-control' 
+                                    required
                                 />
                             </div>
                             <div className='mb-3 text-start'>
@@ -102,7 +134,6 @@ const Login = () => {
                                 </div>
                             </div>
 
-                            {/* Rôles en checkbox sur la même ligne, mais on les gère de façon exclusive */}
                             <div className="mb-3 text-start">
                                 <label className="form-label text-muted">Choisir la profession</label>
                                 <div className="d-flex justify-content-start" style={{ gap: '10px', flexWrap: 'nowrap' }}>
@@ -159,59 +190,35 @@ const Login = () => {
                             </div>
 
                             <div className="mb-3 d-flex flex-column">
-                            <button 
-  className="btn mb-2 text-dark border d-flex align-items-center justify-content-center" 
-  style={{ 
-    backgroundColor: 'transparent', 
-    outline: 'none', 
-    boxShadow: 'none', 
-    borderColor: '#dee2e6', 
-    color: '#000', 
-    transition: 'none' // Désactiver les transitions
-  }}
-  onFocus={(e) => {
-    e.target.style.backgroundColor = 'transparent';
-    e.target.style.color = '#000';
-  }}
-  onMouseDown={(e) => {
-    e.target.style.backgroundColor = 'transparent';
-    e.target.style.color = '#000';
-  }}
-  onMouseUp={(e) => {
-    e.target.style.backgroundColor = 'transparent';
-    e.target.style.color = '#000';
-  }}
->
-  <img src="images/google-logo.png" alt="Logo Google" style={{ width: '20px', marginRight: '10px' }} />
-  Continuer avec Google
-</button>
+                                <button 
+                                    className="btn mb-2 text-dark border d-flex align-items-center justify-content-center" 
+                                    style={{ 
+                                        backgroundColor: 'transparent', 
+                                        outline: 'none', 
+                                        boxShadow: 'none', 
+                                        borderColor: '#dee2e6', 
+                                        color: '#000', 
+                                        transition: 'none'
+                                    }}
+                                >
+                                    <img src="images/google-logo.png" alt="Logo Google" style={{ width: '20px', marginRight: '10px' }} />
+                                    Continuer avec Google
+                                </button>
 
-<button 
-  className="btn mb-3 text-dark border d-flex align-items-center justify-content-center" 
-  style={{ 
-    backgroundColor: 'transparent', 
-    outline: 'none', 
-    boxShadow: 'none', 
-    borderColor: '#dee2e6', 
-    color: '#000', 
-    transition: 'none' // Désactiver les transitions
-  }}
-  onFocus={(e) => {
-    e.target.style.backgroundColor = 'transparent';
-    e.target.style.color = '#000';
-  }}
-  onMouseDown={(e) => {
-    e.target.style.backgroundColor = 'transparent';
-    e.target.style.color = '#000';
-  }}
-  onMouseUp={(e) => {
-    e.target.style.backgroundColor = 'transparent';
-    e.target.style.color = '#000';
-  }}
->
-  <img src="images/mail-logo.png" alt="Logo Mail" style={{ width: '20px', marginRight: '10px' }} />
-  S'inscrire avec un e-mail
-</button>
+                                <button 
+                                    className="btn mb-3 text-dark border d-flex align-items-center justify-content-center" 
+                                    style={{ 
+                                        backgroundColor: 'transparent', 
+                                        outline: 'none', 
+                                        boxShadow: 'none', 
+                                        borderColor: '#dee2e6', 
+                                        color: '#000', 
+                                        transition: 'none'
+                                    }}
+                                >
+                                    <img src="images/mail-logo.png" alt="Logo Mail" style={{ width: '20px', marginRight: '10px' }} />
+                                    S'inscrire avec un e-mail
+                                </button>
                             </div>
 
                             <button 

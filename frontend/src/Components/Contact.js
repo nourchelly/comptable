@@ -1,6 +1,6 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
-import { FaHome, FaEnvelope, FaTools, FaMapMarkerAlt, FaPhone, FaPaperPlane } from 'react-icons/fa';
+import { FaHome, FaEnvelope, FaTools, FaMapMarkerAlt, FaPhone, FaPaperPlane, FaSignInAlt } from 'react-icons/fa';
 import 'bootstrap/dist/css/bootstrap.min.css';
 import 'animate.css';
 import './Contact.css'; // Fichier CSS pour les animations personnalisées
@@ -9,36 +9,43 @@ const Contact = () => {
   const navigate = useNavigate();
 
   return (
-    <div className="d-flex flex-column min-vh-100 bg-light">
-      {/* Navigation Bar */}
-      <nav className="navbar navbar-expand-lg navbar-light bg-white shadow-sm fixed-top">
-        <div className="container-fluid">
+    <div className="d-flex flex-column min-vh-100 bg-light" style={{ paddingTop: "56px" }}>
+      {/* Navigation Bar simplifiée */}
+      <nav className="navbar navbar-light bg-white shadow-sm fixed-top">
+        <div className="container-fluid d-flex justify-content-between align-items-center">
           <a className="navbar-brand" href="/">
-            <span className="fs-4 fw-bold text-primary" style={{ fontFamily: "'Poppins', sans-serif" }}>
-              C<span className="text-dark">ompta</span>B<span className="text-dark">OT</span>
+            <span className="fs-4 fw-bold" style={{ fontFamily: "'Poppins', sans-serif", color: "#04629D" }}>
+              C<span style={{ color: "#000" }}>ompta</span>B<span style={{ color: "#000" }}>OT</span>
             </span>
           </a>
-          <div className="collapse navbar-collapse" id="navbarNav">
-            <ul className="navbar-nav ms-auto">
-              <li className="nav-item">
-                <button className="nav-link btn btn-link text-dark d-flex align-items-center" onClick={() => navigate('/home')}>
-                  <FaHome className="me-2" /> Accueil
-                </button>
-              </li>
-              <li className="nav-item">
-                <button className="nav-link btn btn-link text-dark d-flex align-items-center" onClick={() => navigate('/contact')}>
-                  <FaEnvelope className="me-2" /> Contact
-                </button>
-              </li>
-              <li className="nav-item">
-                <button className="nav-link btn btn-link text-dark d-flex align-items-center" onClick={() => navigate('/services')}>
-                  <FaTools className="me-2" /> Services
-                </button>
-              </li>
-            </ul>
-          </div>
-        </div>
-      </nav>
+          
+          <div className="d-flex gap-3 align-items-center">
+            <button 
+              className="btn btn-link text-dark d-flex align-items-center p-2" 
+              onClick={() => navigate('/home')}
+              style={{ border: "none", background: "transparent", textDecoration: "none" }}
+            >
+              <FaHome className="me-2" /> Accueil
+            </button>
+            
+            <button 
+              className="btn btn-link text-dark d-flex align-items-center p-2" 
+              onClick={() => navigate('/contact')}
+              style={{ border: "none", background: "transparent", textDecoration: "none" }}
+            >
+              <FaEnvelope className="me-2" /> Contact
+            </button>
+            
+            <button 
+              className="btn btn-link text-dark d-flex align-items-center p-2" 
+              onClick={() => navigate('/services')}
+              style={{ border: "none", background: "transparent", textDecoration: "none" }}
+            >
+              <FaTools className="me-2" /> Services
+            </button>
+            </div>
+            </div>
+            </nav>
 
       {/* Contact Section */}
       <div className="container mt-5 pt-5">

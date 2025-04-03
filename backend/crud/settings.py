@@ -2,8 +2,11 @@ import environ
 from pathlib import Path
 from datetime import timedelta
 
+
 env = environ.Env(
-    DEBUG=(bool,False)
+    DEBUG=(bool,False),
+    MONGO_DB_NAME=(str, 'mydb'),
+    MONGO_HOST=(str, 'mongodb://localhost:27017/mydb')
 )
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -12,6 +15,13 @@ environ.Env.read_env(BASE_DIR / '.env')
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/5.1/howto/deployment/checklist/
 
+import mongoengine
+
+mongoengine.connect(
+    db=env('MONGO_DB_NAME', default='mydb'),
+    host=env('MONGO_HOST', default='mongodb://localhost:27017/mydb'),
+    alias='default'
+)
 # SECURITY WARNING: keep the secret key used in production secret!
 SECRET_KEY = env('SECRET_KEY')
 
@@ -31,23 +41,81 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'rest_framework',
+    'rest_framework.authtoken',
     'corsheaders',
     'rest_framework_simplejwt',
-    'api'
+    'api',
+    'django.contrib.sites',
+    'allauth',
+    'allauth.account',
+    'allauth.socialaccount',
+    #..include the providers you want
+    'allauth.socialaccount.providers.google',
 ]
-AUTH_USER_MODEL='api.CustomUser'
+MIGRATION_MODULES = {
+    'api': None,  # Désactive les migrations pour l'app 'api'
+}
+AUTHENTICATION_BACKENDS = [
+     # Needed to login by username in Django admin, regardless of `allauth`
+    'api.backends.MongoEngineBackend',
+     'api.auth.MongoAuthBackend',
+     'api.backends.CustomBackend',  # Vérifie si ce module existe !
+    'django.contrib.auth.backends.ModelBackend',
+
+     # `allauth` specific authentication methods, such as login by email
+    'allauth.account.auth_backends.AuthenticationBackend',
+]
+# Dans settings.py
+#AUTH_USER_MODEL = 'api.CustomUser'
+SITE_ID = 1
+# Configuration Allauth
+ACCOUNT_EMAIL_REQUIRED = True
+ACCOUNT_USERNAME_REQUIRED = False
+ACCOUNT_AUTHENTICATION_METHOD = 'email'
+ACCOUNT_EMAIL_VERIFICATION = 'optional'
+
+# REST Framework config
+REST_FRAMEWORK = {
+    'DEFAULT_AUTHENTICATION_CLASSES': [
+        'rest_framework.authentication.TokenAuthentication',
+         'rest_framework_simplejwt.authentication.JWTAuthentication',
+    'rest_framework.authentication.SessionAuthentication', 
+    ],    
+    'DEFAULT_PERMISSION_CLASSES': [
+        'rest_framework.permissions.IsAuthenticated',
+    ],
+     'DEFAULT_PARSER_CLASSES': [
+        'rest_framework.parsers.JSONParser',
+        'rest_framework.parsers.FormParser',
+        'rest_framework.parsers.MultiPartParser',
+    ],
+    'DEFAULT_RENDERER_CLASSES': [
+        'rest_framework.renderers.JSONRenderer',
+    ],
+}
+
 LOGIN_URL = 'login'
 LOGOUT_URL = 'logout'
 LOGIN_REDIRECT_URL = 'home'
-REST_FRAMEWORK = {
-    'DEFAULT_AUTHENTICATION_CLASSES': (
-        'rest_framework_simplejwt.authentication.JWTAuthentication',
-    ),
-}
 
+    
+SOCIALACCOUNT_PROVIDERS = {
+    "google":{
+        "SCOPE": [
+            "email"
+        ],
+        "AUTH_PARAMS": {"access_type": "online"}
+    }
+}
+ROOT_URLCONF = 'googlelogin.urls'
+# Supprimez la première déclaration et gardez celle-ci :
 SIMPLE_JWT = {
-    'ACCESS_TOKEN_LIFETIME': timedelta(days=1),
-    'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
+    'AUTH_HEADER_TYPES': ('Bearer',),
+    'ALGORITHM': 'HS256',
+    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=15),  # Court pour limiter les risques
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=1),
+    'ROTATE_REFRESH_TOKENS': False,  # Désactivé pour simplifier
+    'BLACKLIST_AFTER_ROTATION': False,  # Non nécessaire avec MongoDB
 }
 
 MIDDLEWARE = [
@@ -92,13 +160,13 @@ WSGI_APPLICATION = 'crud.wsgi.application'
 
 # Database
 # https://docs.djangoproject.com/en/5.1/ref/settings/#databases
-
+# 1. Désactiver complètement la configuration SQL par défaut
 DATABASES = {
     'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',  # Utilise une base de données SQLite dans le répertoire de ton projet
+        'ENGINE': 'django.db.backends.dummy'  # Désactive le système de base de données SQL
     }
 }
+
 
 # settings.py
 
@@ -150,3 +218,19 @@ STATIC_URL = 'static/'
 # https://docs.djangoproject.com/en/5.1/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+# settings.py
+EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+EMAIL_HOST = 'smtp.gmail.com'  # Ou votre serveur SMTP
+EMAIL_PORT = 587
+EMAIL_USE_TLS = True
+EMAIL_HOST_USER = 'votre@email.com'
+EMAIL_HOST_PASSWORD = 'votre_mot_de_passe'  # Mot de passe d'application pour Gmail
+
+# Configuration pour la réinitialisation
+PASSWORD_RESET_TIMEOUT = 3600  # 1 heure en secondes
+FRONTEND_RESET_URL = "http://localhost:3000/reset-password"  # URL de votre frontend
+CSRF_COOKIE_HTTPONLY = False
+CSRF_COOKIE_SAMESITE = 'Lax'
+CSRF_COOKIE_SECURE = False  # Mets True en production avec HTTPS
+CORS_ALLOW_CREDENTIALS = True  # Autorise les cookies cross-origin
+CSRF_TRUSTED_ORIGINS = ["http://127.0.0.1:8000", "http://localhost:3000"]

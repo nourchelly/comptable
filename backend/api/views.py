@@ -1,85 +1,174 @@
 from rest_framework.views import APIView
-from rest_framework.response import Response
-from rest_framework import status,generics
-from django.contrib.auth import authenticate
-from rest_framework_simplejwt.tokens import RefreshToken
-from .models import CustomUser
-from .serializers import RegisterSerializer, UserSerializer
-from rest_framework.decorators import api_view
-from rest_framework.permissions import AllowAny, IsAuthenticated
+from rest_framework.decorators import permission_classes
 
+from rest_framework.response import Response
+from rest_framework import status, generics
+from rest_framework.permissions import AllowAny, IsAuthenticated
+from django.utils import timezone
+from rest_framework.decorators import api_view
+from datetime import datetime, timedelta
+import jwt
+from django.conf import settings
+from django.contrib.auth.hashers import check_password
+import bcrypt
+from .models import CustomUser
+from .serializers import (
+    RegisterSerializer, 
+    LoginSerializer, 
+    ForgotPasswordSerializer, 
+    ResetPasswordSerializer
+)
+from allauth.socialaccount.providers.google.views import GoogleOAuth2Adapter
+from allauth.socialaccount.providers.oauth2.client import OAuth2Client
+from dj_rest_auth.registration.views import SocialLoginView
+from django.http import JsonResponse
+from django.middleware.csrf import get_token
+
+def csrf_token_view(request):
+    return JsonResponse({'csrfToken': get_token(request)})
+
+class GoogleLogin(SocialLoginView):
+    adapter_class = GoogleOAuth2Adapter
+    callback_url = "http://localhost:3000/"  # Adapte l'URL en fonction de ton frontend
+    client_class = OAuth2Client
+
+class RegisterView(generics.CreateAPIView):
+    permission_classes = (AllowAny,)
+    serializer_class = RegisterSerializer
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        
+        try:
+            user = serializer.save()
+            return Response({
+                "message": "Utilisateur créé avec succès",
+                "user": {
+                    "id": str(user.id),
+                    "username": user.username,
+                    "email": user.email,
+                    "role": user.role
+                }
+            }, status=status.HTTP_201_CREATED)
+            
+        except Exception as e:
+            return Response({
+                "error": f"Erreur lors de la création: {str(e)}"
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+class LoginView(APIView):
+    permission_classes = [AllowAny]
+    
+    def post(self, request):
+        try:
+            email = request.data.get('email')
+            password = request.data.get('password')
+            role = request.data.get('role')
+            
+            if not all([email, password, role]):
+                return Response({
+                    'loginStatus': False,
+                    'Error': 'Email, mot de passe et rôle sont requis'
+                }, status=status.HTTP_400_BAD_REQUEST)
+            
+            user = CustomUser.objects.filter(email=email).first()
+            
+            if not user:
+                return Response({
+                    'loginStatus': False,
+                    'Error': 'Email ou mot de passe incorrect'
+                }, status=status.HTTP_401_UNAUTHORIZED)
+            
+            if not user.check_password(password):
+                return Response({
+                    'loginStatus': False,
+                    'Error': 'Email ou mot de passe incorrect'
+                }, status=status.HTTP_401_UNAUTHORIZED)
+            
+            if user.role != role:
+                return Response({
+                    'loginStatus': False,
+                    'Error': f'Vous êtes un {user.role}, pas un {role}'
+                }, status=status.HTTP_403_FORBIDDEN)
+            
+            token_payload = {
+                'user_id': str(user.id),
+                'email': user.email,
+                'role': user.role,
+                'exp': int((datetime.utcnow() + timedelta(hours=24)).timestamp())
+            }
+            token = jwt.encode(token_payload, settings.SECRET_KEY, algorithm='HS256')
+            
+            return Response({
+                'loginStatus': True,
+                'access': token,
+                'role': user.role,
+                'user_id': str(user.id)
+            }, status=status.HTTP_200_OK)
+            
+        except Exception as e:
+            print(f"ERREUR SERVEUR: {str(e)}")
+            return Response({
+                'loginStatus': False,
+                'Error': 'Erreur technique',
+                'Details': str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+class ForgotPasswordView(APIView):
+    permission_classes = (AllowAny,)
+    
+    def post(self, request):
+        serializer = ForgotPasswordSerializer(data=request.data)
+        if serializer.is_valid():
+            email = serializer.validated_data['email']
+            user = CustomUser.objects.filter(email=email).first()
+            if user:
+                token = user.generate_reset_token()
+                return Response(
+                    {"detail": "Un lien de réinitialisation a été envoyé à votre email"},
+                    status=status.HTTP_200_OK
+                )
+            return Response(
+                {"detail": "Aucun utilisateur avec cet email"},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+class ResetPasswordView(APIView):
+    permission_classes = (AllowAny,)
+    
+    def post(self, request):
+        serializer = ResetPasswordSerializer(data=request.data)
+        if serializer.is_valid():
+            token = serializer.validated_data['token']
+            new_password = serializer.validated_data['new_password']
+            
+            user = CustomUser.objects.filter(reset_token=token).first()
+            if not user:
+                return Response({"detail": "Token invalide"}, status=status.HTTP_400_BAD_REQUEST)
+
+            if user.reset_token_expires and user.reset_token_expires < timezone.now():
+                return Response({"detail": "Le token a expiré"}, status=status.HTTP_400_BAD_REQUEST)
+            
+            user.set_password(new_password)
+            user.reset_token = None
+            user.reset_token_expires = None
+            user.save()
+            
+            return Response({"detail": "Mot de passe mis à jour avec succès"}, status=status.HTTP_200_OK)
+        
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+class LogoutView(APIView):
+    permission_classes = [IsAuthenticated]
+    
+    def post(self, request):
+        return Response({"status": "success", "message": "Déconnexion réussie"}, status=status.HTTP_200_OK)
 
 @api_view(['GET'])
+
+@permission_classes([AllowAny])  # Permet un accès sans authentification
 def home(request):
     return Response({"message": "Bienvenue à l'accueil de l'API"})
 
-class RegisterView(generics.CreateAPIView):
-    queryset = CustomUser.objects.all()
-    permission_classes = (AllowAny,)
-    serializer_class = RegisterSerializer
-class LoginView(APIView):
-    def post(self, request):
-        # Récupérer les données de la requête
-        username_or_email = request.data.get("username")
-        password = request.data.get("password")
-        role = request.data.get("role")
-
-        # Vérification si l'utilisateur est identifié par email ou nom d'utilisateur
-        user = None
-        if '@' in username_or_email:
-            # Recherche par email
-            try:
-                user = CustomUser.objects.get(email=username_or_email)
-            except CustomUser.DoesNotExist:
-                return Response({"error": "Utilisateur non trouvé"}, status=status.HTTP_400_BAD_REQUEST)
-        else:
-            # Recherche par nom d'utilisateur
-            user = authenticate(username=username_or_email, password=password)
-
-        # Si l'utilisateur est trouvé et l'authentification réussie
-        if user:
-            # Vérification du rôle
-            if user.role != role:
-                return Response({"error": "Rôle incorrect"}, status=status.HTTP_401_UNAUTHORIZED)
-
-            # Générer les tokens JWT
-            refresh = RefreshToken.for_user(user)
-            return Response({
-                "loginStatus": True,
-                "refresh": str(refresh),
-                "access": str(refresh.access_token),
-                "role": user.role,
-                "username": user.username
-            })
-
-        # Si l'utilisateur n'est pas trouvé ou les identifiants sont invalides
-        return Response({"error": "Identifiants invalides"}, status=status.HTTP_401_UNAUTHORIZED)
-
-
-# Ajouter des vues pour `forgot_password` et `logout` si nécessaire, sinon laissez-les comme placeholder
-@api_view(['POST'])
-def forgot_password(request):
-    # Implémenter la logique de réinitialisation de mot de passe
-    return Response({"message": "Réinitialisation de mot de passe"})
-
-
-class LogoutView(APIView):
-    permission_classes = [IsAuthenticated]  # Permet seulement aux utilisateurs authentifiés de se déconnecter
-
-    def post(self, request):
-        try:
-            # Récupère le refresh token du client (en général il est envoyé dans le cookie ou dans le body)
-            refresh_token = request.data.get('refresh_token')
-            if refresh_token:
-                # Invalider le refresh token en le blacklistant
-                token = RefreshToken(refresh_token)
-                token.blacklist()
-                
-                # Optionnellement, supprimer le refresh token du cookie (si tu l'utilises)
-                response = JsonResponse({'Status': 'Déconnexion réussie'})
-                response.delete_cookie('refresh_token')  # Supprimer le cookie contenant le refresh token
-                return response
-            else:
-                return Response({'detail': 'Aucun token fourni'}, status=400)
-        except Exception as e:
-            return Response({'detail': 'Erreur lors de la déconnexion'}, status=500)

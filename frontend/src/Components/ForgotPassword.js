@@ -1,33 +1,40 @@
 import React, { useState } from 'react';
 import axios from 'axios';
+import {  useNavigate } from "react-router-dom";
 import { FaEnvelope, FaLock, FaQuestionCircle, FaSpinner } from 'react-icons/fa';
 import 'animate.css';
 
 
 const ForgotPassword = () => {
+    const navigate = useNavigate();
     const [email, setEmail] = useState('');
     const [message, setMessage] = useState(null);
     const [error, setError] = useState(null);
     const [isLoading, setIsLoading] = useState(false); // État de chargement
 
-    const handleSubmit = (event) => {
-        event.preventDefault();
-        setIsLoading(true); // Activer le chargement
-        axios.post('http://127.0.0.1:8000/api/forgot-password/', { email })
-            .then(response => {
-                setMessage(response.data.message);
-                setError(null);
-                setTimeout(() => {
-                    window.location.href = '/login'; // Redirection après 3 secondes
-                }, 3000);
-            })
-            .catch(err => {
-                setError('Une erreur est survenue. Veuillez réessayer.');
-                setMessage(null);
-            })
-            .finally(() => {
-                setIsLoading(false); // Désactiver le chargement
-            });
+    const handleSubmit = async (e) => {
+        e.preventDefault();
+        setIsLoading(true);
+        
+        try {
+            const response = await axios.post(
+                'http://127.0.0.1:8000/api/forgot-password/',
+                { email },
+                {
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json'
+                    },
+                    withCredentials: true
+                }
+            );
+            setMessage(response.data.detail);
+            setTimeout(() => navigate('/login'), 3000);
+        } catch (err) {
+            setError(err.response?.data?.detail || "Erreur lors de l'envoi");
+        } finally {
+            setIsLoading(false);
+        }
     };
 
     return (
