@@ -53,7 +53,7 @@ const ModifierProfilComptable = () => {
     e.preventDefault();
     try {
       const token = localStorage.getItem('valid');
-      await axios.put(`http://127.0.0.1:8000/api/comptable/${id}/`, formData, {
+      await axios.put(`http://127.0.0.1:8000/comptable/${id}/`, formData, {
         headers: { Authorization: `Bearer ${token}` }
       });
       alert("Profil mis à jour avec succès");
@@ -77,7 +77,7 @@ const ModifierProfilComptable = () => {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 py-8 px-4 sm:px-6 lg:px-8">
+   
       <motion.div 
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
@@ -248,7 +248,7 @@ const ModifierProfilComptable = () => {
           </div>
         </div>
       </motion.div>
-    </div>
+    
   );
 };
 

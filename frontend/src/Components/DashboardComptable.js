@@ -2,172 +2,149 @@ import React from "react";
 import { Link, Outlet, useLocation, useNavigate } from "react-router-dom";
 import axios from "axios";
 import { 
-  FaHome, FaChartLine, FaFileInvoice, FaUserCog, FaQrcode,
+  FaHome, FaFileInvoice, FaQrcode,
   FaCheckCircle, FaSignOutAlt, FaSearch, FaBell,
-  FaCog, FaUserCircle, FaMoneyBillWave, FaBalanceScale,
-  FaHandHoldingUsd, FaRobot, FaFileAlt, FaCalculator,
-  FaBuilding, FaClipboardCheck, FaCoins, FaShieldAlt
+  FaCog, FaUserCircle, FaMoneyBillWave, 
+  FaRobot, FaFileAlt, FaCalculator,
+  FaClipboardCheck, FaCoins, FaShieldAlt,
+  FaChevronDown, FaChevronRight
 } from "react-icons/fa";
 
 const DashboardComptable = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const handleLogout = async () => {
-    try {
-      const refreshToken = localStorage.getItem('refresh_token');
-      const accessToken = localStorage.getItem('valid');
   
-      console.log('Tokens:', { refreshToken, accessToken }); // Debug
-  
-      const response = await axios.post(
-        "http://127.0.0.1:8000/api/logout/",
-        { refresh_token: refreshToken }, // Format important
-        {
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${accessToken}`
-          }
+  const handleLogout = () => {
+    axios.get(  "http://127.0.0.1:8000/api/logout/")  // L'URL doit être celle du serveur Django
+      .then(result => {
+        if (result.data.Status) {
+          localStorage.removeItem("valid");
+          navigate('/login');
         }
-      );
-  
-      console.log('Réponse:', response.data); // Debug
-      localStorage.removeItem('valid');
-      localStorage.removeItem('refresh_token');
-      navigate('/login');
-    } catch (error) {
-      console.error('Erreur détaillée:', {
-        status: error.response?.status,
-        data: error.response?.data,
-        config: error.config
-      });
-      // Force logout même en cas d'erreur
-      localStorage.clear();
-      navigate('/login');
-    }
+      })
+      .catch(err => console.error(err));
   };
+  
+
+  // Vérifie si un lien est actif
+  const isActive = (path) => location.pathname === path;
 
   return (
-    <div className="flex h-screen bg-gray-50">
-      {/* Sidebar */}
-      <div className="w-64 bg-white border-r border-gray-200 flex flex-col shadow-sm">
-                   <div className="p-4 border-b border-gray-200 flex items-center">
-                     <FaQrcode className="text-2xl mr-3 text-indigo-600" />
-                     <span className="text-2xl font-bold text-gray-800">Compta<span className="text-indigo-600">BoT</span></span>
-                   </div>
+    <div className="flex h-screen bg-gray-50 font-sans">
+      {/* Sidebar - Version améliorée */}
+      <div className="w-64 bg-gradient-to-b from-indigo-800 to-indigo-900 text-white flex flex-col shadow-xl">
+        {/* Logo */}
+        <div className="p-6 flex items-center space-x-3 border-b border-indigo-700">
+          <FaQrcode className="text-3xl text-indigo-300" />
+          <span className="text-2xl font-bold">
+            <span className="text-white">Compta</span>
+            <span className="text-indigo-300">BoT</span>
+          </span>
+        </div>
 
-        <div className="flex-1 overflow-y-auto p-4">
-          {/* Menu Principal */}
+        {/* Menu */}
+        <div className="flex-1 overflow-y-auto py-4 px-2">
           <nav className="space-y-1">
+            {/* Tableau de bord */}
             <Link 
               to="/dashboardcomptable" 
-              className={`flex items-center p-3 rounded-lg ${location.pathname === "/dashboardcomptable" ? 'bg-blue-50 text-blue-600' : 'text-gray-700 hover:bg-gray-100'}`}
+              className={`flex items-center p-3 mx-2 rounded-lg transition-all ${
+                isActive("/dashboardcomptable") 
+                  ? 'bg-white text-indigo-800 shadow-md font-semibold' 
+                  : 'text-indigo-100 hover:bg-indigo-700 hover:text-white'
+              }`}
             >
-              <FaHome className={`mr-3 ${location.pathname === "/dashboardcomptable" ? 'text-blue-500' : 'text-gray-500'}`} />
+              <FaHome className={`text-lg mr-3 ${
+                isActive("/dashboardcomptable") ? 'text-indigo-600' : 'text-indigo-300'
+              }`} />
               <span>Tableau de bord</span>
+              {isActive("/dashboardcomptable") && (
+                <FaChevronRight className="ml-auto text-indigo-600 text-xs" />
+              )}
             </Link>
-            {/* Section Profil */}
-<div className="mt-6">
-  <p className="px-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Profil</p>
-  <div className="mt-2 space-y-1">
-    <Link 
-      to="/dashboardcomptable/profilcomptable" 
-      className={`flex items-center p-3 rounded-lg ${location.pathname === "/dashboardcomptable/profil" ? 'bg-indigo-50 text-indigo-600' : 'text-gray-700 hover:bg-gray-100'}`}
-    >
-      <FaUserCircle className={`mr-3 ${location.pathname === "/dashboardcomptable/profil" ? 'text-indigo-500' : 'text-gray-500'}`} />
-      <span>Mon Profil</span>
-    </Link>
-    <Link 
-                  to="/dashboardcomptable/rapports" 
-                  className={`flex items-center p-3 rounded-lg ${location.pathname === "/dashboardcomptable/rapports" ? 'bg-blue-50 text-blue-600' : 'text-gray-700 hover:bg-gray-100'}`}
-                >
-                  <FaFileAlt className={`mr-3 ${location.pathname === "/dashboardcomptable/rapports" ? 'text-blue-500' : 'text-gray-500'}`} />
-                  <span>Rapports</span>
-                </Link>
+
+            {/* Section Comptabilité */}
+            <div className="mt-6 mx-4">
+              <p className="text-xs font-semibold text-indigo-300 uppercase tracking-wider mb-2">
+                Gestion Comptable
+              </p>
+              <div className="space-y-1">
                 <Link 
                   to="/dashboardcomptable/facture" 
-                  className={`flex items-center p-3 rounded-lg ${location.pathname === "/dashboardcomptable/facture" ? 'bg-blue-50 text-blue-600' : 'text-gray-700 hover:bg-gray-100'}`}
+                  className={`flex items-center p-3 rounded-lg transition-all ${
+                    isActive("/dashboardcomptable/facture") 
+                      ? 'bg-indigo-700 text-white shadow font-semibold' 
+                      : 'text-indigo-100 hover:bg-indigo-700 hover:text-white'
+                  }`}
                 >
-                  <FaFileInvoice className={`mr-3 ${location.pathname === "/dashboardcomptable/facture" ? 'text-blue-500' : 'text-gray-500'}`} />
+                  <FaFileInvoice className={`text-lg mr-3 ${
+                    isActive("/dashboardcomptable/facture") ? 'text-white' : 'text-indigo-300'
+                  }`} />
                   <span>Factures</span>
+                
                 </Link>
-  </div>
-</div>
-
-            {/* Section Analyse Financière */}
-            <div className="mt-6">
-              <p className="px-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Analyse Financière</p>
-              <div className="mt-2 space-y-1">
+                
                 <Link 
-                  to="/dashboardcomptable/etats-financiers" 
-                  className={`flex items-center p-3 rounded-lg ${location.pathname === "/dashboardcomptable/etats-financiers" ? 'bg-blue-50 text-blue-600' : 'text-gray-700 hover:bg-gray-100'}`}
+                  to="/dashboardcomptable/rapports" 
+                  className={`flex items-center p-3 rounded-lg transition-all ${
+                    isActive("/dashboardcomptable/rapports") 
+                      ? 'bg-indigo-700 text-white shadow font-semibold' 
+                      : 'text-indigo-100 hover:bg-indigo-700 hover:text-white'
+                  }`}
                 >
-                  <FaChartLine className={`mr-3 ${location.pathname === "/dashboardcomptable/etats-financiers" ? 'text-blue-500' : 'text-gray-500'}`} />
-                  <span>États Financiers</span>
-                </Link>
-              
-              </div>
-            </div>
-
-            {/* Section Gestion des Actifs */}
-            <div className="mt-6">
-              <p className="px-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Gestion des Actifs</p>
-              <div className="mt-2 space-y-1">
-                <Link 
-                  to="/dashboardcomptable/actes-financiers" 
-                  className={`flex items-center p-3 rounded-lg ${location.pathname === "/dashboardcomptable/actes-financiers" ? 'bg-green-50 text-green-600' : 'text-gray-700 hover:bg-gray-100'}`}
-                >
-                  <FaHandHoldingUsd className={`mr-3 ${location.pathname === "/dashboardcomptable/actes-financiers" ? 'text-green-500' : 'text-gray-500'}`} />
-                  <span>Actes Financiers</span>
-                </Link>
-                <Link 
-                  to="/dashboardcomptable/conseil" 
-                  className={`flex items-center p-3 rounded-lg ${location.pathname === "/dashboardcomptable/conseil" ? 'bg-green-50 text-green-600' : 'text-gray-700 hover:bg-gray-100'}`}
-                >
-                  <FaUserCog className={`mr-3 ${location.pathname === "/dashboardcomptable/conseil" ? 'text-green-500' : 'text-gray-500'}`} />
-                  <span>Conseil Utilisateurs</span>
+                  <FaFileAlt className={`text-lg mr-3 ${
+                    isActive("/dashboardcomptable/rapports") ? 'text-white' : 'text-indigo-300'
+                  }`} />
+                  <span>Rapports</span>
                 </Link>
               </div>
             </div>
 
-            {/* Section Automatisation */}
-            <div className="mt-6">
-              <p className="px-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Automatisation</p>
-              <div className="mt-2 space-y-1">
+            {/* Section Administration */}
+            <div className="mt-6 mx-4">
+              <p className="text-xs font-semibold text-indigo-300 uppercase tracking-wider mb-2">
+                Administration
+              </p>
+              <div className="space-y-1">
                 <Link 
-                  to="/dashboardcomptable/automatisation" 
-                  className={`flex items-center p-3 rounded-lg ${location.pathname === "/dashboardcomptable/automatisation" ? 'bg-purple-50 text-purple-600' : 'text-gray-700 hover:bg-gray-100'}`}
+                  to="/dashboardcomptable/profilcomptable" 
+                  className={`flex items-center p-3 rounded-lg transition-all ${
+                    isActive("/dashboardcomptable/profilcomptable") 
+                      ? 'bg-indigo-700 text-white shadow font-semibold' 
+                      : 'text-indigo-100 hover:bg-indigo-700 hover:text-white'
+                  }`}
                 >
-                  <FaRobot className={`mr-3 ${location.pathname === "/dashboardcomptable/automatisation" ? 'text-purple-500' : 'text-gray-500'}`} />
-                  <span>Système Comptable</span>
+                  <FaUserCircle className={`text-lg mr-3 ${
+                    isActive("/dashboardcomptable/profilcomptable") ? 'text-white' : 'text-indigo-300'
+                  }`} />
+                  <span>Mon Profil</span>
                 </Link>
               </div>
             </div>
           </nav>
         </div>
 
-        <div className="p-4 border-t border-gray-200">
+        {/* Déconnexion */}
+        <div className="p-4 border-t border-indigo-700">
           <button 
             onClick={handleLogout}
-            className="flex items-center w-full p-3 text-gray-700 hover:bg-gray-100 rounded-lg"
+            className="flex items-center w-full p-3 text-indigo-100 hover:bg-indigo-700 rounded-lg transition-colors"
           >
-            <FaSignOutAlt className="mr-3 text-gray-500" />
-            <span>Déconnexion</span>
+            <FaSignOutAlt className="mr-3 text-indigo-300" />
+            <span className="font-medium">Déconnexion</span>
           </button>
         </div>
       </div>
 
       {/* Main Content */}
       <div className="flex-1 flex flex-col overflow-hidden">
-        {/* Header */}
-        <header className="bg-white border-b border-gray-200 py-4 px-6 flex items-center justify-between">
+        {/* Header amélioré */}
+        <header className="bg-white border-b border-gray-200 py-4 px-6 flex items-center justify-between shadow-sm">
           <h1 className="text-2xl font-bold text-gray-800">
-            {location.pathname === "/dashboardcomptable" && "Tableau de Bord"}
-            {location.pathname === "/dashboardcomptable/profilcomptable" && "Profil Comptable"}
-            {location.pathname === "/dashboardcomptable/etats-financiers" && "États Financiers"}
-            {location.pathname === "/dashboardcomptable/rapports" && "Rapports Comptables"}
-            {location.pathname === "/dashboardcomptable/facture" && "Factures"}
-            {location.pathname === "/dashboardcomptable/actes-financiers" && "Actes Financiers"}
-            {location.pathname === "/dashboardcomptable/automatisation" && "Automatisation"}
+            {isActive("/dashboardcomptable") && "Tableau de Bord"}
+            {isActive("/dashboardcomptable/profilcomptable") && "Profil Comptable"}
+            {isActive("/dashboardcomptable/rapports") && "Rapports Comptables"}
+            {isActive("/dashboardcomptable/facture") && "Gestion des Factures"}
           </h1>
 
           <div className="flex items-center space-x-4">
@@ -176,18 +153,22 @@ const DashboardComptable = () => {
               <input 
                 type="text" 
                 placeholder="Rechercher..." 
-                className="pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent w-64"
               />
             </div>
-            <button className="p-2 text-gray-500 hover:text-gray-700">
+            <button className="p-2 text-gray-500 hover:text-indigo-600 relative">
               <FaBell />
+              <span className="absolute top-0 right-0 h-2 w-2 rounded-full bg-red-500"></span>
             </button>
-            <button className="p-2 text-gray-500 hover:text-gray-700">
+            <button className="p-2 text-gray-500 hover:text-indigo-600">
               <FaCog />
             </button>
             <div className="flex items-center space-x-2">
-              <FaUserCircle className="text-blue-500 text-xl" />
-              <span className="font-medium">Comptable</span>
+              <div className="h-8 w-8 rounded-full bg-indigo-100 flex items-center justify-center">
+                <FaUserCircle className="text-indigo-600 text-xl" />
+              </div>
+              <span className="font-medium text-gray-700">Comptable</span>
+              <FaChevronDown className="text-gray-500 text-xs" />
             </div>
           </div>
         </header>
@@ -197,85 +178,112 @@ const DashboardComptable = () => {
           <Outlet />
 
           {/* Default Dashboard Content */}
-          {location.pathname === "/dashboardcomptable" && (
+          {isActive("/dashboardcomptable") && (
             <div className="space-y-6">
-              {/* Stats Cards */}
+              {/* Stats Cards améliorées */}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <div className="bg-white p-6 rounded-xl shadow-sm border-l-4 border-blue-500">
+                <div className="bg-white p-6 rounded-xl shadow-sm border-t-4 border-blue-500 hover:shadow-md transition-shadow">
                   <div className="flex justify-between items-center">
                     <div>
                       <p className="text-sm font-medium text-gray-500">Solde Actuel</p>
                       <p className="text-2xl font-bold text-gray-800">24,500 €</p>
+                      <p className="text-xs text-green-500 mt-1">+2.5% vs mois dernier</p>
                     </div>
-                    <FaMoneyBillWave className="text-blue-500 text-3xl" />
+                    <div className="p-3 bg-blue-50 rounded-full">
+                      <FaMoneyBillWave className="text-blue-500 text-xl" />
+                    </div>
                   </div>
                 </div>
 
-                <div className="bg-white p-6 rounded-xl shadow-sm border-l-4 border-green-500">
+                <div className="bg-white p-6 rounded-xl shadow-sm border-t-4 border-green-500 hover:shadow-md transition-shadow">
                   <div className="flex justify-between items-center">
                     <div>
                       <p className="text-sm font-medium text-gray-500">Transactions</p>
                       <p className="text-2xl font-bold text-gray-800">156</p>
+                      <p className="text-xs text-blue-500 mt-1">12 nouvelles aujourd'hui</p>
                     </div>
-                    <FaCoins className="text-green-500 text-3xl" />
+                    <div className="p-3 bg-green-50 rounded-full">
+                      <FaCoins className="text-green-500 text-xl" />
+                    </div>
                   </div>
                 </div>
 
-                <div className="bg-white p-6 rounded-xl shadow-sm border-l-4 border-purple-500">
+                <div className="bg-white p-6 rounded-xl shadow-sm border-t-4 border-purple-500 hover:shadow-md transition-shadow">
                   <div className="flex justify-between items-center">
                     <div>
                       <p className="text-sm font-medium text-gray-500">Tâches Automatisées</p>
                       <p className="text-2xl font-bold text-gray-800">28</p>
+                      <p className="text-xs text-purple-500 mt-1">Économie de 42h/mois</p>
                     </div>
-                    <FaRobot className="text-purple-500 text-3xl" />
+                    <div className="p-3 bg-purple-50 rounded-full">
+                      <FaRobot className="text-purple-500 text-xl" />
+                    </div>
                   </div>
                 </div>
               </div>
 
-              {/* Quick Actions */}
+              {/* Quick Actions améliorées */}
               <div className="bg-white p-6 rounded-xl shadow-sm">
-                <h2 className="text-lg font-semibold text-gray-800 mb-4">Actions Rapides</h2>
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                  <button className="flex flex-col items-center justify-center p-4 border border-blue-100 rounded-lg hover:bg-blue-50 transition-colors">
-                    <FaFileInvoice className="text-blue-500 text-2xl mb-2" />
-                    <span className="text-sm font-medium">Créer Facture</span>
+                <h2 className="text-lg font-semibold text-gray-800 mb-4 flex items-center">
+                  <span>Actions Rapides</span>
+                  <span className="ml-auto text-sm text-indigo-600 font-normal">Fonctions fréquentes</span>
+                </h2>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                  <button className="flex flex-col items-center p-4 border border-gray-100 rounded-lg hover:border-indigo-300 hover:bg-indigo-50 transition-colors group">
+                    <div className="p-3 bg-blue-100 rounded-full mb-2 group-hover:bg-blue-200 transition-colors">
+                      <FaFileInvoice className="text-blue-600 text-xl" />
+                    </div>
+                    <span className="text-sm font-medium text-gray-700">Créer Facture</span>
                   </button>
-                  <button className="flex flex-col items-center justify-center p-4 border border-green-100 rounded-lg hover:bg-green-50 transition-colors">
-                    <FaCalculator className="text-green-500 text-2xl mb-2" />
-                    <span className="text-sm font-medium">Nouveau Rapport</span>
+                  <button className="flex flex-col items-center p-4 border border-gray-100 rounded-lg hover:border-green-300 hover:bg-green-50 transition-colors group">
+                    <div className="p-3 bg-green-100 rounded-full mb-2 group-hover:bg-green-200 transition-colors">
+                      <FaCalculator className="text-green-600 text-xl" />
+                    </div>
+                    <span className="text-sm font-medium text-gray-700">Nouveau Rapport</span>
                   </button>
-                  <button className="flex flex-col items-center justify-center p-4 border border-yellow-100 rounded-lg hover:bg-yellow-50 transition-colors">
-                    <FaClipboardCheck className="text-yellow-500 text-2xl mb-2" />
-                    <span className="text-sm font-medium">Valider Écritures</span>
+                  <button className="flex flex-col items-center p-4 border border-gray-100 rounded-lg hover:border-yellow-300 hover:bg-yellow-50 transition-colors group">
+                    <div className="p-3 bg-yellow-100 rounded-full mb-2 group-hover:bg-yellow-200 transition-colors">
+                      <FaClipboardCheck className="text-yellow-600 text-xl" />
+                    </div>
+                    <span className="text-sm font-medium text-gray-700">Valider Écritures</span>
                   </button>
-                  <button className="flex flex-col items-center justify-center p-4 border border-purple-100 rounded-lg hover:bg-purple-50 transition-colors">
-                    <FaShieldAlt className="text-purple-500 text-2xl mb-2" />
-                    <span className="text-sm font-medium">Audit Comptable</span>
+                  <button className="flex flex-col items-center p-4 border border-gray-100 rounded-lg hover:border-purple-300 hover:bg-purple-50 transition-colors group">
+                    <div className="p-3 bg-purple-100 rounded-full mb-2 group-hover:bg-purple-200 transition-colors">
+                      <FaShieldAlt className="text-purple-600 text-xl" />
+                    </div>
+                    <span className="text-sm font-medium text-gray-700">Audit Comptable</span>
                   </button>
                 </div>
               </div>
 
-              {/* Recent Activities */}
+              {/* Recent Activities améliorées */}
               <div className="bg-white p-6 rounded-xl shadow-sm">
                 <h2 className="text-lg font-semibold text-gray-800 mb-4">Activités Récentes</h2>
-                <div className="space-y-4">
+                <div className="space-y-3">
                   {[1, 2, 3].map((item) => (
-                    <div key={item} className="flex items-center p-3 border-b border-gray-100 last:border-0">
-                      <div className={`p-2 rounded-full ${item % 2 === 0 ? 'bg-green-100 text-green-600' : 'bg-blue-100 text-blue-600'}`}>
+                    <div key={item} className="flex items-center p-3 border border-gray-100 rounded-lg hover:bg-gray-50 transition-colors">
+                      <div className={`p-3 rounded-full mr-4 ${
+                        item % 2 === 0 ? 'bg-green-100 text-green-600' : 'bg-blue-100 text-blue-600'
+                      }`}>
                         {item % 2 === 0 ? <FaCheckCircle /> : <FaFileInvoice />}
                       </div>
-                      <div className="ml-4 flex-1">
-                        <p className="text-sm font-medium">
+                      <div className="flex-1">
+                        <p className="text-sm font-medium text-gray-800">
                           {item % 2 === 0 ? 'Validation comptable' : 'Nouvelle facture'} #{item}
                         </p>
                         <p className="text-xs text-gray-500">Il y a {item} heure{item > 1 ? 's' : ''}</p>
                       </div>
-                      <div className={`text-sm font-medium ${item % 2 === 0 ? 'text-green-600' : 'text-blue-600'}`}>
+                      <div className={`text-sm font-medium ${
+                        item % 2 === 0 ? 'text-green-600' : 'text-blue-600'
+                      }`}>
                         {item % 2 === 0 ? 'Validé' : 'En attente'}
                       </div>
                     </div>
                   ))}
                 </div>
+                <button className="mt-4 text-sm text-indigo-600 hover:text-indigo-800 font-medium flex items-center">
+                  Voir toutes les activités <FaChevronRight className="ml-1 text-xs" />
+                </button>
               </div>
             </div>
           )}

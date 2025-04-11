@@ -1,104 +1,141 @@
 import React, { useState } from 'react';
 import axios from 'axios';
-import {  useNavigate } from "react-router-dom";
-import { FaEnvelope, FaLock, FaQuestionCircle, FaSpinner } from 'react-icons/fa';
-import 'animate.css';
-
+import validator from 'validator'; 
+import { useNavigate } from "react-router-dom";
+import { FaEnvelope, FaLock, FaSpinner } from 'react-icons/fa';
 
 const ForgotPassword = () => {
     const navigate = useNavigate();
     const [email, setEmail] = useState('');
-    const [message, setMessage] = useState(null);
-    const [error, setError] = useState(null);
-    const [isLoading, setIsLoading] = useState(false); // État de chargement
+    const [message, setMessage] = useState('');
+    const [error, setError] = useState('');
+    const [role, setRole] = useState(''); // Add role state
+    const [isLoading, setIsLoading] = useState(false);
 
     const handleSubmit = async (e) => {
         e.preventDefault();
-        setIsLoading(true);
+     
         
+    if (!validator.isEmail(email)) { // Use validator for email validation
+        setError('Email invalide');
+        return;
+      }
+    if (!role) { // Validate role
+        setError('Role est requis');
+        return;
+    }
+
+        setIsLoading(true);
         try {
             const response = await axios.post(
                 'http://127.0.0.1:8000/api/forgot-password/',
-                { email },
-                {
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Accept': 'application/json'
-                    },
-                    withCredentials: true
-                }
+                { email , role },
+                { headers:
+                     {
+                         'Content-Type': 'application/json'}}
+                         
             );
-            setMessage(response.data.detail);
+            setMessage(response.data.detail || 'Lien envoyé avec succès');
             setTimeout(() => navigate('/login'), 3000);
         } catch (err) {
-            setError(err.response?.data?.detail || "Erreur lors de l'envoi");
+            setError(err.response?.data?.detail || 'Erreur serveur');
         } finally {
             setIsLoading(false);
         }
     };
 
     return (
-        <div className='container d-flex justify-content-center align-items-center vh-100'>
-            <div className='row col-lg-8 col-md-10 shadow-lg rounded p-4 animate__animated animate__fadeIn' style={{ backgroundColor: '#ffffff' }}>
-                <div className='col-md-6 d-flex align-items-center justify-content-center'>
-                    <div className='p-3' style={{ width: '100%' }}>
-                        <h3 className='text-start mb-4' style={{ color: '#011BAD', fontFamily: "'Montserrat', sans-serif" }}>
-                            <FaQuestionCircle className="me-2" /> Mot de passe oublié
-                        </h3>
-                        {message && <div className='alert alert-success text-center' role='alert'>{message}</div>}
-                        {error && <div className='alert alert-danger text-center' role='alert'>{error}</div>}
-                        <form onSubmit={handleSubmit} className='text-start'>
-                            <div className='mb-4'>
-                                <label htmlFor='email' className='form-label text-muted'>Adresse e-mail</label>
-                                <div className='input-group'>
-                                    <span className='input-group-text bg-light border-end-0'><FaEnvelope className="text-muted" /></span>
-                                    <input 
-                                        type='email' 
-                                        name='email' 
-                                        placeholder='Entrez votre adresse e-mail' 
-                                        onChange={(e) => setEmail(e.target.value)}
-                                        className='form-control border-start-0' 
-                                        required 
-                                    />
-                                </div>
-                            </div>
-                            <div className='d-flex justify-content-center mb-4'>
-                                <button 
-                                    type='submit' 
-                                    className='btn text-white d-flex align-items-center justify-content-center' 
-                                    style={{ 
-                                        backgroundColor: '#011BAD', 
-                                        padding: '12px 24px', 
-                                        borderRadius: '8px',
-                                        transition: 'background-color 0.3s ease'
-                                    }}
-                                    disabled={isLoading} // Désactiver le bouton pendant le chargement
-                                >
-                                    {isLoading ? (
-                                        <FaSpinner className="me-2 animate-spin" /> // Spinner de chargement
-                                    ) : (
-                                        <>
-                                            <FaLock className='me-2' /> Réinitialiser
-                                        </>
-                                    )}
-                                </button>
-                            </div>
-                        </form>
-                        <div className='text-start mt-3'>
-                            <p className='text-muted' style={{ fontFamily: "'Roboto', sans-serif" }}>
-                                Vous souvenez-vous de votre mot de passe ? <br />
-                                <a href='/login' className='text-primary text-decoration-none fw-bold'>Se connecter</a>
-                            </p>
+        <div className="min-h-screen bg-gray-50 flex flex-col justify-center py-12 sm:px-6 lg:px-8">
+            <div className="sm:mx-auto sm:w-full sm:max-w-md">
+                <h2 className="mt-6 text-center text-3xl font-extrabold text-indigo-600">
+                    Mot de passe oublié ?
+                </h2>
+            </div>
+
+            <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
+                <div className="bg-white py-8 px-4 shadow sm:rounded-lg sm:px-10">
+                    {message && (
+                        <div className="mb-4 p-3 bg-green-100 text-green-700 rounded-md">
+                            {message}
                         </div>
+                    )}
+                    {error && (
+                        <div className="mb-4 p-3 bg-red-100 text-red-700 rounded-md">
+                            {error}
+                        </div>
+                    )}
+
+                    <form className="space-y-6" onSubmit={handleSubmit}>
+                        <div>
+                            <label htmlFor="email" className="block text-sm font-medium text-gray-700">
+                                Email
+                            </label>
+                            <div className="mt-1 relative rounded-md shadow-sm">
+                                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                    <FaEnvelope className="h-5 w-5 text-gray-400" />
+                                </div>
+                                <input
+                                    id="email"
+                                    name="email"
+                                    type="email"
+                                    autoComplete="email"
+                                    required
+                                    value={email}
+                                    onChange={(e) => setEmail(e.target.value)}
+                                    className="py-2 pl-10 block w-full border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500"
+                                    placeholder="votre@email.com"
+                                />
+                            </div>
+                        </div>
+                        <div>
+                <label htmlFor="role" className="block text-sm font-medium text-gray-700">
+                    Role
+                </label>
+                <select
+                    id="role"
+                    name="role"
+                    required
+                    value={role}
+                    onChange={(e) => setRole(e.target.value)}
+                    className="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
+                >
+                    <option value="">Sélectionner un rôle</option>
+                    <option value="admin">ADMIN</option>
+                    <option value="directeur">DIRECTEUR</option>
+                    <option value="comptable">COMPTABLE</option>
+                    {/* Add other roles */}
+                </select>
+            </div>
+
+                        <div>
+                            <button
+                                type="submit"
+                                disabled={isLoading}
+                                className={`w-full flex justify-center items-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 ${isLoading ? 'opacity-75 cursor-not-allowed' : ''}`}
+                            >
+                                {isLoading ? (
+                                    <>
+                                        <FaSpinner className="animate-spin mr-2 h-4 w-4" />
+                                        Envoi en cours...
+                                    </>
+                                ) : (
+                                    <>
+                                        <FaLock className="mr-2 h-4 w-4" />
+                                        Envoyer le lien
+                                    </>
+                                )}
+                            </button>
+                        </div>
+                    </form>
+
+                    <div className="mt-6 text-center">
+                        <a 
+                            href="/login" 
+                            className="text-sm font-medium text-indigo-600 hover:text-indigo-500"
+                        >
+                            ← Retour à la connexion
+                        </a>
                     </div>
-                </div>
-                <div className='col-md-6 d-none d-md-block'>
-                    <img 
-                        src='images/f.png' 
-                        alt='Forgot Password' 
-                        className='img-fluid rounded-end' 
-                        style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                    />
                 </div>
             </div>
         </div>

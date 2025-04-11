@@ -8,9 +8,11 @@ import {
   FaEnvelope, 
   FaPhoneAlt, 
   FaGraduationCap,
-  FaUserEdit
+  FaUserEdit,
+  FaChartLine,
+  FaBriefcase
 } from "react-icons/fa";
-import { motion } from "framer-motion"; // Importez motion depuis framer-motion
+import { motion } from "framer-motion";
 
 const ModifierProfilDirecteur = () => {
   const [formData, setFormData] = useState({
@@ -18,7 +20,9 @@ const ModifierProfilDirecteur = () => {
     prenom: "",
     email: "",
     telephone: "",
-    specialite: "Comptabilité générale"
+    specialite: "Finance d'entreprise",
+    departement: "Direction Financière",
+    annees_experience: ""
   });
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
@@ -28,7 +32,7 @@ const ModifierProfilDirecteur = () => {
     const chargerProfil = async () => {
       try {
         const token = localStorage.getItem('valid');
-        const response = await axios.get(`http://127.0.0.1:8000/api/directeur/${id}/`, {
+        const response = await axios.get(`http://127.0.0.1:8000/api/directeurs/${id}/`, {
           headers: { Authorization: `Bearer ${token}` }
         });
         setFormData(response.data);
@@ -53,7 +57,7 @@ const ModifierProfilDirecteur = () => {
     e.preventDefault();
     try {
       const token = localStorage.getItem('valid');
-      await axios.put(`http://127.0.0.1:8000/api/directeur/${id}/`, formData, {
+      await axios.put(`http://127.0.0.1:8000/api/directeurs/${id}/`, formData, {
         headers: { Authorization: `Bearer ${token}` }
       });
       alert("Profil mis à jour avec succès");
@@ -77,14 +81,14 @@ const ModifierProfilDirecteur = () => {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 py-8 px-4 sm:px-6 lg:px-8">
+    <div >
       <motion.div 
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5 }}
-        className="max-w-6xl mx-auto"
+        className="max-w-5xl mx-auto"
       >
-        <div className="bg-white rounded-xl shadow-xl overflow-hidden">
+        <div className="bg-white rounded-2xl shadow-xl overflow-hidden">
           <div className="md:flex">
             {/* Colonne de gauche - Formulaire */}
             <div className="md:w-2/3 p-8">
@@ -92,7 +96,7 @@ const ModifierProfilDirecteur = () => {
                 <div className="bg-indigo-100 p-3 rounded-full mr-4">
                   <FaUserEdit className="text-indigo-600 text-2xl" />
                 </div>
-                <h1 className="text-3xl font-bold text-gray-800">Modifier le Profil</h1>
+                <h1 className="text-3xl font-bold text-gray-800 text-center">Modifier Profil</h1>
               </div>
 
               <form id="profilForm" onSubmit={handleSubmit} className="space-y-6">
@@ -109,7 +113,7 @@ const ModifierProfilDirecteur = () => {
                   >
                     <label className="flex items-center text-sm font-medium text-gray-700">
                       <FaUser className="mr-2 text-indigo-500" />
-                      Nom
+                      Nom d'utilisateur
                     </label>
                     <input
                       type="text"
@@ -122,26 +126,6 @@ const ModifierProfilDirecteur = () => {
                     />
                   </motion.div>
 
-                  {/* Prénom */}
-                  <motion.div 
-                    whileHover={{ scale: 1.02 }}
-                    className="space-y-2"
-                  >
-                    <label className="flex items-center text-sm font-medium text-gray-700">
-                      <FaUser className="mr-2 text-indigo-500" />
-                      Prénom
-                    </label>
-                    <input
-                      type="text"
-                      name="prenom"
-                      value={formData.prenom}
-                      onChange={handleChange}
-                      className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition duration-200"
-                      placeholder="Entrez votre prénom"
-                      required
-                    />
-                  </motion.div>
-
                   {/* Email */}
                   <motion.div 
                     whileHover={{ scale: 1.02 }}
@@ -149,7 +133,7 @@ const ModifierProfilDirecteur = () => {
                   >
                     <label className="flex items-center text-sm font-medium text-gray-700">
                       <FaEnvelope className="mr-2 text-blue-500" />
-                      Email
+                      Email professionnel
                     </label>
                     <input
                       type="email"
@@ -157,7 +141,7 @@ const ModifierProfilDirecteur = () => {
                       value={formData.email}
                       onChange={handleChange}
                       className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition duration-200"
-                      placeholder="exemple@domaine.com"
+                      placeholder="directeur.financier@entreprise.com"
                       required
                     />
                   </motion.div>
@@ -169,7 +153,7 @@ const ModifierProfilDirecteur = () => {
                   >
                     <label className="flex items-center text-sm font-medium text-gray-700">
                       <FaPhoneAlt className="mr-2 text-green-500" />
-                      Téléphone
+                      Téléphone professionnel
                     </label>
                     <input
                       type="tel"
@@ -181,14 +165,53 @@ const ModifierProfilDirecteur = () => {
                     />
                   </motion.div>
 
-                  {/* Spécialité */}
+                  {/* Département */}
                   <motion.div 
                     whileHover={{ scale: 1.02 }}
                     className="space-y-2"
                   >
                     <label className="flex items-center text-sm font-medium text-gray-700">
+                      <FaBriefcase className="mr-2 text-purple-500" />
+                      Département
+                    </label>
+                    <input
+                      type="text"
+                      name="departement"
+                      value={formData.departement}
+                      onChange={handleChange}
+                      className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition duration-200"
+                      disabled
+                    />
+                  </motion.div>
+
+                  {/* Années d'expérience */}
+                  <motion.div 
+                    whileHover={{ scale: 1.02 }}
+                    className="space-y-2"
+                  >
+                    <label className="flex items-center text-sm font-medium text-gray-700">
+                      <FaChartLine className="mr-2 text-orange-500" />
+                      Années d'expérience
+                    </label>
+                    <input
+                      type="number"
+                      name="annees_experience"
+                      value={formData.annees_experience}
+                      onChange={handleChange}
+                      className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500 transition duration-200"
+                      placeholder="Nombre d'années"
+                      min="0"
+                    />
+                  </motion.div>
+
+                  {/* Spécialité */}
+                  <motion.div 
+                    whileHover={{ scale: 1.02 }}
+                    className="md:col-span-2 space-y-2"
+                  >
+                    <label className="flex items-center text-sm font-medium text-gray-700">
                       <FaGraduationCap className="mr-2 text-purple-500" />
-                      Spécialité
+                      Expertise principale
                     </label>
                     <select
                       name="specialite"
@@ -196,10 +219,12 @@ const ModifierProfilDirecteur = () => {
                       onChange={handleChange}
                       className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition duration-200 appearance-none bg-white"
                     >
-                      <option value="Comptabilité générale">Comptabilité générale</option>
-                      <option value="Comptabilité analytique">Comptabilité analytique</option>
-                      <option value="Gestion fiscale">Gestion fiscale</option>
-                      <option value="Audit comptable">Audit comptable</option>
+                      <option value="Finance d'entreprise">Finance d'entreprise</option>
+                      <option value="Stratégie financière">Stratégie financière</option>
+                      <option value="Gestion des risques">Gestion des risques</option>
+                      <option value="Fusions et acquisitions">Fusions et acquisitions</option>
+                      <option value="Investissements">Investissements</option>
+                      <option value="Contrôle de gestion">Contrôle de gestion</option>
                     </select>
                   </motion.div>
                 </motion.div>
@@ -228,8 +253,8 @@ const ModifierProfilDirecteur = () => {
             {/* Colonne de droite - Image */}
             <div className="md:w-1/3 bg-indigo-600 p-8 flex flex-col items-center justify-center">
               <motion.img 
-                src="/images/profil.jpg" 
-                alt="Modification profil comptable"
+                src="/images/dir.jpg" 
+                alt="Modification profil directeur financier"
                 initial={{ scale: 0.9 }}
                 animate={{ scale: 1 }}
                 transition={{ duration: 0.5 }}
@@ -241,8 +266,10 @@ const ModifierProfilDirecteur = () => {
                 transition={{ delay: 0.3 }}
                 className="text-center"
               >
-                <h3 className="text-xl font-semibold text-white mb-2">Mettez à jour vos informations</h3>
-                <p className="text-indigo-100">Assurez-vous que toutes vos informations sont à jour pour une meilleure expérience.</p>
+                <h3 className="text-xl font-semibold text-white mb-2">Profil Directeur Financier</h3>
+                <p className="text-indigo-100">
+                  Maintenez vos informations à jour pour une gestion financière optimale de l'entreprise.
+                </p>
               </motion.div>
             </div>
           </div>

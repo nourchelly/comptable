@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import axios from 'axios';
 import { Link, useNavigate } from 'react-router-dom';
 import { FaEye, FaEyeSlash } from 'react-icons/fa';
+import { ClipLoader } from 'react-spinners';
 
 const Signup = () => {
     const [values, setValues] = useState({
@@ -9,7 +10,7 @@ const Signup = () => {
         email: '',
         password: '',
         confirmPassword: '',
-        role: ''
+        role: 'comptable'
     });
 
     const [error, setError] = useState('');
@@ -17,14 +18,18 @@ const Signup = () => {
     const [passwordStrength, setPasswordStrength] = useState('');
     const [showPassword, setShowPassword] = useState(false);
     const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+    const [loading, setLoading] = useState(false);
     
     const navigate = useNavigate();
+
+    // Fonction pour récupérer le token CSRF depuis les cookies
+ 
 
     const handleChange = (e) => {
         const { name, value } = e.target;
         setValues(prevState => ({
             ...prevState,
-            [name]: value
+            [name]: value 
         }));
 
         if (name === "password") {
@@ -52,44 +57,60 @@ const Signup = () => {
 
     const handleSubmit = async (event) => {
         event.preventDefault();
+        
+        setLoading(true);
+        setError('');
+
+        // Validation côté client
         if (values.password !== values.confirmPassword) {
             setError("Les mots de passe ne correspondent pas !");
+            setLoading(false);
             return;
         }
         if (!passwordValid) {
-            setError("Le mot de passe ne respecte pas les critères requis !");
+            setError("Le mot de passe doit contenir 8 caractères minimum, une majuscule, un chiffre et un caractère spécial");
+            setLoading(false);
             return;
         }
     
         const userData = {
-            username: values.username,  // Vérifie si ton backend attend 'username' au lieu de 'name'
+            username: values.username,
             email: values.email,
             password: values.password,
-            confirm_password: values.confirmPassword,
-            role: values.role  || 'comptable'
+            confirmPassword: values.confirmPassword,
+            role: values.role,
         };
-    
-        console.log("Données envoyées au serveur :", userData); // Ajoute cette ligne pour voir les données dans la console
-    
+        axios.defaults.withCredentials = true;
+
         try {
             const response = await axios.post('http://127.0.0.1:8000/api/signup/', userData, {
-                headers: { "Content-Type": "application/json" }
+                headers: { 
+                    'Content-Type': 'application/json',
+                },
+                withCredentials: true,
             });
-    
-            console.log("Réponse du serveur :", response.data);
-    
-            if (response.data.loginStatus) {
+        
+            if (response.status === 200 || response.status === 201) {
                 alert("Votre compte a été créé avec succès !");
                 navigate('/login');
             } else {
-                setError(response.data.Error);
+                setError(response.data?.error || "Une erreur s'est produite.");
             }
         } catch (error) {
-            console.error("Erreur lors de la création du compte :", error.response?.data || error.message);
-            setError(error.response?.data?.message || "Une erreur s'est produite lors de la création du compte.");
+            console.error("Erreur d'inscription:", error);
+            
+            if (error.response) {
+                // Erreur spécifique côté backend
+                setError(error.response.data?.error || "Erreur inconnue");
+            } else {
+                setError("Problème de connexion au serveur");
+            }
+        }
+        
+         finally {
+            setLoading(false);
         }
     };
-    
 
     const togglePasswordVisibility = () => {
         setShowPassword(!showPassword);
@@ -107,6 +128,7 @@ const Signup = () => {
                         <h3 className="text-center" style={{ color: '#1D3557' }}>Créer un compte individuel !</h3>
                         {error && <div className="alert alert-danger text-center" role="alert">{error}</div>}
                         <form onSubmit={handleSubmit} className="text-center">
+                            {/* Champ Nom d'utilisateur */}
                             <div className="mb-3 text-start">
                                 <label htmlFor="username" className="form-label text-muted">Nom d'utilisateur*</label>
                                 <input
@@ -120,6 +142,7 @@ const Signup = () => {
                                     required
                                 />
                             </div>
+                            {/* Champ Email */}
                             <div className="mb-3 text-start">
                                 <label htmlFor="email" className="form-label text-muted">Email*</label>
                                 <input
@@ -133,6 +156,7 @@ const Signup = () => {
                                     required
                                 />
                             </div>
+                            {/* Champ Role */}
                             <div className="mb-3 text-start">
                                 <label htmlFor="role" className="form-label text-muted">Profession*</label>
                                 <select
@@ -142,11 +166,12 @@ const Signup = () => {
                                     className="form-control"
                                     required
                                 >
-                                    <option value="">Sélectionnez votre profession</option>
-                                    <option value="Comptable">Comptable</option>
-                                    <option value="Directeur financier">Directeur financier</option>
+                                    <option value="comptable" disabled hidden>Sélectionnez votre profession</option>
+                                    <option value="comptable">Comptable</option>
+                                    <option value="directeur">Directeur financier</option>
                                 </select>
                             </div>
+                            {/* Champ Mot de passe */}
                             <div className="mb-3 text-start">
                                 <label htmlFor="password" className="form-label text-muted">Mot de passe*</label>
                                 <div className="input-group">
@@ -170,6 +195,7 @@ const Signup = () => {
                                     Le mot de passe doit contenir au moins 8 caractères, un chiffre et un caractère spécial.
                                 </small>
                             </div>
+                            {/* Champ Confirmer le mot de passe */}
                             <div className="mb-3 text-start">
                                 <label htmlFor="confirmPassword" className="form-label text-muted">Confirmez le mot de passe*</label>
                                 <div className="input-group">
@@ -187,8 +213,9 @@ const Signup = () => {
                                     </span>
                                 </div>
                             </div>
-                            <button type="submit" className="btn text-white" style={{ backgroundColor: '#1D3557', padding: '10px',width: '200px' }}>
-                                S'inscrire
+                            {/* Bouton d'envoi */}
+                            <button type="submit" className="btn text-white" style={{ backgroundColor: '#1D3557', padding: '10px', width: '200px' }} disabled={loading}>
+                                {loading ? <ClipLoader size={20} color="#ffffff" /> : 'S\'inscrire'}
                             </button>
                         </form>
                         <div className="text-center mt-3">
@@ -196,11 +223,8 @@ const Signup = () => {
                                 <Link to="/login" className="text-primary text-decoration-none"> Connectez-vous ici</Link>
                             </p>
                         </div>
-                        
                     </div>
-                    
                 </div>
-                {/* Right Image Section */}
                 <div className="col-md-5 d-none d-md-flex align-items-center justify-content-center">
                     <img
                         src="images/106375912_10075609.jpg"

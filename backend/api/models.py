@@ -1,9 +1,12 @@
-from mongoengine import Document, fields
+from mongoengine import Document, fields ,StringField, DateTimeField
 from django.contrib.auth.hashers import make_password, check_password
 from django.utils import timezone
 import secrets
-
-import bcrypt  # Remplace les fonctions Django make_password/check_password
+import uuid
+import pytz
+from datetime import datetime, timedelta
+from django.db import models
+  # Remplace les fonctions Django make_password/check_password
 
 class CustomUser(Document):
     username = fields.StringField(max_length=150, unique=True)
@@ -17,9 +20,8 @@ class CustomUser(Document):
     ]
     role = fields.StringField(max_length=20, choices=ROLE_CHOICES, default="comptable")
     
-    reset_token = fields.StringField(max_length=100, null=True)
-    reset_token_expires = fields.DateTimeField(null=True)
-    
+    reset_token = StringField(max_length=36, null=True)  # Ajuster max_length à 32
+    reset_token_expires = DateTimeField(null=True)
     is_active = fields.BooleanField(default=True)
     is_staff = fields.BooleanField(default=False)
     is_superuser = fields.BooleanField(default=False)
@@ -27,19 +29,20 @@ class CustomUser(Document):
     date_joined = fields.DateTimeField(default=timezone.now)
 
     def set_password(self, raw_password):
-        # Utilisation de bcrypt pour le hachage
-        self.password = bcrypt.hashpw(raw_password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
-        self.save()
-
+         self.password = make_password(raw_password)
+    
     def check_password(self, raw_password):
-    # Version temporaire pour développement
+        return check_password(raw_password, self.password)
 
-      return self.password == raw_password
     def generate_reset_token(self):
-        self.reset_token = secrets.token_urlsafe(48)
-        self.reset_token_expires = timezone.now() + timezone.timedelta(hours=1)
+        self.reset_token = str(uuid.uuid4())
+        self.reset_token_expires = datetime.now(timezone.utc) + timedelta(hours=24) #Ajouter le timezone
         self.save()
-        return self.reset_token
+
+    def clear_reset_token(self):
+        self.reset_token = None
+        self.reset_token_expires = None
+        self.save()
 
     @classmethod
     def create_user(cls, username, email, role, password=None, **extra_fields):
@@ -52,6 +55,7 @@ class CustomUser(Document):
         user.set_password(password)
         user.save()
         return user
+# Dans models.py - Modifiez la méthode save()
 
     @classmethod
     def create_superuser(cls, username, email, password=None, **extra_fields):

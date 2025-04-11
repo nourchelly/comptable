@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { FaSave, FaTimes, FaFileAlt } from 'react-icons/fa';
+import { FaSave, FaTimes, FaFileAlt, FaSpinner } from 'react-icons/fa';
 import axios from 'axios';
 
 const NouveauRapport = () => {
@@ -12,6 +12,7 @@ const NouveauRapport = () => {
     statut: 'En attente',
     contenu: ''
   });
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleChange = (e) => {
     setFormData({
@@ -22,6 +23,7 @@ const NouveauRapport = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    setIsSubmitting(true);
     try {
       const token = localStorage.getItem('valid');
       await axios.post('http://127.0.0.1:8000/api/rapports', formData, {
@@ -30,100 +32,132 @@ const NouveauRapport = () => {
       navigate('/dashboardcomptable/rapports');
     } catch (error) {
       console.error("Erreur création rapport:", error);
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
   return (
-    <div className="max-w-4xl mx-auto p-6 bg-white rounded-lg shadow-md">
-      <div className="flex justify-between items-center mb-6">
-        <h2 className="text-2xl font-bold text-blue-600 flex items-center">
-          <FaFileAlt className="mr-2" /> Nouveau Rapport
-        </h2>
-        <button 
-          onClick={() => navigate('/dashboardcomptable/rapports')}
-          className="flex items-center px-4 py-2 bg-gray-200 text-gray-800 rounded hover:bg-gray-300"
-        >
-          <FaTimes className="mr-2" /> Annuler
-        </button>
+    <div className="min-h-screen bg-gray-50 py-8 px-4 sm:px-6 lg:px-8">
+      <div className="max-w-5xl mx-auto">
+        <div className="bg-white shadow-xl rounded-lg overflow-hidden">
+          {/* En-tête avec bouton Annuler amélioré */}
+          <div className="bg-gradient-to-r from-indigo-600 to-indigo-800 px-6 py-5 sm:px-8 flex justify-between items-center">
+            <div className="flex items-center">
+              <FaFileAlt className="text-white text-2xl mr-3" />
+              <h2 className="text-2xl font-bold text-white">Nouveau Rapport Comptable</h2>
+            </div>
+           
+          </div>
+
+          {/* Contenu du formulaire */}
+          <div className="px-6 py-8 sm:px-8">
+            <form onSubmit={handleSubmit} className="space-y-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {/* Nom du rapport */}
+                <div className="space-y-1">
+                  <label className="block text-sm font-medium text-gray-700">Nom du rapport</label>
+                  <input
+                    type="text"
+                    name="nom"
+                    value={formData.nom}
+                    onChange={handleChange}
+                    className="mt-1 block w-full px-4 py-3 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+                    required
+                    placeholder="Nom du rapport"
+                  />
+                </div>
+
+                {/* Type de rapport */}
+                <div className="space-y-1">
+                  <label className="block text-sm font-medium text-gray-700">Type de rapport</label>
+                  <select
+                    name="type"
+                    value={formData.type}
+                    onChange={handleChange}
+                    className="mt-1 block w-full pl-4 pr-10 py-3 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm appearance-none bg-white"
+                  >
+                    <option value="Financier">Financier</option>
+                    <option value="Bilan">Bilan</option>
+                    <option value="Trésorerie">Trésorerie</option>
+                    <option value="Fiscal">Fiscal</option>
+                  </select>
+                </div>
+
+                {/* Date */}
+                <div className="space-y-1">
+                  <label className="block text-sm font-medium text-gray-700">Date</label>
+                  <input
+                    type="date"
+                    name="date"
+                    value={formData.date}
+                    onChange={handleChange}
+                    className="mt-1 block w-full px-4 py-3 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+                    required
+                  />
+                </div>
+
+                {/* Statut */}
+                <div className="space-y-1">
+                  <label className="block text-sm font-medium text-gray-700">Statut</label>
+                  <select
+                    name="statut"
+                    value={formData.statut}
+                    onChange={handleChange}
+                    className="mt-1 block w-full pl-4 pr-10 py-3 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm appearance-none bg-white"
+                  >
+                    <option value="En attente">En attente</option>
+                    <option value="Validé">Validé</option>
+                    <option value="Brouillon">Brouillon</option>
+                  </select>
+                </div>
+
+                {/* Contenu */}
+                <div className="md:col-span-2 space-y-1">
+                  <label className="block text-sm font-medium text-gray-700">Contenu</label>
+                  <textarea
+                    name="contenu"
+                    value={formData.contenu}
+                    onChange={handleChange}
+                    rows="8"
+                    className="mt-1 block w-full px-4 py-3 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+                    placeholder="Saisissez le contenu détaillé du rapport..."
+                  ></textarea>
+                </div>
+              </div>
+
+              {/* Boutons d'action */}
+              <div className="pt-6 border-t border-gray-200">
+                <div className="flex justify-end space-x-3">
+                  <button
+                    type="button"
+                    onClick={() => navigate('/dashboardcomptable/rapports')}
+                    className="inline-flex items-center px-6 py-3 border border-gray-300 text-sm font-medium rounded-md shadow-sm text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+                  >
+                    <FaTimes className="mr-2" /> Annuler
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isSubmitting}
+                    className={`inline-flex items-center px-6 py-3 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 ${isSubmitting ? 'opacity-75 cursor-not-allowed' : ''}`}
+                  >
+                    {isSubmitting ? (
+                      <>
+                        <FaSpinner className="animate-spin mr-2" />
+                        Création en cours...
+                      </>
+                    ) : (
+                      <>
+                        <FaSave className="mr-2" /> Générer le Rapport
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+            </form>
+          </div>
+        </div>
       </div>
-
-      <form onSubmit={handleSubmit}>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Nom du rapport</label>
-            <input
-              type="text"
-              name="nom"
-              value={formData.nom}
-              onChange={handleChange}
-              className="w-full p-2 border rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              required
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Type de rapport</label>
-            <select
-              name="type"
-              value={formData.type}
-              onChange={handleChange}
-              className="w-full p-2 border rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-            >
-              <option value="Financier">Financier</option>
-              <option value="Bilan">Bilan</option>
-              <option value="Trésorerie">Trésorerie</option>
-              <option value="Fiscal">Fiscal</option>
-            </select>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Date</label>
-            <input
-              type="date"
-              name="date"
-              value={formData.date}
-              onChange={handleChange}
-              className="w-full p-2 border rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              required
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Statut</label>
-            <select
-              name="statut"
-              value={formData.statut}
-              onChange={handleChange}
-              className="w-full p-2 border rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-            >
-              <option value="En attente">En attente</option>
-              <option value="Validé">Validé</option>
-              <option value="Brouillon">Brouillon</option>
-            </select>
-          </div>
-
-          <div className="md:col-span-2">
-            <label className="block text-sm font-medium text-gray-700 mb-1">Contenu</label>
-            <textarea
-              name="contenu"
-              value={formData.contenu}
-              onChange={handleChange}
-              rows="6"
-              className="w-full p-2 border rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              placeholder="Saisissez le contenu du rapport..."
-            ></textarea>
-          </div>
-        </div>
-
-        <div className="flex justify-end">
-          <button
-            type="submit"
-            className="flex items-center px-6 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
-          >
-            <FaSave className="mr-2" /> Générer le Rapport
-          </button>
-        </div>
-      </form>
     </div>
   );
 };

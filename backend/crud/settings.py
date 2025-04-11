@@ -1,36 +1,31 @@
-import environ
 from pathlib import Path
+import os
 from datetime import timedelta
 
-
-env = environ.Env(
-    DEBUG=(bool,False),
-    MONGO_DB_NAME=(str, 'mydb'),
-    MONGO_HOST=(str, 'mongodb://localhost:27017/mydb')
-)
-# Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-environ.Env.read_env(BASE_DIR / '.env')
-# Quick-start development settings - unsuitable for production
-# See https://docs.djangoproject.com/en/5.1/howto/deployment/checklist/
+# Chargement des variables d'environnement
+from dotenv import load_dotenv
+load_dotenv()  # Charge les variables depuis .env
 
-import mongoengine
+SECRET_KEY = os.getenv('SECRET_KEY')  # Récupère la clé
+DEBUG = os.getenv('DEBUG', 'False') == 'True'
 
-mongoengine.connect(
-    db=env('MONGO_DB_NAME', default='mydb'),
-    host=env('MONGO_HOST', default='mongodb://localhost:27017/mydb'),
-    alias='default'
+# Configuration MongoDB
+from mongoengine import connect
+
+connect(
+    db=os.getenv('MONGO_DB_NAME', 'mydb'),
+    host=os.getenv('MONGO_HOST', 'mongodb://localhost:27017')
 )
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = env('SECRET_KEY')
+
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = env('DEBUG')
 
 ALLOWED_HOSTS = []
 
-
+ # Point clé !
 # Application definition
 
 INSTALLED_APPS = [
@@ -42,30 +37,43 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'rest_framework',
     'rest_framework.authtoken',
+    'rest_framework_simplejwt.token_blacklist',
+    'dj_rest_auth',
+    'dj_rest_auth.registration',
     'corsheaders',
     'rest_framework_simplejwt',
     'api',
-    'django.contrib.sites',
+    'admin_app',
+    'comptable',
+    'directeur',
+    'mongoengine',
+    'social_django',
     'allauth',
     'allauth.account',
     'allauth.socialaccount',
     #..include the providers you want
     'allauth.socialaccount.providers.google',
 ]
+
 MIGRATION_MODULES = {
     'api': None,  # Désactive les migrations pour l'app 'api'
 }
 AUTHENTICATION_BACKENDS = [
+    'social_core.backends.google.GoogleOAuth2',
      # Needed to login by username in Django admin, regardless of `allauth`
     'api.backends.MongoEngineBackend',
-     'api.auth.MongoAuthBackend',
-     'api.backends.CustomBackend',  # Vérifie si ce module existe !
+    'api.backends.MongoBackend',
+    'api.auth.MongoAuthBackend',
+    'api.backends.CustomBackend',  # Vérifie si ce module existe !
     'django.contrib.auth.backends.ModelBackend',
 
      # `allauth` specific authentication methods, such as login by email
     'allauth.account.auth_backends.AuthenticationBackend',
 ]
 # Dans settings.py
+CSRF_TRUSTED_ORIGINS = [
+    "http://localhost:3000",
+]
 #AUTH_USER_MODEL = 'api.CustomUser'
 SITE_ID = 1
 # Configuration Allauth
@@ -73,16 +81,20 @@ ACCOUNT_EMAIL_REQUIRED = True
 ACCOUNT_USERNAME_REQUIRED = False
 ACCOUNT_AUTHENTICATION_METHOD = 'email'
 ACCOUNT_EMAIL_VERIFICATION = 'optional'
-
+LOGIN_REDIRECT_URL = '/'
 # REST Framework config
+CSRF_TRUSTED_ORIGINS = [
+    "http://localhost:3000",
+]
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
-        'rest_framework.authentication.TokenAuthentication',
-         'rest_framework_simplejwt.authentication.JWTAuthentication',
+    'rest_framework.authentication.BasicAuthentication',
+    'rest_framework_simplejwt.authentication.JWTAuthentication',
     'rest_framework.authentication.SessionAuthentication', 
     ],    
     'DEFAULT_PERMISSION_CLASSES': [
         'rest_framework.permissions.IsAuthenticated',
+         'rest_framework.permissions.AllowAny',
     ],
      'DEFAULT_PARSER_CLASSES': [
         'rest_framework.parsers.JSONParser',
@@ -100,29 +112,40 @@ LOGIN_REDIRECT_URL = 'home'
 
     
 SOCIALACCOUNT_PROVIDERS = {
-    "google":{
-        "SCOPE": [
-            "email"
-        ],
-        "AUTH_PARAMS": {"access_type": "online"}
+    'google': {
+        'APP': {
+            'client_id': '11479995049-09n7oceljn4sgmodv5til5uj7bd072jp.apps.googleusercontent.com',
+            'secret': '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',
+            'key': ''
+        },
+        'SCOPE': ['profile', 'email'],
+        'AUTH_PARAMS': {'access_type': 'online'},
     }
 }
-ROOT_URLCONF = 'googlelogin.urls'
+
 # Supprimez la première déclaration et gardez celle-ci :
 SIMPLE_JWT = {
     'AUTH_HEADER_TYPES': ('Bearer',),
-    'ALGORITHM': 'HS256',
-    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=15),  # Court pour limiter les risques
+    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=60),
     'REFRESH_TOKEN_LIFETIME': timedelta(days=1),
-    'ROTATE_REFRESH_TOKENS': False,  # Désactivé pour simplifier
-    'BLACKLIST_AFTER_ROTATION': False,  # Non nécessaire avec MongoDB
+    'BLACKLIST_AFTER_ROTATION': True,
+    'ROTATE_REFRESH_TOKENS': False,
+    'ALGORITHM': 'HS256',
+    'SIGNING_KEY': SECRET_KEY,
+    'VERIFYING_KEY': None,
 }
+ACCOUNT_FORMS = {
+    'signup': 'api.forms.CustomSignupForm',  # Chemin corrigé pour votre app 'api'
+}
+CSRF_COOKIE_NAME = "csrftoken"
+CSRF_HEADER_NAME = "X-CSRFToken"
+CSRF_TRUSTED_ORIGINS = ['http://127.0.0.1:8000', 'http://localhost:8000']
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
-    'django.middleware.csrf.CsrfViewMiddleware',
+     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
@@ -161,11 +184,17 @@ WSGI_APPLICATION = 'crud.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/5.1/ref/settings/#databases
 # 1. Désactiver complètement la configuration SQL par défaut
-DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.dummy'  # Désactive le système de base de données SQL
-    }
-}
+# settings.py
+
+# Commenter ou supprimer cette section si vous utilisez MongoDB uniquement
+#DATABASES = {
+   # 'default': {
+       # 'ENGINE': 'django.db.backends.sqlite3',  # Cette ligne est problématique
+       # 'NAME': BASE_DIR / 'db.sqlite3',
+  #  }
+#}
+
+
 
 
 # settings.py
@@ -223,8 +252,8 @@ EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
 EMAIL_HOST = 'smtp.gmail.com'  # Ou votre serveur SMTP
 EMAIL_PORT = 587
 EMAIL_USE_TLS = True
-EMAIL_HOST_USER = 'votre@email.com'
-EMAIL_HOST_PASSWORD = 'votre_mot_de_passe'  # Mot de passe d'application pour Gmail
+EMAIL_HOST_USER = 'nourchelly11@gmail.com'
+EMAIL_HOST_PASSWORD = 'lpnu gdil gzzp ddvx'  # Mot de passe d'application pour Gmail
 
 # Configuration pour la réinitialisation
 PASSWORD_RESET_TIMEOUT = 3600  # 1 heure en secondes
@@ -234,3 +263,4 @@ CSRF_COOKIE_SAMESITE = 'Lax'
 CSRF_COOKIE_SECURE = False  # Mets True en production avec HTTPS
 CORS_ALLOW_CREDENTIALS = True  # Autorise les cookies cross-origin
 CSRF_TRUSTED_ORIGINS = ["http://127.0.0.1:8000", "http://localhost:3000"]
+FRONTEND_URL = 'http://localhost:3000'

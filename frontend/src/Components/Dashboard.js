@@ -2,51 +2,28 @@ import React from "react";
 import { Link, Outlet, useLocation, useNavigate } from "react-router-dom";
 import axios from "axios";
 import { 
-  FaHome, FaUser, FaCog, FaCheckCircle, FaSignOutAlt, 
-  FaSearch, FaBell, FaUserCircle, FaChartLine,
-  FaFileAlt, FaUsersCog, FaUserShield, FaFileInvoiceDollar,
-  FaShieldAlt, FaDatabase, FaCubes, FaQrcode
+  FaHome, FaCheckCircle, FaSignOutAlt, 
+  FaSearch, FaBell, FaUserCircle
+  , FaUsersCog, FaUserShield, FaFileInvoiceDollar,
+  FaShieldAlt, FaDatabase, FaQrcode
 } from "react-icons/fa";
 
 const Dashboard = () => {
   const navigate = useNavigate();
   const location = useLocation();
 
-  const handleLogout = async () => {
-    try {
-      const accessToken = localStorage.getItem('access_token');
-      const refreshToken = localStorage.getItem('refresh_token');
-  
-      if (!accessToken || !refreshToken) {
-        throw new Error("Tokens non trouvés");
-      }
-  
-      const response = await axios.post(
-        "http://127.0.0.1:8000/api/logout/",
-        { refresh_token: refreshToken },
-        {
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${accessToken}`
-          }
+   // Fonction pour se déconnecter
+   const handleLogout = () => {
+    axios.get(  "http://127.0.0.1:8000/api/logout/")  // L'URL doit être celle du serveur Django
+      .then(result => {
+        if (result.data.Status) {
+          localStorage.removeItem("valid");
+          navigate('/login');
         }
-      );
-  
-      // Nettoyage côté client quoi qu'il arrive
-      localStorage.removeItem('access_token');
-      localStorage.removeItem('refresh_token');
-      localStorage.removeItem('user_role');
-      
-      navigate('/login');
-  
-    } catch (error) {
-      console.error('Erreur de déconnexion:', error);
-      // Fallback: nettoyage quand même
-      localStorage.clear();
-      navigate('/login');
-    }
+      })
+      .catch(err => console.error(err));
   };
-
+  
   const getPageTitle = () => {
     switch (location.pathname) {
       case "/dashboard": return "Tableau de bord";
@@ -59,8 +36,8 @@ const Dashboard = () => {
   };
 
   return (
-    <div className="flex h-screen bg-gray-50 font-sans">
-      {/* Sidebar - Améliorations mineures */}
+    <div className="flex h-screen bg-gray-50">
+      {/* Sidebar */}
       <div className="w-64 bg-white border-r border-gray-200 flex flex-col shadow-sm">
         <div className="p-4 border-b border-gray-200 flex items-center">
           <FaQrcode className="text-2xl mr-3 text-indigo-600" />
@@ -150,9 +127,9 @@ const Dashboard = () => {
         </div>
       </div>
 
-      {/* Main Content - Améliorations mineures */}
+      {/* Main Content */}
       <div className="flex-1 flex flex-col overflow-hidden">
-        {/* Header - Améliorations visuelles */}
+        {/* Header */}
         <header className="bg-white border-b border-gray-200 py-2 px-6 flex items-center justify-between shadow-sm">
           <h1 className="text-xl font-semibold text-gray-800 flex items-center">
             {getPageTitle()}
@@ -191,15 +168,15 @@ const Dashboard = () => {
           </div>
         </header>
 
-        {/* Content area - Améliorations visuelles */}
+        {/* Content area */}
         <main className="flex-1 overflow-y-auto p-4 bg-gray-50">
-          <div className="bg-white rounded-xl shadow-sm p-4 h-full">
+          <div >
             <Outlet />
             
-            {/* Tableau de bord par défaut - Améliorations visuelles */}
+            {/* Tableau de bord par défaut */}
             {location.pathname === "/dashboard" && (
               <div>
-                {/* Section Bienvenue - Améliorée */}
+                {/* Section Bienvenue */}
                 <div className="flex flex-col md:flex-row items-center justify-between bg-gradient-to-r from-indigo-50 to-purple-50 rounded-xl p-6 mb-8">
                   <div className="mb-4 md:mb-0 md:mr-6">
                     <h2 className="text-2xl font-bold text-gray-800 mb-2">Bienvenue, Administrateur</h2>
@@ -215,7 +192,7 @@ const Dashboard = () => {
                   </div>
                 </div>
 
-                {/* Cartes statistiques - Améliorées */}
+                {/* Cartes statistiques */}
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
                   <div className="bg-white p-6 rounded-xl shadow-sm border-l-4 border-blue-500 hover:shadow-md transition-all transform hover:-translate-y-1">
                     <div className="flex items-center justify-between">
@@ -278,7 +255,7 @@ const Dashboard = () => {
                   </div>
                 </div>
 
-                {/* Section rapide - Améliorée */}
+                {/* Section rapide */}
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                   <Link to="/dashboard/comptes" className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 hover:shadow-md transition-all group transform hover:-translate-y-1">
                     <div className="flex items-center mb-4">

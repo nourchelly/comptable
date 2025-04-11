@@ -5,6 +5,7 @@ import 'bootstrap/dist/css/bootstrap.min.css';
 import 'bootstrap/dist/js/bootstrap.bundle.min';
 import 'animate.css';
 
+import Callback from './Components/Callback';
 import Home from './Components/Home';
 import Contact from './Components/Contact';
 import Services from './Components/Services';
@@ -18,8 +19,8 @@ import Profil from './Components/Profil';
 import PrivateRoute from './Components/PrivateRoute';
 import SignalerCompte from './Components/SignalerCompte';
 import ModifProfil from './Components/ModifProfil';
-import DashboardComptable from './Components/DashboardComptable'; // Correction ici
-import DashboardDirecteur from './Components/DashboardDirecteur'; // Correction ici
+import DashboardComptable from './Components/DashboardComptable';
+import DashboardDirecteur from './Components/DashboardDirecteur';
 import PrivateRouteComptable from './Components/PrivateRouteComptable';
 import PrivateRouteDirecteur from './Components/PrivateRouteDirecteur';
 import ProfilComptable from './Components/ProfilComptable';
@@ -29,69 +30,82 @@ import ModifRapport from './Components/ModifRapport';
 import ExporterRapport from './Components/ExporterRapport';
 import CreerRapport from './Components/CreerRapport';
 import ResetPassword from './Components/ResetPassword';
-import ProfilDirecteur from './Components/ProfilDirecteur'
+import ProfilDirecteur from './Components/ProfilDirecteur';
 import ModifDirecteur from './Components/ModifDirecteur';
+import Facture from './Components/Facture';
+import Audit from './Components/Audit';
+import Calendar from './Components/Calender';
+
+import { GoogleOAuthProvider } from '@react-oauth/google';
+import { UserProvider } from './Components/UserContext';
 
 function App() {
   return (
     <div className="App">
-      <Routes>
-        {/* Routes publiques */}
-        <Route path="/home" element={<Home />} />
-        <Route path="/contact" element={<Contact />} />
-        <Route path="/services" element={<Services />} />
-        <Route path="/login" element={<Login />} />
-        <Route path="/signup" element={<Signup />} />
-        <Route path="/forgot-password" element={<ForgotPassword />} />
-        <Route path="/reset-password" element={<ResetPassword />} />
+      <GoogleOAuthProvider clientId="11479995049-09n7oceljn4sgmodv5til5uj7bd072jp.apps.googleusercontent.com">
+        <UserProvider>
+          <Routes>
+            {/* Routes publiques */}
+            <Route path="/" element={<Home />} />
+            <Route path="/contact" element={<Contact />} />
+            <Route path="/services" element={<Services />} />
+            <Route path="/login" element={<Login />} />
+            <Route path="/signup" element={<Signup />} />
+            <Route path="/forgot-password" element={<ForgotPassword />} />
+            <Route path="/reset-password/:token" element={<ResetPassword />} />
+            <Route path="/auth/google/callback" element={<Callback />} />
 
-        {/* Route protégée pour le Dashboard */}
-        <Route
-          path="/dashboard"
-          element={
-            <PrivateRoute>
-              <Dashboard />
-            </PrivateRoute>
-          }
-        >
-          <Route path="comptes" element={<Compte />} />
-          <Route path="profil" element={<Profil />} />
-          <Route path="validation" element={<Validation />} />
-          <Route path="signalercompte" element={<SignalerCompte />} />
-          <Route path="modify_profil/:id" element={<ModifProfil />} />
-        </Route>
+            {/* Routes Dashboard (admin ou général) */}
+            <Route
+              path="/dashboard"
+              element={
+                <PrivateRoute>
+                  <Dashboard />
+                </PrivateRoute>
+              }
+            >
+              <Route path="comptes" element={<Compte />} />
+              <Route path="profil" element={<Profil />} />
+              <Route path="validation" element={<Validation />} />
+              <Route path="signalercompte" element={<SignalerCompte />} />
+              <Route path="modify_profil/:id" element={<ModifProfil />} />
+            </Route>
 
-        {/* Route protégée pour le Dashboard Comptable */}
-        <Route
-          path="/dashboardcomptable"
-          element={
-            <PrivateRouteComptable>
-              <DashboardComptable />
-            </PrivateRouteComptable>
-          }
-        >
-          <Route path="profilcomptable" element={<ProfilComptable />} />
-          <Route path="rapports" element={<Rapport />} />
-          <Route path="creer_rapport" element={<CreerRapport />} />
-          <Route path="modif_rapport/:id" element={<ModifRapport />} />
-          <Route path="exporter_rapport/:id" element={<ExporterRapport />} />
-          <Route path="modif_profil/:id" element={<ModifComptable />} />
-        </Route>
+            {/* Routes Comptable */}
+            <Route
+              path="/dashboardcomptable"
+              element={
+                <PrivateRouteComptable>
+                  <DashboardComptable />
+                </PrivateRouteComptable>
+              }
+            >
+              <Route path="profilcomptable" element={<ProfilComptable />} />
+              <Route path="rapports" element={<Rapport />} />
+              <Route path="creer_rapport" element={<CreerRapport />} />
+              <Route path="modif_rapport/:id" element={<ModifRapport />} />
+              <Route path="exporter_rapport/:id" element={<ExporterRapport />} />
+              <Route path="modif_profil/:id" element={<ModifComptable />} />
+              <Route path="facture" element={<Facture />} />
+            </Route>
 
-        {/* Route protégée pour le Dashboard Directeur */}
-        <Route
-          path="/dashboarddirecteur"
-          element={
-            <PrivateRouteDirecteur>
-              <DashboardDirecteur />
-            </PrivateRouteDirecteur>
-            
-          }
-          >
-             <Route path="profildirecteur" element={<ProfilDirecteur />} />
-             <Route path="modify_profil/:id" element={<ModifDirecteur />} />
-        </Route>
-      </Routes>
+            {/* Routes Directeur */}
+            <Route
+              path="/dashboarddirecteur"
+              element={
+                <PrivateRouteDirecteur>
+                  <DashboardDirecteur />
+                </PrivateRouteDirecteur>
+              }
+            >
+              <Route path="profildirecteur" element={<ProfilDirecteur />} />
+              <Route path="modify_profil/:id" element={<ModifDirecteur />} />
+              <Route path="audits" element={<Audit />} />
+              <Route path="calendar" element={<Calendar/>} />
+            </Route>
+          </Routes>
+        </UserProvider>
+      </GoogleOAuthProvider>
     </div>
   );
 }
