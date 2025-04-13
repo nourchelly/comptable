@@ -1,6 +1,6 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
-import { FaHome, FaEnvelope, FaTools, FaMapMarkerAlt, FaPhone, FaPaperPlane, FaSignInAlt } from 'react-icons/fa';
+import { FaHome, FaEnvelope, FaTools, FaMapMarkerAlt, FaPhone, FaPaperPlane } from 'react-icons/fa';
 import 'bootstrap/dist/css/bootstrap.min.css';
 import 'animate.css';
 import './Contact.css'; // Fichier CSS pour les animations personnalisées

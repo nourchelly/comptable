@@ -4,33 +4,12 @@ import { Link } from 'react-router-dom';
 import axios from 'axios';
 
 const ListeRapports = () => {
-    const [reports, setReports] = useState([
-        {
-          _id: '1',
-          nom: 'Rapport Financier Trimestriel',
-          type: 'Financier',
-          date: '2023-10-15T00:00:00.000Z',
-          statut: 'Validé'
-        },
-        {
-          _id: '2',
-          nom: 'Rapport Fiscal Annuel',
-          type: 'Fiscal',
-          date: '2023-12-31T00:00:00.000Z',
-          statut: 'En attente'
-        },
-        {
-          _id: '3',
-          nom: 'Rapport Audit Interne',
-          type: 'Audit',
-          date: '2023-11-20T00:00:00.000Z',
-          statut: 'Rejeté'
-        }
-      ]);
+    const [reports, setReports] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
+    setLoading(true);
     const fetchReports = async () => {
       try {
         const token = localStorage.getItem('valid');

@@ -34,6 +34,8 @@ const Login = () => {
             });
 
             if (response.data.loginStatus) {
+                console.log("Réponse backend:", response.data);
+
                 // 🔐 Stocker localement
                 localStorage.setItem("access_token", response.data.access);
                 localStorage.setItem("refresh_token", response.data.refresh);

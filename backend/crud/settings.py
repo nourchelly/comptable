@@ -62,18 +62,20 @@ AUTHENTICATION_BACKENDS = [
     'social_core.backends.google.GoogleOAuth2',
      # Needed to login by username in Django admin, regardless of `allauth`
     'api.backends.MongoEngineBackend',
-    'api.backends.MongoBackend',
-    'api.auth.MongoAuthBackend',
-    'api.backends.CustomBackend',  # Vérifie si ce module existe !
+    #'api.backends.MongoBackend',
+    #'api.auth.MongoAuthBackend',
+    #'api.backends.CustomBackend',  # Vérifie si ce module existe !
     'django.contrib.auth.backends.ModelBackend',
 
      # `allauth` specific authentication methods, such as login by email
-    'allauth.account.auth_backends.AuthenticationBackend',
+    #'allauth.account.auth_backends.AuthenticationBackend',
 ]
 # Dans settings.py
 CSRF_TRUSTED_ORIGINS = [
     "http://localhost:3000",
 ]
+APPEND_SLASH = False
+
 #AUTH_USER_MODEL = 'api.CustomUser'
 SITE_ID = 1
 # Configuration Allauth
@@ -105,6 +107,11 @@ REST_FRAMEWORK = {
         'rest_framework.renderers.JSONRenderer',
     ],
 }
+from corsheaders.defaults import default_headers
+
+CORS_ALLOW_HEADERS = list(default_headers) + [
+    'authorization',
+]
 
 LOGIN_URL = 'login'
 LOGOUT_URL = 'logout'

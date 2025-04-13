@@ -24,18 +24,41 @@ const NouveauRapport = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setIsSubmitting(true);
+    
     try {
-      const token = localStorage.getItem('valid');
-      await axios.post('http://127.0.0.1:8000/api/rapports', formData, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      const userData = JSON.parse(localStorage.getItem("userData"));
+      const token = userData?.token;
+      // Vérifier si le token existe
+      if (!token) {
+        alert("Token d'authentification manquant.");
+        return;
+      }
+  
+      // Effectuer la requête POST pour créer un rapport
+      const response = await axios.post(
+        'http://127.0.0.1:8000/api/rapports/create/', 
+        formData, // formData doit être l'objet que tu veux envoyer
+        {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          }
+        }
+      );
+  
+      // Si la requête réussit, rediriger l'utilisateur vers la page des rapports
       navigate('/dashboardcomptable/rapports');
     } catch (error) {
       console.error("Erreur création rapport:", error);
+  
+      // Afficher un message d'erreur si la requête échoue
+      const errorMessage = error.response?.data?.message || "Erreur serveur !";
+      alert(errorMessage);
     } finally {
       setIsSubmitting(false);
     }
   };
+  
 
   return (
     <div className="min-h-screen bg-gray-50 py-8 px-4 sm:px-6 lg:px-8">

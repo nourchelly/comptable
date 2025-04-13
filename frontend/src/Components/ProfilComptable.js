@@ -16,12 +16,12 @@ const ProfilComptable = () => {
   const [profil, setProfil] = useState({
     username: "",
     email: "",
-    role: "COMPTABLE",
+    role: "Comptable",
     nom_complet: "",
     telephone: "",
     matricule: "",
-    departement: "",
-    id: ""
+    departement: ""
+  
   });
 
   const [loading, setLoading] = useState(true);
@@ -33,11 +33,11 @@ const ProfilComptable = () => {
         const token = localStorage.getItem("access_token");
         if (!token) {
           console.error("Aucun token trouvé");
-          navigate("/login");
+          ///navigate("/login");
           return;
         }
 
-        const response = await axios.get("http://127.0.0.1:8000/api/comptable/profil/", {
+        const response = await axios.get("http://127.0.0.1:8000/api/profil/", {
           headers: {
             Authorization: `Bearer ${token}`,
           }
@@ -45,7 +45,8 @@ const ProfilComptable = () => {
 
         console.log("Profil récupéré:", response.data);
 
-        setProfil({
+        setProfil(prev => ({
+          ...prev,
           username: response.data.username,
           email: response.data.email,
           role: response.data.role,
@@ -53,8 +54,8 @@ const ProfilComptable = () => {
           telephone: response.data.telephone ?? "Non renseigné",
           matricule: response.data.matricule ?? "Non défini",
           departement: response.data.departement ?? "Comptabilité",
-          id: response.data._id || response.data.id,
-        });
+          id: response.data._id || "",
+        }));
 
       } catch (error) {
         console.error("Erreur chargement profil:", error);
@@ -76,15 +77,15 @@ const ProfilComptable = () => {
     const token = localStorage.getItem("access_token");
 
     axios
-      .delete(`http://127.0.0.1:8000/api/comptable/profil/${profil.id}`, {
+      .delete(`http://127.0.0.1:8000/api/profil/delete`, {
         headers: { Authorization: `Bearer ${token}` },
       })
       .then((result) => {
-        if (result.data.Status) {
+        if (result.status === 204 || result.data.Status) {
           localStorage.removeItem("access_token");
           navigate("/login");
         } else {
-          alert(result.data.Error);
+          alert(result.data.Error || "Erreur inconnue");
         }
       })
       .catch((err) => {
@@ -154,16 +155,30 @@ const ProfilComptable = () => {
   );
 };
 
-const Item = ({ icon, label, value, color }) => (
-  <div className="flex items-start">
-    <div className={`flex-shrink-0 bg-${color}-100 p-3 rounded-full`}>
-      {React.cloneElement(icon, { className: `h-5 w-5 text-${color}-600` })}
+const Item = ({ icon, label, value, color }) => {
+  const bgColors = {
+    indigo: "bg-indigo-100 text-indigo-600",
+    blue: "bg-blue-100 text-blue-600",
+    green: "bg-green-100 text-green-600",
+    orange: "bg-orange-100 text-orange-600",
+    purple: "bg-purple-100 text-purple-600",
+  };
+
+  const colors = bgColors[color] || "bg-gray-100 text-gray-600";
+
+  return (
+    <div className="flex items-start">
+      <div className={`flex-shrink-0 p-3 rounded-full ${colors}`}>
+        {React.cloneElement(icon, { className: "h-5 w-5" })}
+      </div>
+      <div className="ml-4">
+        <h3 className="text-sm font-medium text-gray-500">{label}</h3>
+        <p className="mt-1 text-lg font-semibold text-gray-900">{value}</p>
+      </div>
     </div>
-    <div className="ml-4">
-      <h3 className="text-sm font-medium text-gray-500">{label}</h3>
-      <p className="mt-1 text-lg font-semibold text-gray-900">{value}</p>
-    </div>
-  </div>
-);
+  );
+};
+
+
 
 export default ProfilComptable;

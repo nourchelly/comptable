@@ -3,6 +3,8 @@ from django.contrib.auth import get_user_model
 from .models import CustomUser
 from django.contrib.auth.hashers import make_password
 import re
+from rest_framework_mongoengine.serializers import DocumentSerializer
+from .models import Comptable, CustomUser
 from django.core.mail import send_mail
 from django.conf import settings
 from datetime import datetime, timedelta
@@ -13,7 +15,17 @@ class UserSerializer(serializers.ModelSerializer):
         model = CustomUser
         fields = ['id', 'username', 'email', 'role', 'is_active', 'date_joined']
 
+class CustomUserSerializer(DocumentSerializer):
+    class Meta:
+        model = CustomUser
+        fields = ('id', 'username', 'email', 'role')
 
+class ComptableSerializer(DocumentSerializer):
+    user = CustomUserSerializer()
+
+    class Meta:
+        model = Comptable
+        fields = ('user', 'nom_complet', 'telephone', 'matricule', 'departement', 'is_active')
 import mongoengine.errors
 
 class RegisterSerializer(serializers.ModelSerializer):
@@ -129,3 +141,25 @@ class PasswordResetSerializer(serializers.Serializer):
         if not re.search(r'[0-9]', password):  # Vérifier s'il y a un chiffre
             return False
         return True
+    #
+    from api.models import Rapport
+
+class RapportSerializer(serializers.Serializer):
+    id = serializers.CharField(read_only=True)
+    nom = serializers.CharField()
+    type = serializers.CharField()
+    statut = serializers.ChoiceField(choices=["Validé", "En attente", "Rejeté"])
+    date = serializers.DateTimeField(read_only=True)
+    comptable = serializers.PrimaryKeyRelatedField(queryset=Comptable.objects.all())
+    #directeur_financier = serializers.PrimaryKeyRelatedField(queryset=DirecteurFinancier.objects.all(), required=False, allow_null=True)
+    #date_validation = serializers.DateTimeField(read_only=True, required=False)
+    #date_modification = serializers.DateTimeField(read_only=True, required=False)
+
+    def create(self, validated_data):
+        return Rapport(**validated_data).save()
+
+    def update(self, instance, validated_data):
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+        instance.save()
+        return instance

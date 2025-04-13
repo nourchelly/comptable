@@ -16,7 +16,7 @@ from mongoengine.errors import NotUniqueError
 from django.contrib.auth.hashers import check_password,make_password
 import requests
 import uuid
-from .models import CustomUser
+from .models import CustomUser,Comptable,DirecteurFinancier
 from .serializers import RegisterSerializer, PasswordResetRequestSerializer, PasswordResetSerializer
 from allauth.socialaccount.providers.google.views import GoogleOAuth2Adapter
 from allauth.socialaccount.providers.oauth2.client import OAuth2Client
@@ -86,8 +86,6 @@ def register_user(request):
         print("Erreur :", str(e))
         return Response({'error': str(e)}, status=500)
 
-
-# Vue de connexion de l'utilisateur
 class LoginView(APIView):
     permission_classes = [AllowAny]
 
@@ -105,23 +103,52 @@ class LoginView(APIView):
             }, status=status.HTTP_400_BAD_REQUEST)
 
         try:
-            # Utilisation de MongoEngine (et pas Django ORM)
+            # Récupérer l'utilisateur selon son email et rôle
             user = CustomUser.objects.get(email=email, role=role)
 
-            if user.check_password(password):
-                logger.info("Authentification réussie")
-                return Response({
-                    'loginStatus': True,
-                    'user_id': str(user.id),
-                    'role': user.role,
-                    'email': user.email
-                })
-            else:
+            # Vérification du mot de passe
+            if not user.check_password(password):
                 logger.warning("Mot de passe incorrect")
                 return Response({
                     'loginStatus': False,
                     'Error': 'Mot de passe incorrect'
                 }, status=status.HTTP_401_UNAUTHORIZED)
+
+            logger.info("Authentification réussie")
+
+            # Générer le token d'accès
+            access_token = generate_jwt(user.id, user.role)
+
+            # Infos spécifiques à l'utilisateur selon son rôle
+            user_data = {
+                'loginStatus': True,
+                'access': access_token,  # Token ajouté dans la réponse
+                'user_id': str(user.id),
+                'role': user.role,
+                'email': user.email,
+                'username': user.username
+            }
+
+            # Si l'utilisateur est un comptable, ajouter ses données spécifiques
+            if user.role == "comptable":
+                comptable = Comptable.objects(user=user.id).first()
+                if comptable:
+                    user_data.update({
+                        'nom_complet': comptable.nom_complet,
+                        'telephone': comptable.telephone,
+                        'matricule': comptable.matricule,
+                        'departement': comptable.departement
+                    })
+
+            # Si l'utilisateur est un directeur, ajouter ses données spécifiques
+            elif user.role == "directeur":
+                directeur = DirecteurFinancier.objects(user=user.id).first()
+                if directeur:
+                    user_data.update({
+                        'departement': directeur.departement
+                    })
+
+            return Response(user_data)
 
         except DoesNotExist:
             logger.warning("Utilisateur non trouvé")
@@ -137,6 +164,18 @@ class LoginView(APIView):
                 'Error': 'Erreur technique',
                 'Details': str(e)
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+def generate_jwt(user_id, role):
+    payload = {
+        'user_id': str(user_id),
+        'role': role,
+        'exp': datetime.utcnow() + timedelta(hours=2),  # token expire dans 2h
+        'iat': datetime.utcnow()  # moment de création du token
+    }
+    token = jwt.encode(payload, settings.SECRET_KEY, algorithm='HS256')
+    return token
+
 
 # Vue pour la demande de réinitialisation du mot de passe
 import json
@@ -323,3 +362,236 @@ def google_auth_callback(request):
         "role": user.role,   # Le rôle de l'utilisateur
         "user_id": str(user.id)  # L'id de l'utilisateur (utilisé dans le frontend)
     })
+from rest_framework_simplejwt.tokens import UntypedToken
+from rest_framework_simplejwt.exceptions import InvalidToken
+from .serializers import ComptableSerializer
+
+class ComptableProfileView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        # Débogage : vérifier si l'utilisateur est authentifié
+        print(f"Utilisateur authentifié: {request.user.is_authenticated}")
+        user = request.user
+
+        # Vérification du rôle
+        if not hasattr(user, 'role') or user.role.lower() != 'comptable':
+            return Response(
+                {"error": "Accès réservé aux comptables"},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        try:
+            # Recherche du profil comptable avec gestion des champs alternatifs
+            comptable = Comptable.objects.get(user=user.id)
+            
+            # Gestion du nom complet (champ potentiellement mal orthographié)
+            nom_complet = getattr(comptable, 'nom_complet', None) or getattr(comptable, 'non_complet', 'Non spécifié')
+            
+            # Construction de la réponse
+            response_data = {
+                "username": user.username,
+                "email": user.email,
+                "role": user.role,
+                "comptable": {
+                    "nom_complet": nom_complet,
+                    "telephone": comptable.telephone,
+                    "matricule": comptable.matricule,
+                    "departement": getattr(comptable, 'departement', None) or getattr(comptable, 'department', None),
+                    "id": str(comptable.id)
+                }
+            }
+            
+            return Response(response_data)
+
+        except Comptable.DoesNotExist:
+            return Response(
+                {"error": "Profil comptable non trouvé"},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        except Exception as e:
+            return Response(
+                {"error": f"Erreur serveur: {str(e)}"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+        
+
+    #supprimerprofil
+class DeleteProfilView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def delete(self, request, user_id):
+        try:
+            user = CustomUser.objects.get(id=user_id)
+            user.delete()
+            return Response({"Status": True})
+        except CustomUser.DoesNotExist:
+            return Response({"Status": False, "Error": "Utilisateur non trouvé"}, status=404)
+
+
+#rapport 
+from .models import Rapport
+from .serializers import RapportSerializer
+from .permissions import IsComptable
+class RapportCreateView(APIView):
+    permission_classes = [IsAuthenticated, IsComptable]
+
+    def post(self, request, *args, **kwargs):
+        # Création d'un rapport
+        comptable = Comptable.objects.get(user=request.user)
+        rapport = Rapport(
+            nom=request.data.get('nom'),
+            type=request.data.get('type'),
+            statut='En attente',
+            comptable=comptable
+        )
+        rapport.save()
+        return Response({"message": "Rapport créé avec succès"}, status=status.HTTP_201_CREATED)
+
+# 📄 Affichage des rapports du comptable connecté
+class RapportListView(APIView):
+    permission_classes = [IsAuthenticated, IsComptable]
+
+    def get(self, request, *args, **kwargs):
+        comptable = Comptable.objects.get(user=request.user)
+        rapports = Rapport.objects.filter(comptable=comptable)  # 🔐 Restriction à ses propres rapports
+        rapports_data = [{
+            "id": str(r.id),
+            "nom": r.nom,
+            "type": r.type,
+            "statut": r.statut,
+            "date": r.date.strftime('%Y-%m-%d')
+        } for r in rapports]
+        return Response(rapports_data, status=status.HTTP_200_OK)
+
+class RapportEditView(APIView):
+    permission_classes = [IsAuthenticated, IsComptable]
+
+    def put(self, request, pk, *args, **kwargs):
+        try:
+            rapport = Rapport.objects.get(id=pk)
+        except Rapport.DoesNotExist:
+            return Response({"message": "Rapport non trouvé"}, status=status.HTTP_404_NOT_FOUND)
+
+        # Vérifie que le rapport appartient bien au comptable connecté
+        comptable = Comptable.objects.get(user=request.user)
+        if rapport.comptable != comptable:
+            return Response({"message": "Vous n'avez pas le droit de modifier ce rapport"}, status=status.HTTP_403_FORBIDDEN)
+
+        # Vérifie que le rapport n'est pas validé
+        if rapport.statut == "Validé":
+            return Response({"message": "Impossible de modifier un rapport déjà validé"}, status=status.HTTP_403_FORBIDDEN)
+
+        # Mise à jour des champs
+        rapport.nom = request.data.get('nom', rapport.nom)
+        rapport.type = request.data.get('type', rapport.type)
+        rapport.save()
+
+        return Response({"message": "Rapport modifié avec succès"}, status=status.HTTP_200_OK)
+
+class RapportDeleteView(APIView):
+    permission_classes = [IsAuthenticated, IsComptable]
+
+    def delete(self, request, pk, *args, **kwargs):
+        try:
+            rapport = Rapport.objects.get(id=pk)
+        except Rapport.DoesNotExist:
+            return Response({"message": "Rapport non trouvé"}, status=status.HTTP_404_NOT_FOUND)
+
+        if rapport.statut == "Validé":
+            return Response({"message": "Impossible de supprimer un rapport validé"}, status=status.HTTP_403_FORBIDDEN)
+
+        rapport.delete()
+        return Response({"message": "Rapport supprimé avec succès"}, status=status.HTTP_204_NO_CONTENT)
+
+
+
+from .permissions import IsComptable
+    #exporter
+from bson import ObjectId
+from .models import Rapport  # MongoEngine model
+import io
+from reportlab.pdfgen import canvas
+from openpyxl import Workbook
+
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.response import Response
+from rest_framework import status
+from .models import Rapport
+from .permissions import IsComptable
+from bson import ObjectId
+from reportlab.pdfgen import canvas
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.utils import ImageReader
+from openpyxl import Workbook
+from django.http import HttpResponse
+import io
+import os
+
+@api_view(['GET'])
+@permission_classes([IsComptable])
+def exporter_rapport(request, id):
+    format_export = request.GET.get('format', '').lower()
+    if format_export not in ['pdf', 'excel']:
+        return Response({'error': 'Format invalide'}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        rapport = Rapport.objects.get(id=ObjectId(id))
+    except Rapport.DoesNotExist:
+        return Response({'error': 'Rapport introuvable'}, status=status.HTTP_404_NOT_FOUND)
+
+    if format_export == 'pdf':
+        buffer = io.BytesIO()
+        p = canvas.Canvas(buffer, pagesize=A4)
+        width, height = A4
+
+        # 📌 Ajout d'un logo (remplace le chemin par le tien)
+        logo_path = os.path.join('static', 'images', 'logo.png')  # chemin relatif
+        if os.path.exists(logo_path):
+            logo = ImageReader(logo_path)
+            p.drawImage(logo, 40, height - 100, width=100, height=50)
+
+        # 📄 Détails du rapport
+        p.setFont("Helvetica-Bold", 14)
+        p.drawString(100, height - 150, f"Rapport: {rapport.nom}")
+        p.drawString(100, height - 180, f"Type: {rapport.type}")
+        p.drawString(100, height - 210, f"Date: {rapport.date.strftime('%Y-%m-%d')}")
+        p.drawString(100, height - 240, f"Statut: {rapport.statut}")
+        p.showPage()
+        p.save()
+
+        buffer.seek(0)
+        response = HttpResponse(buffer, content_type='application/pdf')
+        response['Content-Disposition'] = f'attachment; filename="{rapport.nom}.pdf"'
+        return response
+
+    elif format_export == 'excel':
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "Rapport"
+
+        # 🧾 En-tête
+        ws.append(["Nom", "Type", "Date", "Statut"])
+        ws.append([rapport.nom, rapport.type, rapport.date.strftime('%Y-%m-%d'), rapport.statut])
+
+        # ➕ Lignes de transactions simulées
+        ws.append([])  # ligne vide
+        ws.append(["Transactions"])
+        ws.append(["Date", "Description", "Montant"])
+
+        # Exemple de données simulées (à remplacer avec des vraies données si disponibles)
+        transactions = [
+            ("2025-04-01", "Achat matériel", 1200.00),
+            ("2025-04-02", "Vente service", 2500.00),
+            ("2025-04-03", "Frais déplacement", 300.00),
+        ]
+
+        for t in transactions:
+            ws.append(t)
+
+        buffer = io.BytesIO()
+        wb.save(buffer)
+        buffer.seek(0)
+        response = HttpResponse(buffer, content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+        response['Content-Disposition'] = f'attachment; filename="{rapport.nom}.xlsx"'
+        return response
