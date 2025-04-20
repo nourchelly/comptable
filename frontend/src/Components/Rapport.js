@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { FaSearch, FaEdit, FaTrash, FaFileDownload, FaPlus } from 'react-icons/fa';
 import { Link } from 'react-router-dom';
 import axios from 'axios';
+import axiosInstance from './AxiosInstance'; // adapte le chemin si besoin
 
 const ListeRapports = () => {
     const [reports, setReports] = useState([]);
@@ -12,10 +13,8 @@ const ListeRapports = () => {
     setLoading(true);
     const fetchReports = async () => {
       try {
-        const token = localStorage.getItem('valid');
-        const response = await axios.get('http://127.0.0.1:8000/api/rapports', {
-          headers: { Authorization: `Bearer ${token}` }
-        });
+        //const token = localStorage.getItem('valid');
+        const response = await axiosInstance.get("rapports/"); // pas besoin du baseURL ici
         setReports(response.data);
       } catch (error) {
         console.error("Erreur chargement rapports:", error);
@@ -28,10 +27,8 @@ const ListeRapports = () => {
   const handleDelete = async (id) => {
     if (window.confirm("Voulez-vous vraiment supprimer ce rapport ?")) {
       try {
-        const token = localStorage.getItem('valid');
-        await axios.delete(`http://127.0.0.1:8000/api/rapports/${id}`, {
-          headers: { Authorization: `Bearer ${token}` }
-        });
+        await axiosInstance.delete(`rapports/${id}`);
+
         setReports(reports.filter(report => report._id !== id));
       } catch (error) {
         console.error("Erreur suppression rapport:", error);

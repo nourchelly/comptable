@@ -1,12 +1,16 @@
-// PrivateRouteComptable.js
-import React from 'react';
-import { Navigate } from 'react-router-dom';
+import { Navigate, useLocation } from 'react-router-dom';
 
 const PrivateRouteComptable = ({ children }) => {
-  const token = localStorage.getItem("access_token");
-  const role = localStorage.getItem("userRole");
+  const location = useLocation();
+  const userRole = sessionStorage.getItem('userRole'); // Vérifie le rôle stocké dans sessionStorage
 
-  return token && role === 'comptable' ? children : <Navigate to="/login" />;
+  if (!userRole) {
+    // Stocke la route actuelle pour redirection après login
+    sessionStorage.setItem('redirect_path', location.pathname);
+    return <Navigate to="/connexion" replace state={{ from: location }} />;
+  }
+
+  return children;
 };
 
 export default PrivateRouteComptable;

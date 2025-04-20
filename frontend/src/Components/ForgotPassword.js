@@ -36,7 +36,7 @@ const ForgotPassword = () => {
                          
             );
             setMessage(response.data.detail || 'Lien envoyé avec succès');
-            setTimeout(() => navigate('/login'), 3000);
+            setTimeout(() => navigate('/connexion'), 3000);
         } catch (err) {
             setError(err.response?.data?.detail || 'Erreur serveur');
         } finally {
@@ -130,7 +130,7 @@ const ForgotPassword = () => {
 
                     <div className="mt-6 text-center">
                         <a 
-                            href="/login" 
+                            href="/connexion" 
                             className="text-sm font-medium text-indigo-600 hover:text-indigo-500"
                         >
                             ← Retour à la connexion

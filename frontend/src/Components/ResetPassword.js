@@ -40,7 +40,7 @@ const ResetPassword = () => {
                 { headers: { 'Content-Type': 'application/json' } }
             );
             setMessage(response.data.detail || 'Mot de passe modifié !');
-            setTimeout(() => navigate('/login'), 2000);
+            setTimeout(() => navigate('/connexion'), 2000);
         } catch (err) {
             setError(err.response?.data?.detail || 'Erreur serveur');
         } finally {

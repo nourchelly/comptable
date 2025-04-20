@@ -48,7 +48,7 @@ const Profil = () => {
                 const result = await axios.delete(`http://localhost:3000/auth/delete_profil/${id}`);
                 
                 if (result.data.Status) {
-                    navigate('/login');
+                    navigate('/connexion');
                 } else {
                     alert(result.data.Error || "Erreur lors de la suppression");
                 }
@@ -96,7 +96,7 @@ const Profil = () => {
                     <h2 className="text-xl font-bold text-gray-800 mb-2">Profil non trouvé</h2>
                     <p className="text-gray-600 mb-6">Aucune donnée de profil disponible</p>
                     <Link
-                        to="/login"
+                        to="/connexion"
                         className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 transition-colors"
                     >
                         Retour à la connexion

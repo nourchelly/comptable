@@ -1,6 +1,8 @@
 from pathlib import Path
 import os
 from datetime import timedelta
+import warnings
+warnings.filterwarnings("ignore", category=UserWarning, module="dj_rest_auth")
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -10,7 +12,8 @@ load_dotenv()  # Charge les variables depuis .env
 
 SECRET_KEY = os.getenv('SECRET_KEY')  # Récupère la clé
 DEBUG = os.getenv('DEBUG', 'False') == 'True'
-
+# settings.py
+GOOGLE_AI_API_KEY = os.getenv('GOOGLE_AI_API_KEY')  # Stockez la clé dans .env
 # Configuration MongoDB
 from mongoengine import connect
 
@@ -37,11 +40,12 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'rest_framework',
     'rest_framework.authtoken',
-    'rest_framework_simplejwt.token_blacklist',
+    #'rest_framework_simplejwt.token_blacklist',
     'dj_rest_auth',
     'dj_rest_auth.registration',
     'corsheaders',
     'rest_framework_simplejwt',
+     'rest_framework_mongoengine',
     'api',
     'admin_app',
     'comptable',
@@ -54,7 +58,9 @@ INSTALLED_APPS = [
     #..include the providers you want
     'allauth.socialaccount.providers.google',
 ]
-
+# Configuration des sessions
+SESSION_ENGINE = "django.contrib.sessions.backends.signed_cookies"
+SESSION_COOKIE_HTTPONLY = True
 MIGRATION_MODULES = {
     'api': None,  # Désactive les migrations pour l'app 'api'
 }
@@ -79,9 +85,16 @@ APPEND_SLASH = False
 #AUTH_USER_MODEL = 'api.CustomUser'
 SITE_ID = 1
 # Configuration Allauth
-ACCOUNT_EMAIL_REQUIRED = True
-ACCOUNT_USERNAME_REQUIRED = False
-ACCOUNT_AUTHENTICATION_METHOD = 'email'
+# Nouveaux paramètres recommandés - À AJOUTER :
+# REMPLACER dans settings.py:
+# Nouvelle configuration recommandée
+ACCOUNT_LOGIN_METHODS = {'username', 'email'}
+ACCOUNT_SIGNUP_FIELDS = ['username', 'email']
+# Champs d'inscription (format simplifié)# Champs obligatoires lors de l'inscription
+#ACCOUNT_USERNAME_REQUIRED = False
+#ACCOUNT_AUTHENTICATION_METHOD = 'email'  # Maintenu pour compatibilité
+#ACCOUNT_EMAIL_REQUIRED = True
+ACCOUNT_UNIQUE_EMAIL = True
 ACCOUNT_EMAIL_VERIFICATION = 'optional'
 LOGIN_REDIRECT_URL = '/'
 # REST Framework config
@@ -134,12 +147,14 @@ SOCIALACCOUNT_PROVIDERS = {
 SIMPLE_JWT = {
     'AUTH_HEADER_TYPES': ('Bearer',),
     'ACCESS_TOKEN_LIFETIME': timedelta(minutes=60),
-    'REFRESH_TOKEN_LIFETIME': timedelta(days=1),
-    'BLACKLIST_AFTER_ROTATION': True,
-    'ROTATE_REFRESH_TOKENS': False,
+    #'REFRESH_TOKEN_LIFETIME': timedelta(days=1),
+    #'BLACKLIST_AFTER_ROTATION': False,
+    #'ROTATE_REFRESH_TOKENS': False,
     'ALGORITHM': 'HS256',
     'SIGNING_KEY': SECRET_KEY,
     'VERIFYING_KEY': None,
+    'USER_ID_FIELD': 'id',
+    'USER_ID_CLAIM': 'user_id',
 }
 ACCOUNT_FORMS = {
     'signup': 'api.forms.CustomSignupForm',  # Chemin corrigé pour votre app 'api'
@@ -149,6 +164,7 @@ CSRF_HEADER_NAME = "X-CSRFToken"
 CSRF_TRUSTED_ORIGINS = ['http://127.0.0.1:8000', 'http://localhost:8000']
 
 MIDDLEWARE = [
+    'allauth.account.middleware.AccountMiddleware',
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
@@ -158,7 +174,7 @@ MIDDLEWARE = [
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
      'corsheaders.middleware.CorsMiddleware',
 ]
-CORS_ALLOW_ALL_ORIGINS = True  # En développement uniquement !
+CORS_ALLOW_ALL_ORIGINS = False  # En développement uniquement !
 CORS_ALLOW_CREDENTIALS = True
 CORS_ALLOWED_ORIGINS =[
    'http://localhost:3000'
@@ -237,8 +253,10 @@ AUTH_PASSWORD_VALIDATORS = [
 # https://docs.djangoproject.com/en/5.1/topics/i18n/
 
 LANGUAGE_CODE = 'en-us'
+CORS_EXPOSE_HEADERS = ['Authorization']  # Nouvelle ligne clé
+# settings.py
 
-TIME_ZONE = 'UTC'
+TIME_ZONE = 'Africa/Tunis'
 
 USE_I18N = True
 
@@ -271,3 +289,18 @@ CSRF_COOKIE_SECURE = False  # Mets True en production avec HTTPS
 CORS_ALLOW_CREDENTIALS = True  # Autorise les cookies cross-origin
 CSRF_TRUSTED_ORIGINS = ["http://127.0.0.1:8000", "http://localhost:3000"]
 FRONTEND_URL = 'http://localhost:3000'
+# Configuration des sessions
+SESSION_COOKIE_SAMESITE = 'Lax'
+SESSION_COOKIE_SECURE = False  # Mettez True en production avec HTTPS
+SESSION_COOKIE_HTTPONLY = True
+SESSION_ENGINE = 'django.contrib.sessions.backends.db'
+SESSION_COOKIE_NAME = 'sessionid'
+# Suppression de la section 'DATABASES' pour éviter le conflit
+DATABASES = {
+    'default': {
+       'ENGINE': 'django.db.backends.dummy',
+        'NAME': 'mydb',  # Remplacez par le nom de votre base de données
+    }
+}
+
+

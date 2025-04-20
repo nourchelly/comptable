@@ -1,41 +1,63 @@
 from django.urls import path
-from .views import home, LoginView, exporter_rapport,register_user,PasswordResetRequestView, reset_password,logout_view,google_auth_callback,get_csrf,ComptableProfileView,DeleteProfilView, RapportCreateView,RapportListView, RapportEditView, RapportDeleteView
-  # Ajout de csrf_token_view
-#from allauth.account.views import SignupView
-from api.forms import CustomSignupForm
-from . import views
-from rest_framework_simplejwt.views import (
-    TokenObtainPairView,
-    TokenRefreshView,
+#from .views import CustomTokenObtainPairView
+#from rest_framework_simplejwt.views import TokenRefreshView
+from .views import (
+    home,
+    ProfilAdminApi,
+
+    login_view,
+    GoogleLogin,
+    register_user,
+    PasswordResetRequestView,
+    reset_password,
+    logout_view,
+    google_auth_callback,
+    get_csrf,
+     # Si tu veux garder cette vue spécifique
+    ComptableProfileView,
+    DeleteProfilView,
+    RapportListView,
+    RapportEditView,
+    RapportDeleteView,
+    create_rapport,
+    exporter_rapport
 )
+
 app_name = 'api'
 
 urlpatterns = [
-    #token
-    path('api/token/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
-    path('api/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
-    # urls.py
-     path("get-csrf/", get_csrf, name="get-csrf"),
-    path('auth/google/callback/', google_auth_callback, name='google_callback'),
-    #path('signup/', SignupView.as_view(form_class=CustomSignupForm)),
-    #path('api/csrf/', csrf_token_view, name='csrf_token'),
-    path('login/', LoginView.as_view(), name='login'),
-    path('signup/', register_user, name='Signup'),
+    # Authentification et gestion des comptes
+    path('login/', login_view, name='login'),
+    path('signup/', register_user, name='signup'),
     path('home/', home, name='home'),
     path('forgot-password/', PasswordResetRequestView.as_view(), name='forgot_password'),
     path('reset-password/', reset_password, name='reset_password'),
-    
     path('logout/', logout_view, name='logout'),
-    #comptable
+    
+    # Authentification via Google
+    path('auth/google/callback/', google_auth_callback, name='google_callback'),
+    path("get-csrf/", get_csrf, name="get-csrf"),
+    
+    # Gestion des profils et rapports
     path('profil/', ComptableProfileView.as_view(), name='profilcomptable'),
     path('profil/delete/<str:user_id>', DeleteProfilView.as_view(), name='deletecomptable'),
-    #rapports 
     path('rapports/', RapportListView.as_view(), name='rapport-list'),
-    path('rapports/create/', RapportCreateView.as_view(), name='rapport-create'),
+    path('rapports/create/', create_rapport, name='rapport-create'),
     path('rapports/<str:pk>/edit/', RapportEditView.as_view(), name='rapport-edit'),  # ✏️ Modifier un rapport
     path('rapports/<str:pk>/delete/', RapportDeleteView.as_view(), name='rapport-delete'),
+    path('rapports/<str:id>/export', exporter_rapport, name='exporter_rapport'),
+    
+    # Vue personnalisée pour rafraîchir le token (si tu la veux encore)
+    path('google/login/', GoogleLogin.as_view(), name='google_login'),
 
-    #path('rapports/<str:pk>', RapportDetailView.as_view(), name='detail_rapport'),
-     path('rapports/<str:id>/export', exporter_rapport, name='exporter_rapport'),
-
+     #path('token/', CustomTokenObtainPairView.as_view(), name='token_obtain_pair'),
+    #path('token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
+    path('profiladmin/', ProfilAdminApi, name='profiladmin-list'),
+    path('profiladmin/<str:id>/', ProfilAdminApi, name='profiladmin-detail'),
+   
+   
+   
+   
+   
+    #path('token/refresh/', refresh_token_view, name='refresh_token'),
 ]

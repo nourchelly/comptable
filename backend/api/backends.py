@@ -1,30 +1,20 @@
 from django.contrib.auth.backends import BaseBackend
-from api.models import CustomUser  # Assure-toi que le chemin est correct
-from mongoengine.errors import DoesNotExist
+from mongoengine import DoesNotExist
+from .models import CustomUser
 from django.contrib.auth.hashers import check_password
 
 class MongoEngineBackend(BaseBackend):
-    """
-    Backend personnalisé pour l'authentification via MongoEngine.
-    """
-    def authenticate(self, request, username=None, password=None):
-        """
-        Vérifie les informations d'identification.
-        """
+    def authenticate(self, request, email=None, password=None, **kwargs):
         try:
-            # Recherche l'utilisateur par nom d'utilisateur
-            user = CustomUser.objects.get(username=username)
-            # Vérifie le mot de passe
-            if user.check_password(password):
+            user = CustomUser.objects.get(email=email)
+            if user.check_password(password):  # Utilisez la méthode check_password de votre modèle
                 return user
+            return None
         except DoesNotExist:
             return None
 
     def get_user(self, user_id):
-        """
-        Récupère un utilisateur par ID.
-        """
         try:
             return CustomUser.objects.get(id=user_id)
-        except DoesNotExist:
+        except (DoesNotExist, CustomUser.DoesNotExist):
             return None

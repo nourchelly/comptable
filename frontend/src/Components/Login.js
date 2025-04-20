@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import axios from 'axios';
 import { FaEye, FaEyeSlash } from 'react-icons/fa';
-import { useUser } from './UserContext'; // 💡 N'oublie pas d'ajuster le chemin selon ton arborescence
+import { useUser } from './UserContext';
 
 const Login = () => {
     const [values, setValues] = useState({
@@ -12,13 +12,18 @@ const Login = () => {
     const [role, setRole] = useState('');
     const [error, setError] = useState(null);
     const [showPassword, setShowPassword] = useState(false);
+    const [isLoading, setIsLoading] = useState(false);
     const navigate = useNavigate();
-    const { login } = useUser(); // ⚠️ ICI on utilise le contexte utilisateur
+    const location = useLocation();
+    const { login } = useUser();
 
     const handleSubmit = async (event) => {
         event.preventDefault();
+        setIsLoading(true);
+        
         if (!values.email || !values.password || !role) {
             setError("Veuillez remplir tous les champs");
+            setIsLoading(false);
             return;
         }
 
@@ -28,42 +33,51 @@ const Login = () => {
                 password: values.password,
                 role: role
             }, {
+                withCredentials: true, // Important pour les cookies de session
                 headers: {
                     'Content-Type': 'application/json'
                 }
             });
 
-            if (response.data.loginStatus) {
-                console.log("Réponse backend:", response.data);
+            if (response.data.status === 'success') {
+                const userData = {
+                    id: response.data.user.id,
+                    email: response.data.user.email,
+                    username: response.data.user.username,
+                    role: response.data.user.role
+                };
+                
+                // Mise à jour du contexte
+                login(userData);
+                
+                // Stockage minimal dans sessionStorage
+                sessionStorage.setItem('userRole', userData.role);
+                sessionStorage.setItem('userId', userData.id);
 
-                // 🔐 Stocker localement
-                localStorage.setItem("access_token", response.data.access);
-                localStorage.setItem("refresh_token", response.data.refresh);
-                localStorage.setItem("userRole", response.data.role);
-                localStorage.setItem("userId", response.data.user_id);
-
-                // ✅ 🔁 Mettre à jour le contexte utilisateur
-                login({
-                    id: response.data.user_id,
-                    email: values.email,
-                    role: response.data.role,
-                    token: response.data.access
-                });
-
-                // 🔁 Redirection par rôle
-                switch (response.data.role) {
-                    case 'admin': navigate('/dashboard'); break;
-                    case 'comptable': navigate('/dashboardcomptable'); break;
-                    case 'directeur': navigate('/dashboarddirecteur'); break;
-                    default: navigate('/');
-                }
-            } else {
-                setError(response.data.Error || "Erreur de connexion");
+                // Redirection vers la page demandée ou le dashboard par défaut
+                const redirectPath = location.state?.from || getDashboardByRole(userData.role);
+                navigate(redirectPath, { replace: true });
             }
         } catch (err) {
-            console.error("Erreur:", err.response?.data);
-            setError(err.response?.data?.Error || "Le serveur ne répond pas");
+            let errorMsg = "Erreur de connexion";
+            if (err.response?.status === 401) {
+                errorMsg = "Identifiants incorrects";
+            } else if (err.response?.status === 403) {
+                errorMsg = "Accès refusé pour ce rôle";
+            }
+            setError(errorMsg);
+        } finally {
+            setIsLoading(false);
         }
+    };
+
+    const getDashboardByRole = (role) => {
+        const routes = {
+            'admin': '/dashboard',
+            'comptable': '/dashboardcomptable', 
+            'directeur': '/dashboarddirecteur'
+        };
+        return routes[role] || '/';
     };
 
     const reachGoogle = () => {
@@ -75,8 +89,7 @@ const Login = () => {
         const authURL = `https://accounts.google.com/o/oauth2/v2/auth?response_type=code&client_id=${clientID}&redirect_uri=${redirectURI}&scope=${scope}&access_type=${accessType}&prompt=${prompt}`;
         
         window.location.href = authURL;
-      };
-      
+    };
 
     const togglePasswordVisibility = () => {
         setShowPassword(!showPassword);

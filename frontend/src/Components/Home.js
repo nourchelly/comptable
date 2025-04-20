@@ -64,7 +64,7 @@ const Home = () => {
             
             <button 
               className="btn px-4 py-2 d-flex align-items-center" 
-              onClick={() => navigate('/login')}
+              onClick={() => navigate('/connexion')}
               style={{ 
                 backgroundColor: "#04629D", 
                 borderColor: "#04629D",

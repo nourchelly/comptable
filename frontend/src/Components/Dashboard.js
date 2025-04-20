@@ -1,4 +1,5 @@
-import React from "react";
+
+import React, { useState, useEffect } from "react";
 import { Link, Outlet, useLocation, useNavigate } from "react-router-dom";
 import axios from "axios";
 import { 
@@ -11,10 +12,23 @@ import {
 const Dashboard = () => {
   const navigate = useNavigate();
   const location = useLocation();
-
+ const [User, setUser] = useState();
    // Fonction pour se déconnecter
    const handleLogout = () => {
     axios.get(  "http://127.0.0.1:8000/api/logout/")  // L'URL doit être celle du serveur Django
+      .then(result => {
+        if (result.data.Status) {
+          localStorage.removeItem("valid");
+          navigate('/connexion');
+        }
+      })
+      .catch(err => console.error(err));
+  }; // Liste de dépendances vide pour que l'effet soit exécuté une seule fois au montage du composant
+
+
+   // Fonction pour se déconnecter
+  /* const handleLogout = () => {
+    axios.post(  "http://127.0.0.1:8000/api/logout/")  // L'URL doit être celle du serveur Django
       .then(result => {
         if (result.data.Status) {
           localStorage.removeItem("valid");
@@ -22,7 +36,7 @@ const Dashboard = () => {
         }
       })
       .catch(err => console.error(err));
-  };
+  };*/
   
   const getPageTitle = () => {
     switch (location.pathname) {

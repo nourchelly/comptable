@@ -92,7 +92,7 @@ const Signup = () => {
         
             if (response.status === 200 || response.status === 201) {
                 alert("Votre compte a été créé avec succès !");
-                navigate('/login');
+                navigate('/connexion');
             } else {
                 setError(response.data?.error || "Une erreur s'est produite.");
             }
@@ -220,10 +220,11 @@ const Signup = () => {
                         </form>
                         <div className="text-center mt-3">
                             <p className="text-muted">Vous avez déjà un compte ? 
-                                <Link to="/login" className="text-primary text-decoration-none"> Connectez-vous ici</Link>
+                                <Link to="/connexion" className="text-primary text-decoration-none"> Connectez-vous ici</Link>
                             </p>
                         </div>
                     </div>
+                    
                 </div>
                 <div className="col-md-5 d-none d-md-flex align-items-center justify-content-center">
                     <img

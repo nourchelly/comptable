@@ -18,7 +18,7 @@ class IsComptable(RolePermission):
     message = "Réservé aux comptables"
 
 # Permission pour Admin
-class IsAdmin(RolePermission):
+class IsAdminUser(RolePermission):
     allowed_roles = ['admin']
     message = "Réservé aux administrateurs"
 

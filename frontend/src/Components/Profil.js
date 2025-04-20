@@ -1,243 +1,188 @@
-import axios from "axios";
-import React, { useEffect, useState } from "react";
-import { 
-  FaUser, 
-  FaUserEdit, 
-  FaTrashAlt, 
-  FaLock, 
-  FaEnvelope,
-  FaIdCard,
-  FaUserCircle,
-  FaCamera,
-  FaEye,
-  FaEyeSlash
-} from "react-icons/fa";
-import { useNavigate, Link } from "react-router-dom";
+import React, { useState, useEffect } from 'react';
+import axios from 'axios';
+import { useUser } from './UserContext';
+import { useNavigate } from 'react-router-dom';
 
-const Profil = () => {
-    const [profil, setProfil] = useState({
-        id: 1,
-        nom: "Charlene Reed",
-        nomUtilisateur: "charlene_reed",
-        email: "charlenereed@gmail.com",
-        motDePasse: "••••••••"
+const UserProfile = () => {
+    const { user, logout } = useUser();
+    const [profile, setProfile] = useState(null);
+    const [editMode, setEditMode] = useState(false);
+    const [formData, setFormData] = useState({
+        username: '',
+        email: ''
     });
-    const [showPassword, setShowPassword] = useState(false);
-    const [hoverPhoto, setHoverPhoto] = useState(false);
+    const [error, setError] = useState(null);
+    const [success, setSuccess] = useState(null);
     const navigate = useNavigate();
 
+    // Récupérer les données du profil
     useEffect(() => {
-        axios.get("http://localhost:3000/auth/profil")
-            .then((result) => {
-                if (result.data.Status) {
-                    setProfil(result.data.Result);
-                } else {
-                    alert(result.data.Error);
-                }
-            })
-            .catch((err) => console.log(err));
-    }, []);
-
-    const handleDelete = (id) => {
-        if (window.confirm("Êtes-vous sûr de vouloir supprimer définitivement votre compte ? Cette action est irréversible.")) {
-            axios.delete(`http://localhost:3000/auth/delete_profil/${id}`)
-                .then(result => {
-                    if (result.data.Status) {
-                        navigate('/login');
-                    } else {
-                        alert(result.data.Error);
-                    }
+        const fetchProfile = async () => {
+            if (!user?.id) {
+                setError("Utilisateur non connecté");
+                return;
+            }
+            
+            try {
+                const response = await axios.get(`http://127.0.0.1:8000/api/profiladmin/${user.id}/`, {
+                    withCredentials: true
                 });
+                
+                setProfile(response.data);
+                setFormData({
+                    username: response.data.username,
+                    email: response.data.email
+                });
+            } catch (err) {
+                console.error("Erreur lors de la récupération du profil:", err);
+                setError("Impossible de charger les informations du profil");
+            }
+        };
+
+        fetchProfile();
+    }, [user]);
+
+    const handleInputChange = (e) => {
+        const { name, value } = e.target;
+        setFormData({
+            ...formData,
+            [name]: value
+        });
+    };
+ 
+    const handleSubmit = async (e) => {
+        e.preventDefault();
+        setError(null);
+        setSuccess(null);
+        
+        try {
+            const response = await axios.put(`http://127.0.0.1:8000/api/profiladmin/${user.id}/`, formData, {
+                withCredentials: true,
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            });
+            
+            if (response.data.status === 'success') {
+                setSuccess("Profil mis à jour avec succès");
+                setProfile({
+                    ...profile,
+                    ...formData
+                });
+                setEditMode(false);
+            }
+        } catch (err) {
+            console.error("Erreur lors de la mise à jour du profil:", err);
+            setError("Impossible de mettre à jour le profil");
         }
     };
 
+    const handleDeleteAccount = async () => {
+        if (window.confirm("Êtes-vous sûr de vouloir supprimer votre compte ? Cette action est irréversible.")) {
+            try {
+                const response = await axios.delete(`http://127.0.0.1:8000/api/profiladmin/${user.id}/`, {
+                    withCredentials: true
+                });
+                
+                if (response.data.status === 'success') {
+                    alert("Votre compte a été supprimé avec succès");
+                    logout(); // Déconnexion de l'utilisateur
+                    navigate('/connexion'); // Redirection vers la page de connexion
+                }
+            } catch (err) {
+                console.error("Erreur lors de la suppression du compte:", err);
+                setError("Impossible de supprimer le compte");
+            }
+        }
+    };
+
+    if (!user) {
+        return <div className="alert alert-warning">Veuillez vous connecter pour accéder à votre profil</div>;
+    }
+
+    if (error && !profile) {
+        return <div className="alert alert-danger">{error}</div>;
+    }
+
+    if (!profile) {
+        return <div className="spinner-border" role="status"><span className="visually-hidden">Chargement...</span></div>;
+    }
+
     return (
-        <div className="min-h-screen bg-gray-50 py-8 px-4 sm:px-6 lg:px-8">
-            <div className="max-w-6xl mx-auto">
-                {/* En-tête amélioré */}
-                <div className="text-center mb-12">
-                    <h1 className="text-3xl font-bold text-gray-800 flex items-center justify-center">
-                        <FaUserCircle className="text-blue-500 mr-3 text-4xl" />
-                        <span>Mon Profil</span>
-                    </h1>
-                    <p className="text-gray-500 mt-2 text-lg">Gérez vos informations personnelles et paramètres de compte</p>
-                </div>
-
-                {/* Conteneur principal */}
-                <div className="bg-white rounded-2xl shadow-xl overflow-hidden">
-                    <div className="grid grid-cols-1 lg:grid-cols-4 gap-0">
-                        {/* Colonne photo avec effet interactif */}
-                        <div className="lg:col-span-1 bg-gradient-to-b from-blue-50 to-blue-100 p-8 flex flex-col items-center justify-center border-r border-gray-200">
-                            <div 
-                                className="relative w-48 h-48 rounded-full overflow-hidden border-4 border-white shadow-lg group"
-                                onMouseEnter={() => setHoverPhoto(true)}
-                                onMouseLeave={() => setHoverPhoto(false)}
-                            >
-                                <img 
-                                    src="/images/profil.jpg" 
-                                    alt="Profil" 
-                                    className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-110"
-                                />
-                                <div className={`absolute inset-0 bg-black bg-opacity-30 flex items-center justify-center transition-opacity duration-300 ${hoverPhoto ? 'opacity-100' : 'opacity-0'}`}>
-                                    <div className="text-center">
-                                        <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-white text-blue-600 mb-2">
-                                            <FaCamera className="text-xl" />
-                                        </div>
-                                        <p className="text-white font-medium">Changer la photo</p>
-                                    </div>
-                                </div>
-                            </div>
-                            
-                            <h2 className="text-xl font-semibold text-gray-800 mt-6">{profil.nom}</h2>
-                            <p className="text-blue-600">{profil.email}</p>
-                            
-                            {/* Stats ou badges */}
-                            <div className="mt-6 grid grid-cols-2 gap-4 w-full">
-                                <div className="bg-white p-3 rounded-lg shadow-xs text-center">
-                                    <p className="text-sm text-gray-500">Membre depuis</p>
-                                    <p className="font-semibold">2022</p>
-                                </div>
-                                <div className="bg-white p-3 rounded-lg shadow-xs text-center">
-                                    <p className="text-sm text-gray-500">Rôle</p>
-                                    <p className="font-semibold">Utilisateur</p>
-                                </div>
-                            </div>
+        <div className="container mt-5">
+            <div className="row justify-content-center">
+                <div className="col-md-8">
+                    <div className="card shadow">
+                        <div className="card-header bg-primary text-white">
+                            <h3 className="mb-0">Mon Profil</h3>
                         </div>
-
-                        {/* Colonne informations */}
-                        <div className="lg:col-span-3 p-8">
-                            <div className="space-y-8">
-                                {/* Section Informations Personnelles */}
-                                <div className="border-b border-gray-200 pb-6">
-                                    <div className="flex items-center justify-between mb-6">
-                                        <h2 className="text-xl font-semibold text-gray-800 flex items-center">
-                                            <FaIdCard className="text-blue-500 mr-3" />
-                                            Informations Personnelles
-                                        </h2>
-                                        <Link 
-                                            to={`/dashboard/modify_profil/${profil.id}`}
-                                            className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-all"
-                                        >
-                                            <FaUserEdit className="mr-2" />
-                                            Modifier
-                                        </Link>
+                        <div className="card-body">
+                            {error && <div className="alert alert-danger">{error}</div>}
+                            {success && <div className="alert alert-success">{success}</div>}
+                            
+                            {editMode ? (
+                                <form onSubmit={handleSubmit}>
+                                    <div className="mb-3">
+                                        <label className="form-label">Nom d'utilisateur</label>
+                                        <input 
+                                            type="text" 
+                                            className="form-control" 
+                                            name="username" 
+                                            value={formData.username} 
+                                            onChange={handleInputChange} 
+                                            required 
+                                        />
                                     </div>
-                                    
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                        {/* Champ Nom Complet */}
-                                        <div>
-                                            <label className="block text-sm font-medium text-gray-600 mb-2 flex items-center">
-                                                <FaUser className="text-blue-400 mr-2" />
-                                                Nom Complet
-                                            </label>
-                                            <div className="mt-1 relative rounded-md shadow-sm">
-                                                <input
-                                                    type="text"
-                                                    className="block w-full pl-10 pr-3 py-3 border border-gray-300 rounded-lg bg-gray-50 focus:ring-blue-500 focus:border-blue-500"
-                                                    value={profil.nom}
-                                                    readOnly
-                                                />
-                                                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                                                    <FaUser className="h-5 w-5 text-gray-400" />
-                                                </div>
-                                            </div>
-                                        </div>
-
-                                        {/* Champ Nom d'utilisateur */}
-                                        <div>
-                                            <label className="block text-sm font-medium text-gray-600 mb-2 flex items-center">
-                                                <FaUserEdit className="text-purple-400 mr-2" />
-                                                Nom d'utilisateur
-                                            </label>
-                                            <div className="mt-1 relative rounded-md shadow-sm">
-                                                <input
-                                                    type="text"
-                                                    className="block w-full pl-10 pr-3 py-3 border border-gray-300 rounded-lg bg-gray-50 focus:ring-blue-500 focus:border-blue-500"
-                                                    value={profil.nomUtilisateur}
-                                                    readOnly
-                                                />
-                                                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                                                    <FaUserEdit className="h-5 w-5 text-gray-400" />
-                                                </div>
-                                            </div>
-                                        </div>
-
-                                        {/* Champ Email */}
-                                        <div>
-                                            <label className="block text-sm font-medium text-gray-600 mb-2 flex items-center">
-                                                <FaEnvelope className="text-red-400 mr-2" />
-                                                Adresse Email
-                                            </label>
-                                            <div className="mt-1 relative rounded-md shadow-sm">
-                                                <input
-                                                    type="text"
-                                                    className="block w-full pl-10 pr-3 py-3 border border-gray-300 rounded-lg bg-gray-50 focus:ring-blue-500 focus:border-blue-500"
-                                                    value={profil.email}
-                                                    readOnly
-                                                />
-                                                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                                                    <FaEnvelope className="h-5 w-5 text-gray-400" />
-                                                </div>
-                                            </div>
-                                        </div>
-
-                                        {/* Champ Mot de passe */}
-                                        <div>
-                                            <label className="block text-sm font-medium text-gray-600 mb-2 flex items-center">
-                                                <FaLock className="text-green-400 mr-2" />
-                                                Mot de passe
-                                            </label>
-                                            <div className="mt-1 relative rounded-md shadow-sm">
-                                                <input
-                                                    type={showPassword ? "text" : "password"}
-                                                    className="block w-full pl-10 pr-10 py-3 border border-gray-300 rounded-lg bg-gray-50 focus:ring-blue-500 focus:border-blue-500"
-                                                    value={profil.motDePasse}
-                                                    readOnly
-                                                />
-                                                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                                                    <FaLock className="h-5 w-5 text-gray-400" />
-                                                </div>
-                                                <button
-                                                    type="button"
-                                                    className="absolute inset-y-0 right-0 pr-3 flex items-center"
-                                                    onClick={() => setShowPassword(!showPassword)}
-                                                >
-                                                    {showPassword ? (
-                                                        <FaEyeSlash className="text-gray-400 hover:text-gray-500" />
-                                                    ) : (
-                                                        <FaEye className="text-gray-400 hover:text-gray-500" />
-                                                    )}
-                                                </button>
-                                            </div>
-                                        </div>
+                                    <div className="mb-3">
+                                        <label className="form-label">Email</label>
+                                        <input 
+                                            type="email" 
+                                            className="form-control" 
+                                            name="email" 
+                                            value={formData.email} 
+                                            onChange={handleInputChange} 
+                                            required 
+                                        />
                                     </div>
-                                </div>
-
-                                {/* Section Actions */}
-                                <div>
-                                    <h2 className="text-xl font-semibold text-gray-800 mb-6">Actions du compte</h2>
-                                    <div className="flex flex-col sm:flex-row gap-4">
-                                        <Link 
-                                            to={`/dashboard/modify_profil/${profil.id}`}
-                                            className="inline-flex items-center justify-center px-6 py-3 border border-transparent text-base font-medium rounded-lg shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-all flex-1 text-center"
+                                    <div className="d-flex justify-content-between">
+                                        <button type="submit" className="btn btn-primary">Enregistrer</button>
+                                        <button 
+                                            type="button" 
+                                            className="btn btn-secondary" 
+                                            onClick={() => setEditMode(false)}
                                         >
-                                            <FaUserEdit className="mr-2" />
-                                            Modifier le profil
-                                        </Link>
-                                        <button
-                                            onClick={() => handleDelete(profil.id)}
-                                            className="inline-flex items-center justify-center px-6 py-3 border border-gray-300 text-base font-medium rounded-lg shadow-sm text-gray-700 bg-white hover:bg-red-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 transition-all flex-1"
-                                        >
-                                            <FaTrashAlt className="mr-2 text-red-600" />
-                                            <span className="text-red-600">Supprimer le compte</span>
+                                            Annuler
                                         </button>
                                     </div>
-                                    <p className="text-sm text-gray-500 mt-4">
-                                        <FaLock className="inline mr-1" />
-                                        Vos données sont sécurisées et ne seront jamais partagées avec des tiers.
-                                    </p>
+                                </form>
+                            ) : (
+                                <div>
+                                    <div className="mb-3">
+                                        <strong>Nom d'utilisateur:</strong> {profile.username}
+                                    </div>
+                                    <div className="mb-3">
+                                        <strong>Email:</strong> {profile.email}
+                                    </div>
+                                    <div className="mb-3">
+                                        <strong>Rôle:</strong> {profile.role}
+                                    </div>
+                                    
+                                    <div className="d-flex justify-content-between">
+                                        <button 
+                                            className="btn btn-primary" 
+                                            onClick={() => setEditMode(true)}
+                                        >
+                                            Modifier
+                                        </button>
+                                        <button 
+                                            className="btn btn-danger" 
+                                            onClick={handleDeleteAccount}
+                                        >
+                                            Supprimer mon compte
+                                        </button>
+                                    </div>
                                 </div>
-                            </div>
+                            )}
                         </div>
                     </div>
                 </div>
@@ -246,4 +191,4 @@ const Profil = () => {
     );
 };
 
-export default Profil;
+export default UserProfile;

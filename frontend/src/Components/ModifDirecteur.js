@@ -39,7 +39,7 @@ const ModifierProfilDirecteur = () => {
       } catch (error) {
         console.error("Erreur chargement profil:", error);
         if (error.response?.status === 401) {
-          navigate("/login");
+          navigate("/connexion");
         }
       } finally {
         setLoading(false);

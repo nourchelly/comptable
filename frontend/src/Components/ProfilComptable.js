@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
-import axios from "axios";
 import { useNavigate, Link } from "react-router-dom";
+import { useUser } from './UserContext';
+// Importer l'instance Axios
 import { 
   FaUserEdit, 
   FaTrashAlt, 
@@ -13,6 +14,8 @@ import {
 } from "react-icons/fa";
 
 const ProfilComptable = () => {
+  const { user, logout } = useUser();
+  const [profile, setProfile] = useState(null);
   const [profil, setProfil] = useState({
     username: "",
     email: "",
@@ -20,79 +23,61 @@ const ProfilComptable = () => {
     nom_complet: "",
     telephone: "",
     matricule: "",
-    departement: ""
-  
-  });
+    departement: "",
+   
 
+  });
+  const [error, setError] = useState(null);
+  const [success, setSuccess] = useState(null);
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
 
   useEffect(() => {
-    const chargerProfil = async () => {
-      try {
-        const token = localStorage.getItem("access_token");
-        if (!token) {
-          console.error("Aucun token trouvé");
-          ///navigate("/login");
+    const fetchProfile = async () => {
+      if (!user?.id) {
+          setError("Utilisateur non connecté");
           return;
         }
-
-        const response = await axios.get("http://127.0.0.1:8000/api/profil/", {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          }
-        });
-
-        console.log("Profil récupéré:", response.data);
-
-        setProfil(prev => ({
-          ...prev,
-          username: response.data.username,
-          email: response.data.email,
-          role: response.data.role,
-          nom_complet: response.data.nom_complet || `${response.data.prenom || ""} ${response.data.nom || ""}`,
-          telephone: response.data.telephone ?? "Non renseigné",
-          matricule: response.data.matricule ?? "Non défini",
-          departement: response.data.departement ?? "Comptabilité",
-          id: response.data._id || "",
-        }));
-
-      } catch (error) {
-        console.error("Erreur chargement profil:", error);
-        if (error.response?.status === 401) {
-          localStorage.removeItem("access_token");
-          navigate("/login");
-        }
-      } finally {
-        setLoading(false);
+  
+        try {
+          const response = await axios.get(`http://127.0.0.1:8000/api/profiladmin/${user.id}/`, {
+              withCredentials: true
+          });
+          
+          setProfile(response.data);
+          setFormData({
+              username: response.data.username,
+              email: response.data.email,
+              nom_complet: response.data.nom_complet,
+              telephone: response.data.telephone,
+              matricule: response.data.matricule,
+              departement: response.data.departement
+          });
+      } catch (err) {
+          console.error("Erreur lors de la récupération du profil:", err);
+          setError("Impossible de charger les informations du profil");
       }
-    };
-
-    chargerProfil();
-  }, [navigate]);
-
-  const handleDelete = () => {
-    if (!window.confirm("Confirmer la suppression définitive de votre profil ?")) return;
-
-    const token = localStorage.getItem("access_token");
-
-    axios
-      .delete(`http://127.0.0.1:8000/api/profil/delete`, {
-        headers: { Authorization: `Bearer ${token}` },
-      })
-      .then((result) => {
-        if (result.status === 204 || result.data.Status) {
-          localStorage.removeItem("access_token");
-          navigate("/login");
-        } else {
-          alert(result.data.Error || "Erreur inconnue");
-        }
-      })
-      .catch((err) => {
-        console.error("Erreur suppression:", err);
-        alert("Erreur lors de la suppression du profil");
-      });
   };
+
+  const handleDelete = async () => {
+    if (window.confirm("Êtes-vous sûr de vouloir supprimer votre compte ? Cette action est irréversible.")) {
+        try {
+            const response = await axios.delete(`http://127.0.0.1:8000/api/profiladmin/${user.id}/`, {
+                withCredentials: true
+            });
+            
+            if (response.data.status === 'success') {
+                alert("Votre compte a été supprimé avec succès");
+                logout(); // Déconnexion de l'utilisateur
+                navigate('/connexion'); // Redirection vers la page de connexion
+            }
+        } catch (err) {
+            console.error("Erreur lors de la suppression du compte:", err);
+            setError("Impossible de supprimer le compte");
+        }
+    }
+};
+
 
   if (loading) {
     return (
@@ -118,7 +103,7 @@ const ProfilComptable = () => {
             <p className="mt-2 text-indigo-100">Comptable</p>
             <div className="mt-8">
               <Link 
-                to="/comptable/modifier-profil"
+                to={`/dashboardcomptable/modif_profil/${profil.id}`}
                 className="flex items-center justify-center px-6 py-3 bg-white text-indigo-600 rounded-full font-medium hover:bg-indigo-50 transition duration-300"
               >
                 <FaUserEdit className="mr-2 text-lg" /> Modifier le profil

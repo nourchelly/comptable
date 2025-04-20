@@ -35,21 +35,34 @@ import ModifDirecteur from './Components/ModifDirecteur';
 import Facture from './Components/Facture';
 import Audit from './Components/Audit';
 import Calendar from './Components/Calender';
-
+//import { BrowserRouter, useNavigate, useLocation } from 'react-router-dom';
 import { GoogleOAuthProvider } from '@react-oauth/google';
 import { UserProvider } from './Components/UserContext';
-
+// Composant pour vérifier l'authentification globale
+/*function AuthCheck() {
+  const navigate = useNavigate();
+  const location = useLocation();
+  
+ // Dans le composant AuthCheck
+React.useEffect(() => {
+  const isProtectedRoute = location.pathname.includes('/dashboard');
+  if (isProtectedRoute && !localStorage.getItem('access_token')) {
+      localStorage.setItem('redirectPath', location.pathname);
+      navigate('/connexion');
+  }
+}, [location])};*/
 function App() {
   return (
     <div className="App">
       <GoogleOAuthProvider clientId="11479995049-09n7oceljn4sgmodv5til5uj7bd072jp.apps.googleusercontent.com">
         <UserProvider>
+         {/* Ajouter ce composant pour la vérification globale */}
           <Routes>
             {/* Routes publiques */}
             <Route path="/" element={<Home />} />
             <Route path="/contact" element={<Contact />} />
             <Route path="/services" element={<Services />} />
-            <Route path="/login" element={<Login />} />
+            <Route path="/connexion" element={<Login />} />
             <Route path="/signup" element={<Signup />} />
             <Route path="/forgot-password" element={<ForgotPassword />} />
             <Route path="/reset-password/:token" element={<ResetPassword />} />

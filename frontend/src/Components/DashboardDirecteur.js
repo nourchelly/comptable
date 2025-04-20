@@ -15,6 +15,48 @@ const DashboardDirecteurFinancier = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const [isLoading, setIsLoading] = useState(true);
+    const [User, setUser] = useState();
+  
+    const logout = () => {
+      // Supprimer les données utilisateur et tokens du localStorage
+      localStorage.removeItem("access_token");
+      localStorage.removeItem("refresh_token");
+      localStorage.removeItem("userData");
+    
+      // Réinitialiser l'état du contexte
+      setUser({
+        id: null,
+        email: null,
+        role: null,
+        token: null,
+      });
+    
+      // Rediriger vers la page de connexion
+      navigate('/connexion');
+    };
+    
+  
+  useEffect(() => {
+      const token = localStorage.getItem("access_token");
+  
+      if (token) {
+          try {
+              const decoded = JSON.parse(atob(token.split('.')[1])); // Décodage du token
+              const expirationTime = decoded.exp * 1000;
+  
+              // Vérifie si le token a expiré
+              if (expirationTime < Date.now()) {
+                  logout();  // Si expiré, appeler la fonction de déconnexion
+              }
+          } catch (error) {
+              // Si le token est mal formé ou invalide
+              logout();
+          }
+      } else {
+          // Si aucun token n'est trouvé, effectuer la déconnexion aussi
+          logout();
+      }
+  }, []);
 
   // Données pour les graphiques
   const performanceData = [
@@ -69,6 +111,7 @@ const DashboardDirecteurFinancier = () => {
   }, []);
 
   // Gestion de la déconnexion
+  /*
   const handleLogout = () => {
     axios.get(  "http://127.0.0.1:8000/api/logout/")  // L'URL doit être celle du serveur Django
       .then(result => {
@@ -78,7 +121,7 @@ const DashboardDirecteurFinancier = () => {
         }
       })
       .catch(err => console.error(err));
-  };
+  };*/
 
   // Gestion des audits
   const saveAudit = async (auditData) => {
@@ -212,7 +255,7 @@ const DashboardDirecteurFinancier = () => {
         </div>
 
         <button 
-          onClick={handleLogout}
+          onClick={logout}
           className="flex items-center w-full p-3 text-indigo-100 hover:bg-indigo-700 rounded-lg transition-colors duration-200"
         >
           <FaSignOutAlt className="mr-3 text-blue-300" />

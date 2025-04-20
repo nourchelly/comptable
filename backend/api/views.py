@@ -1,21 +1,25 @@
 from rest_framework.views import APIView
 import logging
+from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework.decorators import permission_classes
 from mongoengine.errors import DoesNotExist
 from rest_framework.response import Response
 from rest_framework import status, permissions
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from django.utils import timezone
-from rest_framework.decorators import api_view
+from rest_framework.decorators import api_view,  authentication_classes 
 from datetime import datetime, timedelta
 from django.core.mail import send_mail 
 from django.conf import settings
 import jwt
+
 from django.db import models
 from mongoengine.errors import NotUniqueError
 from django.contrib.auth.hashers import check_password,make_password
 import requests
 import uuid
+from api.models import CustomUser
+
 from .models import CustomUser,Comptable,DirecteurFinancier
 from .serializers import RegisterSerializer, PasswordResetRequestSerializer, PasswordResetSerializer
 from allauth.socialaccount.providers.google.views import GoogleOAuth2Adapter
@@ -26,6 +30,13 @@ from django.views.decorators.csrf import csrf_exempt
 from django.utils.decorators import method_decorator
 from django.views.decorators.http import require_GET
 from django.views.decorators.csrf import ensure_csrf_cookie
+
+
+# Vue de l'accueil
+@api_view(['GET'])
+@permission_classes([AllowAny])  # Permet un accès sans authentification
+def home(request):
+    return Response({"message": "Bienvenue à l'accueil de l'API"})
 # Configurer le logger
 logger = logging.getLogger(__name__)
 
@@ -40,10 +51,17 @@ def get_csrf(request):
 
 # Vue pour GoogleLogin
 class GoogleLogin(SocialLoginView):
+    authentication_classes = []  # Désactive l'authentification par défaut
+    permission_classes = [AllowAny] 
     adapter_class = GoogleOAuth2Adapter
     callback_url = "http://localhost:3000/google/callback"  # Adapte l'URL en fonction de ton frontend
     client_class = OAuth2Client
 
+
+def get_serializer(self, *args, **kwargs):
+        serializer_class = self.get_serializer_class()
+        kwargs['context'] = self.get_serializer_context()
+        return serializer_class(*args, **kwargs)
 # Vue d'inscription de l'utilisateur
 import re
 from django.core.exceptions import ValidationError
@@ -85,98 +103,139 @@ def register_user(request):
     except Exception as e:
         print("Erreur :", str(e))
         return Response({'error': str(e)}, status=500)
+# Générer un token unique pour l'utilisateur
 
-class LoginView(APIView):
-    permission_classes = [AllowAny]
+# Générer un token unique pour l'utilisateur
 
-    def post(self, request):
-        email = request.data.get('email', '').strip().lower()
-        password = request.data.get('password', '')
-        role = request.data.get('role', '')
+#@csrf_exempt
+from .models import CustomUser
 
-        logger.info(f"Tentative de connexion - Email: {email}, Rôle: {role}")
 
-        if not email or not password or not role:
-            return Response({
-                'loginStatus': False,
-                'Error': 'Tous les champs sont requis'
-            }, status=status.HTTP_400_BAD_REQUEST)
+from django.http import JsonResponse
+from django.views.decorators.csrf import csrf_exempt
+from mongoengine import DoesNotExist
+import json
 
+@csrf_exempt
+def login_view(request):
+    if request.method == 'POST':
         try:
-            # Récupérer l'utilisateur selon son email et rôle
-            user = CustomUser.objects.get(email=email, role=role)
-
-            # Vérification du mot de passe
-            if not user.check_password(password):
-                logger.warning("Mot de passe incorrect")
-                return Response({
-                    'loginStatus': False,
-                    'Error': 'Mot de passe incorrect'
-                }, status=status.HTTP_401_UNAUTHORIZED)
-
-            logger.info("Authentification réussie")
-
-            # Générer le token d'accès
-            access_token = generate_jwt(user.id, user.role)
-
-            # Infos spécifiques à l'utilisateur selon son rôle
-            user_data = {
-                'loginStatus': True,
-                'access': access_token,  # Token ajouté dans la réponse
-                'user_id': str(user.id),
-                'role': user.role,
-                'email': user.email,
-                'username': user.username
-            }
-
-            # Si l'utilisateur est un comptable, ajouter ses données spécifiques
-            if user.role == "comptable":
-                comptable = Comptable.objects(user=user.id).first()
-                if comptable:
-                    user_data.update({
-                        'nom_complet': comptable.nom_complet,
-                        'telephone': comptable.telephone,
-                        'matricule': comptable.matricule,
-                        'departement': comptable.departement
-                    })
-
-            # Si l'utilisateur est un directeur, ajouter ses données spécifiques
-            elif user.role == "directeur":
-                directeur = DirecteurFinancier.objects(user=user.id).first()
-                if directeur:
-                    user_data.update({
-                        'departement': directeur.departement
-                    })
-
-            return Response(user_data)
-
-        except DoesNotExist:
-            logger.warning("Utilisateur non trouvé")
-            return Response({
-                'loginStatus': False,
-                'Error': 'Aucun compte trouvé avec ces identifiants'
-            }, status=status.HTTP_404_NOT_FOUND)
-
+            data = json.loads(request.body)
+            email = data.get('email')
+            password = data.get('password')
+            role = data.get('role')
+            
+            try:
+                user = CustomUser.objects.get(email=email)
+                if not user.check_password(password):
+                    return JsonResponse({'status': 'error', 'message': 'Mot de passe incorrect'}, status=401)
+                
+                if user.role != role:
+                    return JsonResponse({'status': 'error', 'message': 'Rôle incorrect'}, status=403)
+                
+                # Ici vous devriez implémenter votre propre système de session
+                return JsonResponse({
+                    'status': 'success',
+                    'user': {
+                        'id': str(user.id),
+                        'email': user.email,
+                        'username': user.username,
+                        'role': user.role
+                    }
+                })
+                
+            except DoesNotExist:
+                return JsonResponse({'status': 'error', 'message': 'Utilisateur non trouvé'}, status=404)
+                
+        except json.JSONDecodeError:
+            return JsonResponse({'status': 'error', 'message': 'Données JSON invalides'}, status=400)
         except Exception as e:
-            logger.error(f"Erreur technique: {str(e)}", exc_info=True)
-            return Response({
-                'loginStatus': False,
-                'Error': 'Erreur technique',
-                'Details': str(e)
-            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            return JsonResponse({'status': 'error', 'message': str(e)}, status=500)
+    
+    return JsonResponse({'status': 'error', 'message': 'Méthode non autorisée'}, status=405)
+from django.views.decorators.csrf import csrf_exempt
+import json
+from functools import wraps
+from django.http import JsonResponse
+from django.http import JsonResponse
+from .models import CustomUser  # Importez directement CustomUser
+import json
+from django.http import JsonResponse
+from django.views.decorators.csrf import csrf_exempt
+from .models import CustomUser
+import json
 
+# views.py
+from django.http import JsonResponse
+from django.views.decorators.csrf import csrf_exempt
+from rest_framework.parsers import JSONParser
+from .models import CustomUser  # Supposons que votre modèle CustomUser est dans le même dossier
+from .serializers import CustomUserSerializer  # Vous devrez créer ce serializer
 
-def generate_jwt(user_id, role):
-    payload = {
-        'user_id': str(user_id),
-        'role': role,
-        'exp': datetime.utcnow() + timedelta(hours=2),  # token expire dans 2h
-        'iat': datetime.utcnow()  # moment de création du token
-    }
-    token = jwt.encode(payload, settings.SECRET_KEY, algorithm='HS256')
-    return token
-
-
+@csrf_exempt
+def ProfilAdminApi(request, id=None):
+    # Vérifier si l'id est fourni et non vide
+    
+    if request.method != 'POST' and (not id or id == 'undefined'):
+        return JsonResponse({"error": "ID utilisateur requis"}, status=400)
+        
+    if request.method == 'GET':
+        try:
+            # Récupérer l'utilisateur par ID
+            user = CustomUser.objects.get(id=id)
+            user_data = {
+                'id': str(user.id),
+                'email': user.email,
+                'username': user.username,
+                'role': user.role,
+                # Ajoutez d'autres champs si nécessaire
+            }
+            return JsonResponse(user_data)
+            
+        except DoesNotExist:
+            return JsonResponse({"error": "Utilisateur non trouvé"}, status=404)
+            
+    elif request.method == 'PUT':
+        try:
+            # Récupérer l'utilisateur par ID
+            user = CustomUser.objects.get(id=id)
+            
+            # Analyser les données de la requête
+            try:
+                user_data = json.loads(request.body)
+                
+                # Ne pas permettre la modification du rôle via cette API
+                if 'role' in user_data:
+                    del user_data['role']
+                    
+                # Mettre à jour les champs de l'utilisateur
+                for key, value in user_data.items():
+                    if key == 'password':
+                        # Gérer séparément le mot de passe pour le hachage
+                        user.set_password(value)
+                    else:
+                        setattr(user, key, value)
+                
+                user.save()
+                return JsonResponse({"status": "success", "message": "Profil mis à jour avec succès"})
+                
+            except json.JSONDecodeError:
+                return JsonResponse({"error": "Données JSON invalides"}, status=400)
+                
+        except DoesNotExist:
+            return JsonResponse({"error": "Utilisateur non trouvé"}, status=404)
+            
+    elif request.method == 'DELETE':
+        try:
+            user = CustomUser.objects.get(id=id)
+            user.delete()
+            return JsonResponse({"status": "success", "message": "Compte supprimé avec succès"})
+        except DoesNotExist:
+            return JsonResponse({"error": "Utilisateur non trouvé"}, status=404)
+            
+    else:
+        return JsonResponse({"error": "Méthode non autorisée"}, status=405)
+from datetime import datetime, timedelta
 # Vue pour la demande de réinitialisation du mot de passe
 import json
 
@@ -261,6 +320,9 @@ from django.http import JsonResponse
 from django.contrib.auth import logout
 from django.http import HttpResponse
 # Vue de déconnexion
+from django.views.decorators.csrf import csrf_exempt
+# LogoutView pour gérer la déconnexion (blacklist du token)
+#@csrf_exempt
 def logout_view(request):
     # Supprimer le cookie
     response = JsonResponse({'Status': True})
@@ -270,7 +332,7 @@ def logout_view(request):
     logout(request)
     
     return response
-            
+
 # Vue de l'accueil
 @api_view(['GET'])
 @permission_classes([AllowAny])  # Permet un accès sans authentification
@@ -281,7 +343,6 @@ def home(request):
 @api_view(['GET'])
 def google_auth(request):
     return Response({'message': 'Endpoint Google Auth'})
-
 
 @api_view(['POST'])
 @csrf_exempt
@@ -295,7 +356,7 @@ def google_auth_callback(request):
 
     # 1. Obtenir les tokens depuis Google
     token_url = "https://oauth2.googleapis.com/token"
-    redirect_uri = "http://localhost:3000/auth/google/callback"  # à adapter selon votre redirection
+    redirect_uri = "http://localhost:3000/auth/google/callback"
     client_id = "11479995049-09n7oceljn4sgmodv5til5uj7bd072jp.apps.googleusercontent.com"
     client_secret = "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"
 
@@ -336,21 +397,19 @@ def google_auth_callback(request):
     try:
         user = CustomUser.objects.get(email=email)
     except CustomUser.DoesNotExist:
-        # Ici, tu peux choisir un rôle spécifique ou utiliser une logique d'assignation de rôle
-        # Exemple : un rôle par défaut 'admin' ou autre logique
         user = CustomUser.objects.create(
             email=email,
             username=username,
-            role="admin",  # Vous pouvez ajouter une logique plus fine pour le rôle
-            password="",  # Pas de mot de passe (auth externe)
+            role="admin",
+            password="",  # Auth externe
             is_active=True
         )
 
-    # 4. Générer le JWT manuellement
+    # 4. Générer le JWT
     payload = {
         "user_id": str(user.id),
         "email": user.email,
-        "role": user.role,  # Assurer que le rôle est envoyé
+        "role": user.role,
         "exp": datetime.utcnow() + timedelta(hours=24),
         "iat": datetime.utcnow()
     }
@@ -358,16 +417,18 @@ def google_auth_callback(request):
     jwt_token = jwt.encode(payload, settings.SECRET_KEY, algorithm="HS256")
 
     return JsonResponse({
-        "token": jwt_token,  # Le token JWT
-        "role": user.role,   # Le rôle de l'utilisateur
-        "user_id": str(user.id)  # L'id de l'utilisateur (utilisé dans le frontend)
+        "token": jwt_token,
+        "role": user.role,
+        "user_id": str(user.id)
     })
-from rest_framework_simplejwt.tokens import UntypedToken
-from rest_framework_simplejwt.exceptions import InvalidToken
-from .serializers import ComptableSerializer
+
+#from rest_framework_simplejwt.tokens import UntypedToken
+#from rest_framework_simplejwt.exceptions import InvalidToken
+#from .serializers import ComptableSerializer
 
 class ComptableProfileView(APIView):
     permission_classes = [IsAuthenticated]
+    authentication_classes = [JWTAuthentication]  # Force JWT
 
     def get(self, request):
         # Débogage : vérifier si l'utilisateur est authentifié
@@ -432,25 +493,45 @@ class DeleteProfilView(APIView):
 #rapport 
 from .models import Rapport
 from .serializers import RapportSerializer
+from rest_framework_simplejwt.authentication import JWTAuthentication
 from .permissions import IsComptable
-class RapportCreateView(APIView):
-    permission_classes = [IsAuthenticated, IsComptable]
-
-    def post(self, request, *args, **kwargs):
-        # Création d'un rapport
-        comptable = Comptable.objects.get(user=request.user)
-        rapport = Rapport(
-            nom=request.data.get('nom'),
-            type=request.data.get('type'),
-            statut='En attente',
-            comptable=comptable
+@api_view(['POST'])
+@authentication_classes([JWTAuthentication])  # Ajout crucial
+@permission_classes([IsAuthenticated])
+def create_rapport(request):
+    # Vérification du rôle
+    if request.user.role != 'comptable':
+        return Response(
+            {"error": "Accès réservé aux comptables"},
+            status=status.HTTP_403_FORBIDDEN
         )
-        rapport.save()
-        return Response({"message": "Rapport créé avec succès"}, status=status.HTTP_201_CREATED)
 
+    try:
+        comptable = Comptable.objects.get(user=request.user.id)
+    except Comptable.DoesNotExist:
+        return Response(
+            {"error": "Profil comptable introuvable"},
+            status=status.HTTP_404_NOT_FOUND
+        )
+
+    data = {
+        **request.data,
+        "comptable": str(comptable.id),
+        "created_by": str(request.user.id)
+    }
+
+    serializer = RapportSerializer(data=data)
+    if serializer.is_valid():
+        rapport = serializer.save()
+        return Response({
+            "message": "Rapport créé avec succès",
+            "data": serializer.data
+        }, status=status.HTTP_201_CREATED)
+    
+    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 # 📄 Affichage des rapports du comptable connecté
 class RapportListView(APIView):
-    permission_classes = [IsAuthenticated, IsComptable]
+    permission_classes = [IsAuthenticated]
 
     def get(self, request, *args, **kwargs):
         comptable = Comptable.objects.get(user=request.user)
@@ -595,3 +676,70 @@ def exporter_rapport(request, id):
         response = HttpResponse(buffer, content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
         response['Content-Disposition'] = f'attachment; filename="{rapport.nom}.xlsx"'
         return response
+
+
+#tokenview
+# api/views.py
+
+
+from rest_framework_simplejwt.views import TokenObtainPairView
+from .serializers import CustomTokenObtainPairSerializer
+
+class CustomTokenObtainPairView(TokenObtainPairView):
+    serializer_class = CustomTokenObtainPairSerializer
+
+
+
+
+#haja jdyde 
+
+class ProtectedExampleView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        auth_header = request.headers.get("Authorization", "")
+        if not auth_header.startswith("Bearer "):
+            return Response({"error": "Token invalide"}, status=401)
+
+        token = auth_header.split(" ")[1]
+
+        try:
+            # Remplace 'middleware.decode' par 'jwt.decode'
+            payload = jwt.decode(token, settings.SECRET_KEY, algorithms=["HS256"])
+            
+            # Assure-toi que le modèle CustomUser est bien importé
+            user = CustomUser.objects.get(id=payload.get("user_id"))
+
+            if user.last_token != token:
+                return Response({"error": "Ce token n’est plus valide"}, status=401)
+
+            return Response({"message": "Accès autorisé", "email": user.email})
+        
+        except jwt.ExpiredSignatureError:
+            return Response({"error": "Token expiré"}, status=401)
+        except Exception as e:
+            return Response({"error": str(e)}, status=500)
+
+
+
+
+#ai
+# api/views.py
+from rest_framework.decorators import api_view
+from rest_framework.response import Response
+from .ai_service import GeminiAI
+from rest_framework.decorators import permission_classes
+from rest_framework.permissions import IsAuthenticated
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def ask_ai(request):
+    prompt = request.data.get('prompt')
+    if not prompt:
+        return Response({"error": "Prompt required"}, status=400)
+    
+    try:
+        ai = GeminiAI()
+        response = ai.generate_response(prompt)
+        return Response({"response": response})
+    except Exception as e:
+        return Response({"error": str(e)}, status=500)

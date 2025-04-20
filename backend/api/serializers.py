@@ -3,30 +3,37 @@ from django.contrib.auth import get_user_model
 from .models import CustomUser
 from django.contrib.auth.hashers import make_password
 import re
-from rest_framework_mongoengine.serializers import DocumentSerializer
-from .models import Comptable, CustomUser
+from rest_framework_mongoengine import serializers as mongo_serializers  # Correction ici
+from .models import Comptable, CustomUser, DirecteurFinancier, Rapport
 from django.core.mail import send_mail
 from django.conf import settings
 from datetime import datetime, timedelta
 from django.utils import timezone
+from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
+
+from rest_framework_mongoengine.serializers import DocumentSerializer
 User = get_user_model()
+
 class UserSerializer(serializers.ModelSerializer):
     class Meta:
         model = CustomUser
         fields = ['id', 'username', 'email', 'role', 'is_active', 'date_joined']
 
-class CustomUserSerializer(DocumentSerializer):
+from rest_framework import serializers
+from .models import CustomUser
+
+class CustomUserSerializer(serializers.ModelSerializer):
     class Meta:
         model = CustomUser
-        fields = ('id', 'username', 'email', 'role')
+        fields = ['id', 'username', 'email', 'role', 'is_active', 'date_joined']
+        read_only_fields = ['id', 'date_joined']
 
-class ComptableSerializer(DocumentSerializer):
+class ComptableSerializer(mongo_serializers.DocumentSerializer):  # Modifié ici
     user = CustomUserSerializer()
 
     class Meta:
         model = Comptable
         fields = ('user', 'nom_complet', 'telephone', 'matricule', 'departement', 'is_active')
-import mongoengine.errors
 
 class RegisterSerializer(serializers.ModelSerializer):
     confirm_password = serializers.CharField(write_only=True)
@@ -38,6 +45,7 @@ class RegisterSerializer(serializers.ModelSerializer):
         extra_kwargs = {
             'password': {'write_only': True},
         }
+
     def validate_email(self, value):
         try:
             if CustomUser.objects(email=value.lower()).first():
@@ -84,6 +92,7 @@ class RegisterSerializer(serializers.ModelSerializer):
         user.set_password(validated_data['password'])
         user.save()
         return user
+
 class LoginSerializer(serializers.Serializer):
     email = serializers.EmailField()
     password = serializers.CharField()
@@ -95,7 +104,6 @@ class LoginSerializer(serializers.Serializer):
         if email and password:
             return attrs
         raise serializers.ValidationError("Email et mot de passe requis")
-
 
 class PasswordResetRequestSerializer(serializers.Serializer):
     email = serializers.EmailField()
@@ -126,40 +134,120 @@ class PasswordResetSerializer(serializers.Serializer):
         except CustomUser.DoesNotExist:
             raise serializers.ValidationError("Token invalide.")
         return value
+
     def validate(self, data):
         if data['new_password'] != data['confirm_password']:
             raise serializers.ValidationError("Les mots de passe ne correspondent pas.")
         return data
+
     def is_valid_password(self, password):
-        # Minimum 8 caractères, une majuscule, une minuscule, un chiffre
         if len(password) < 8:
             return False
-        if not re.search(r'[A-Z]', password):  # Vérifier s'il y a une majuscule
+        if not re.search(r'[A-Z]', password):
             return False
-        if not re.search(r'[a-z]', password):  # Vérifier s'il y a une minuscule
+        if not re.search(r'[a-z]', password):
             return False
-        if not re.search(r'[0-9]', password):  # Vérifier s'il y a un chiffre
+        if not re.search(r'[0-9]', password):
             return False
         return True
-    #
-    from api.models import Rapport
 
-class RapportSerializer(serializers.Serializer):
-    id = serializers.CharField(read_only=True)
-    nom = serializers.CharField()
-    type = serializers.CharField()
-    statut = serializers.ChoiceField(choices=["Validé", "En attente", "Rejeté"])
-    date = serializers.DateTimeField(read_only=True)
-    comptable = serializers.PrimaryKeyRelatedField(queryset=Comptable.objects.all())
-    #directeur_financier = serializers.PrimaryKeyRelatedField(queryset=DirecteurFinancier.objects.all(), required=False, allow_null=True)
-    #date_validation = serializers.DateTimeField(read_only=True, required=False)
-    #date_modification = serializers.DateTimeField(read_only=True, required=False)
+class DirecteurFinancierSerializer(mongo_serializers.DocumentSerializer):  # Modifié ici
+    user = CustomUserSerializer()
+    comptables = ComptableSerializer(many=True)
+
+    class Meta:
+        model = DirecteurFinancier
+        fields = '__all__'
+        depth = 1
+
+class RapportSerializer(mongo_serializers.DocumentSerializer):  # Modifié ici
+    comptable = ComptableSerializer(read_only=True)
+    comptable_id = serializers.CharField(write_only=True)
+    
+    directeur = DirecteurFinancierSerializer(read_only=True)
+    directeur_id = serializers.CharField(write_only=True, required=False, allow_null=True)
+
+    class Meta:
+        model = Rapport
+        fields = '__all__'
+        read_only_fields = ['created_at', 'updated_at', 'validated_at']
+
+    def validate_comptable_id(self, value):
+        try:
+            return Comptable.objects.get(id=value)
+        except Comptable.DoesNotExist:
+            raise serializers.ValidationError("Comptable non trouvé")
+
+    def validate_directeur_id(self, value):
+        if not value:
+            return None
+        try:
+            return DirecteurFinancier.objects.get(id=value)
+        except DirecteurFinancier.DoesNotExist:
+            raise serializers.ValidationError("Directeur financier non trouvé")
 
     def create(self, validated_data):
-        return Rapport(**validated_data).save()
+        comptable = validated_data.pop('comptable_id')
+        directeur = validated_data.pop('directeur_id', None)
+        
+        rapport = Rapport(
+            comptable=comptable,
+            directeur=directeur,
+            **validated_data
+        )
+        rapport.save()
+        return rapport
 
-    def update(self, instance, validated_data):
-        for attr, value in validated_data.items():
-            setattr(instance, attr, value)
-        instance.save()
-        return instance
+class ExportSerializer(serializers.Serializer):
+    format = serializers.ChoiceField(choices=['pdf', 'excel'])
+    include_details = serializers.BooleanField(default=True)
+from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
+from rest_framework import serializers
+from api.models import CustomUser  # adapte si le modèle est ailleurs
+
+class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
+    @classmethod
+    def get_token(cls, user):
+        token = super().get_token(user)
+        token['role'] = user.role
+        return token
+    username_field = CustomUser.EMAIL_FIELD  # généralement 'email'
+
+    def validate(self, attrs):
+        email = attrs.get("email")
+        password = attrs.get("password")
+
+        try:
+            user = CustomUser.objects.get(email=email)
+        except CustomUser.DoesNotExist:
+            raise serializers.ValidationError("Utilisateur avec cet email introuvable.")
+
+        if not user.check_password(password):
+            raise serializers.ValidationError("Mot de passe incorrect.")
+
+        data = super().validate({
+            "username": user.username,  # pour rester compatible avec le mécanisme simplejwt
+            "password": password
+        })
+
+        data['user'] = {
+            "id": user.id,
+            "email": user.email,
+            "role": user.role
+        }
+
+        return data
+
+
+
+from rest_framework import serializers
+#from .models import ProfilAdmin
+
+class ProfilAdminSerializer(serializers.Serializer):
+    username = serializers.CharField(source='user.username')
+    email = serializers.EmailField(source='user.email')
+    role = serializers.CharField(source='user.role')
+    id = serializers.CharField(source='id')  # Ajoutez ce champ
+
+    class Meta:
+        fields = ('id', 'username', 'email', 'role')
