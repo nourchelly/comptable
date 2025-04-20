@@ -78,10 +78,10 @@ function App() {
               }
             >
               <Route path="comptes" element={<Compte />} />
-              <Route path="profil" element={<Profil />} />
+              <Route path="profile" element={<Profil />} />
               <Route path="validation" element={<Validation />} />
               <Route path="signalercompte" element={<SignalerCompte />} />
-              <Route path="modify_profil/:id" element={<ModifProfil />} />
+              <Route path="edit-profile" element={<ModifProfil />} />
             </Route>
 
             {/* Routes Comptable */}
@@ -98,7 +98,7 @@ function App() {
               <Route path="creer_rapport" element={<CreerRapport />} />
               <Route path="modif_rapport/:id" element={<ModifRapport />} />
               <Route path="exporter_rapport/:id" element={<ExporterRapport />} />
-              <Route path="modif_profil/:id" element={<ModifComptable />} />
+              <Route path="modif_profil" element={<ModifComptable />} />
               <Route path="facture" element={<Facture />} />
             </Route>
 

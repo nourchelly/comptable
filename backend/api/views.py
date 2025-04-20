@@ -235,6 +235,113 @@ def ProfilAdminApi(request, id=None):
             
     else:
         return JsonResponse({"error": "Méthode non autorisée"}, status=405)
+    
+@csrf_exempt
+def ProfilComptableApi(request, id=None):
+    # Vérifier si l'id est fourni et non vide
+    if request.method != 'POST' and (not id or id == 'undefined'):
+        return JsonResponse({"error": "ID utilisateur requis"}, status=400)
+        
+    if request.method == 'GET':
+        try:
+            # Récupérer d'abord l'utilisateur CustomUser
+            user = CustomUser.objects.get(id=id)
+            
+            # Puis récupérer le comptable associé à cet utilisateur
+            try:
+                comptable = Comptable.objects.get(user=user)
+                
+                # Combiner les données des deux collections
+                user_data = {
+                    'id': str(user.id),  # ID de l'utilisateur pour les opérations d'authentification
+                    'email': user.email,
+                    'username': user.username,
+                    'role': user.role,
+                    'nom_complet': comptable.nom_complet,
+                    'telephone': comptable.telephone,
+                    'matricule': comptable.matricule,
+                    'departement': comptable.departement,
+                }
+                return JsonResponse(user_data)
+                
+            except DoesNotExist:
+                # L'utilisateur existe mais n'a pas de profil comptable associé
+                return JsonResponse({
+                    'id': str(user.id),
+                    'email': user.email,
+                    'username': user.username,
+                    'role': user.role,
+                    'error': "Profil comptable non trouvé"
+                })
+                
+        except DoesNotExist:
+            return JsonResponse({"error": "Utilisateur non trouvé"}, status=404)
+            
+    elif request.method == 'PUT':
+        try:
+            # Récupérer d'abord l'utilisateur
+            user = CustomUser.objects.get(id=id)
+            
+            # Puis récupérer le comptable associé
+            try:
+                comptable = Comptable.objects.get(user=user)
+                
+                # Analyser les données de la requête
+                try:
+                    data = json.loads(request.body)
+                    
+                    # Séparer les données pour CustomUser et Comptable
+                    user_data = {}
+                    comptable_data = {}
+                    
+                    # Assigner les champs aux objets appropriés
+                    for key, value in data.items():
+                        if key in ['username', 'email', 'password']:
+                            user_data[key] = value
+                        elif key in ['nom_complet', 'telephone', 'matricule', 'departement']:
+                            comptable_data[key] = value
+                    
+                    # Mettre à jour CustomUser
+                    if user_data:
+                        for key, value in user_data.items():
+                            if key == 'password':
+                                user.set_password(value)
+                            else:
+                                setattr(user, key, value)
+                        user.save()
+                    
+                    # Mettre à jour Comptable
+                    if comptable_data:
+                        for key, value in comptable_data.items():
+                            setattr(comptable, key, value)
+                        comptable.save()
+                    
+                    return JsonResponse({"status": "success", "message": "Profil mis à jour avec succès"})
+                    
+                except json.JSONDecodeError:
+                    return JsonResponse({"error": "Données JSON invalides"}, status=400)
+                    
+            except DoesNotExist:
+                # L'utilisateur existe mais pas le profil comptable
+                return JsonResponse({"error": "Profil comptable non trouvé"}, status=404)
+                
+        except DoesNotExist:
+            return JsonResponse({"error": "Utilisateur non trouvé"}, status=404)
+            
+    elif request.method == 'DELETE':
+        try:
+            # Récupérer l'utilisateur
+            user = CustomUser.objects.get(id=id)
+            
+            # Le document Comptable sera supprimé automatiquement grâce à CASCADE
+            user.delete()
+            return JsonResponse({"status": "success", "message": "Compte supprimé avec succès"})
+            
+        except DoesNotExist:
+            return JsonResponse({"error": "Utilisateur non trouvé"}, status=404)
+            
+    else:
+        return JsonResponse({"error": "Méthode non autorisée"}, status=405)
 from datetime import datetime, timedelta
 # Vue pour la demande de réinitialisation du mot de passe
 import json

@@ -75,7 +75,7 @@ class Comptable(Document):
     is_active = fields.BooleanField(default=True)
 
     meta = {
-        'collection': 'comptables',
+        'collection': 'comptable',
         'indexes': [
             'matricule',
             'user',

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { useUser } from './UserContext';
+import axios from 'axios';
 // Importer l'instance Axios
 import { 
   FaUserEdit, 
@@ -16,7 +17,7 @@ import {
 const ProfilComptable = () => {
   const { user, logout } = useUser();
   const [profile, setProfile] = useState(null);
-  const [profil, setProfil] = useState({
+  const [formData, setFormData] = useState({
     username: "",
     email: "",
     role: "Comptable",
@@ -35,34 +36,38 @@ const ProfilComptable = () => {
   useEffect(() => {
     const fetchProfile = async () => {
       if (!user?.id) {
-          setError("Utilisateur non connecté");
-          return;
-        }
-  
-        try {
-          const response = await axios.get(`http://127.0.0.1:8000/api/profiladmin/${user.id}/`, {
-              withCredentials: true
-          });
-          
-          setProfile(response.data);
-          setFormData({
-              username: response.data.username,
-              email: response.data.email,
-              nom_complet: response.data.nom_complet,
-              telephone: response.data.telephone,
-              matricule: response.data.matricule,
-              departement: response.data.departement
-          });
-      } catch (err) {
-          console.error("Erreur lors de la récupération du profil:", err);
-          setError("Impossible de charger les informations du profil");
+        setError("Utilisateur non connecté");
+        setLoading(false); // Ajoutez cette ligne
+        return;
       }
-  };
-
+    
+      try {
+        const response = await axios.get(`http://127.0.0.1:8000/api/profilcomptable/${user.id}/`, {
+          withCredentials: true
+        });
+        
+        setProfile(response.data);
+        setFormData({
+          username: response.data.username,
+          email: response.data.email,
+          nom_complet: response.data.nom_complet,
+          telephone: response.data.telephone,
+          matricule: response.data.matricule,
+          departement: response.data.departement
+        });
+        setLoading(false); // Ajoutez cette ligne
+      } catch (err) {
+        console.error("Erreur lors de la récupération du profil:", err);
+        setError("Impossible de charger les informations du profil");
+        setLoading(false); // Ajoutez cette ligne
+      }
+    };
+fetchProfile();
+  },[user]);
   const handleDelete = async () => {
     if (window.confirm("Êtes-vous sûr de vouloir supprimer votre compte ? Cette action est irréversible.")) {
         try {
-            const response = await axios.delete(`http://127.0.0.1:8000/api/profiladmin/${user.id}/`, {
+            const response = await axios.delete(`http://127.0.0.1:8000/api/profilcomptable/${user.id}/`, {
                 withCredentials: true
             });
             
@@ -98,12 +103,12 @@ const ProfilComptable = () => {
               className="w-64 h-64 rounded-full object-cover border-4 border-white shadow-lg"
             />
             <h2 className="mt-6 text-2xl font-bold text-white text-center">
-              {profil.nom_complet}
+              {profile.nom_complet}
             </h2>
             <p className="mt-2 text-indigo-100">Comptable</p>
             <div className="mt-8">
               <Link 
-                to={`/dashboardcomptable/modif_profil/${profil.id}`}
+                to={`/dashboardcomptable/modif_profil`}
                 className="flex items-center justify-center px-6 py-3 bg-white text-indigo-600 rounded-full font-medium hover:bg-indigo-50 transition duration-300"
               >
                 <FaUserEdit className="mr-2 text-lg" /> Modifier le profil
@@ -118,11 +123,11 @@ const ProfilComptable = () => {
             </div>
 
             <div className="space-y-6">
-              <Item icon={<FaUser />} label="Identifiant" value={profil.username} color="indigo" />
-              <Item icon={<FaEnvelope />} label="Email" value={profil.email} color="blue" />
-              <Item icon={<FaIdCard />} label="Matricule" value={profil.matricule} color="purple" />
-              <Item icon={<FaPhone />} label="Téléphone" value={profil.telephone} color="green" />
-              <Item icon={<FaBuilding />} label="Département" value={profil.departement} color="orange" />
+              <Item icon={<FaUser />} label="Identifiant" value={profile.username} color="indigo" />
+              <Item icon={<FaEnvelope />} label="Email" value={profile.email} color="blue" />
+              <Item icon={<FaIdCard />} label="Matricule" value={profile.matricule} color="purple" />
+              <Item icon={<FaPhone />} label="Téléphone" value={profile.telephone} color="green" />
+              <Item icon={<FaBuilding />} label="Département" value={profile.departement} color="orange" />
             </div>
 
             <div className="mt-12 pt-6 border-t border-gray-200 flex justify-end">

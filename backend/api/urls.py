@@ -4,6 +4,7 @@ from django.urls import path
 from .views import (
     home,
     ProfilAdminApi,
+    ProfilComptableApi,
 
     login_view,
     GoogleLogin,
@@ -54,7 +55,8 @@ urlpatterns = [
     #path('token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
     path('profiladmin/', ProfilAdminApi, name='profiladmin-list'),
     path('profiladmin/<str:id>/', ProfilAdminApi, name='profiladmin-detail'),
-   
+    path('profilcomptable/', ProfilComptableApi, name='profilcomptable-list'),
+    path('profilcomptable/<str:id>/', ProfilComptableApi, name='profilcomptable-detail'),
    
    
    

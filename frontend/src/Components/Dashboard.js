@@ -42,7 +42,7 @@ const Dashboard = () => {
     switch (location.pathname) {
       case "/dashboard": return "Tableau de bord";
       case "/dashboard/comptes": return "Gestion des comptes";
-      case "/dashboard/profil": return "Profil administrateur";
+      case "/dashboard/profilee": return " administrateur";
       case "/dashboard/validation": return "Validation des demandes";
       case "/dashboard/audit": return "Journal d'audit";
       default: return "";
@@ -88,15 +88,15 @@ const Dashboard = () => {
           </Link>
           
           <Link 
-            to="/dashboard/profil" 
+            to="/dashboard/profile" 
             className={`flex items-center p-3 rounded-lg transition-all ${
-              location.pathname === "/dashboard/profil" 
+              location.pathname === "/dashboard/profile" 
                 ? "bg-indigo-50 text-indigo-700 font-medium border-l-4 border-indigo-600" 
                 : "text-gray-600 hover:bg-gray-100 hover:text-gray-800"
             }`}
           >
             <FaUserShield className={`mr-3 text-lg ${
-              location.pathname === "/dashboard/profil" ? "text-indigo-600" : "text-gray-500"
+              location.pathname === "/dashboard/profile" ? "text-indigo-600" : "text-gray-500"
             }`} />
             <span>Profil admin</span>
           </Link>
