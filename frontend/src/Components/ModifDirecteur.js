@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import axios from "axios";
 import { useNavigate, useParams, Link } from "react-router-dom";
+import { useUser } from './UserContext';
 import { 
   FaSave, 
   FaTimes, 
@@ -15,58 +16,83 @@ import {
 import { motion } from "framer-motion";
 
 const ModifierProfilDirecteur = () => {
+  const { user } = useUser();
   const [formData, setFormData] = useState({
-    nom: "",
-    prenom: "",
+    username: "",
     email: "",
     telephone: "",
+    motdepasse:"",
     specialite: "Finance d'entreprise",
-    departement: "Direction Financière",
-    annees_experience: ""
+    departement: "Direction Financière"
   });
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [success, setSuccess] = useState(null);
   const navigate = useNavigate();
   const { id } = useParams();
 
   useEffect(() => {
-    const chargerProfil = async () => {
+    const fetchProfile = async () => {
+      if (!user?.id) {
+        setError("Utilisateur non connecté");
+        return;
+      }
+      
       try {
-        const token = localStorage.getItem('valid');
-        const response = await axios.get(`http://127.0.0.1:8000/api/directeurs/${id}/`, {
-          headers: { Authorization: `Bearer ${token}` }
+        const response = await axios.get(`http://127.0.0.1:8000/api/profildirecteur/${user.id}/`, {
+          withCredentials: true
         });
-        setFormData(response.data);
+        
+        setFormData({
+          username: response.data.username,
+          email: response.data.email,
+          telephone: response.data.telephone,
+          motdepasse: response.data.motdepasse,
+          specialite: response.data.specialite,
+          departement: response.data.departement
+        });
+        setLoading(false);
       } catch (error) {
         console.error("Erreur chargement profil:", error);
-        if (error.response?.status === 401) {
-          navigate("/connexion");
-        }
-      } finally {
+        setError("Impossible de charger les informations du profil");
         setLoading(false);
       }
     };
 
-    chargerProfil();
-  }, [id, navigate]);
+    fetchProfile();
+  }, [user]);
 
   const handleChange = (e) => {
-    setFormData({ ...formData, [e.target.name]: e.target.value });
+    const { name, value } = e.target;
+    setFormData({
+      ...formData,
+      [name]: value
+    });
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    setError(null);
+    setSuccess(null);
     try {
-      const token = localStorage.getItem('valid');
-      await axios.put(`http://127.0.0.1:8000/api/directeurs/${id}/`, formData, {
-        headers: { Authorization: `Bearer ${token}` }
+      const response = await axios.put(`http://127.0.0.1:8000/api/profildirecteur/${user.id}/`, formData, {
+        withCredentials: true,
+        headers: {
+          'Content-Type': 'application/json'
+        }
       });
-      alert("Profil mis à jour avec succès");
-      navigate("/dashboarddirecteur/profildirecteur");
-    } catch (error) {
-      console.error("Erreur mise à jour:", error);
-      alert("Erreur lors de la mise à jour du profil");
+      if (response.data.status === 'success') {
+        setSuccess("Profil mis à jour avec succès");
+        setTimeout(() => {
+          navigate('/dashboarddirecteur/profildirecteur');
+        }, 1500);
+      }
+    } catch (err) {
+      console.error("Erreur lors de la mise à jour du profil:", err);
+      setError("Impossible de mettre à jour le profil");
     }
   };
+
 
   if (loading) {
     return (
@@ -118,7 +144,7 @@ const ModifierProfilDirecteur = () => {
                     <input
                       type="text"
                       name="nom"
-                      value={formData.nom}
+                      value={formData.username}
                       onChange={handleChange}
                       className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition duration-200"
                       placeholder="Entrez votre nom"
@@ -184,25 +210,7 @@ const ModifierProfilDirecteur = () => {
                     />
                   </motion.div>
 
-                  {/* Années d'expérience */}
-                  <motion.div 
-                    whileHover={{ scale: 1.02 }}
-                    className="space-y-2"
-                  >
-                    <label className="flex items-center text-sm font-medium text-gray-700">
-                      <FaChartLine className="mr-2 text-orange-500" />
-                      Années d'expérience
-                    </label>
-                    <input
-                      type="number"
-                      name="annees_experience"
-                      value={formData.annees_experience}
-                      onChange={handleChange}
-                      className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500 transition duration-200"
-                      placeholder="Nombre d'années"
-                      min="0"
-                    />
-                  </motion.div>
+              
 
                   {/* Spécialité */}
                   <motion.div 
@@ -222,7 +230,6 @@ const ModifierProfilDirecteur = () => {
                       <option value="Finance d'entreprise">Finance d'entreprise</option>
                       <option value="Stratégie financière">Stratégie financière</option>
                       <option value="Gestion des risques">Gestion des risques</option>
-                      <option value="Fusions et acquisitions">Fusions et acquisitions</option>
                       <option value="Investissements">Investissements</option>
                       <option value="Contrôle de gestion">Contrôle de gestion</option>
                     </select>

@@ -13,50 +13,23 @@ import { AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, R
 
 const DashboardDirecteurFinancier = () => {
   const navigate = useNavigate();
+  const [audits, setAudits] = useState([]);
   const location = useLocation();
   const [isLoading, setIsLoading] = useState(true);
-    const [User, setUser] = useState();
+  const [User, setUser] = useState();
   
-    const logout = () => {
-      // Supprimer les données utilisateur et tokens du localStorage
-      localStorage.removeItem("access_token");
-      localStorage.removeItem("refresh_token");
-      localStorage.removeItem("userData");
-    
-      // Réinitialiser l'état du contexte
-      setUser({
-        id: null,
-        email: null,
-        role: null,
-        token: null,
-      });
-    
-      // Rediriger vers la page de connexion
-      navigate('/connexion');
-    };
-    
-  
-  useEffect(() => {
-      const token = localStorage.getItem("access_token");
-  
-      if (token) {
-          try {
-              const decoded = JSON.parse(atob(token.split('.')[1])); // Décodage du token
-              const expirationTime = decoded.exp * 1000;
-  
-              // Vérifie si le token a expiré
-              if (expirationTime < Date.now()) {
-                  logout();  // Si expiré, appeler la fonction de déconnexion
-              }
-          } catch (error) {
-              // Si le token est mal formé ou invalide
-              logout();
+    const handleLogout = () => {
+      axios.get(  "http://127.0.0.1:8000/api/logout/")  // L'URL doit être celle du serveur Django
+        .then(result => {
+          if (result.data.Status) {
+            localStorage.removeItem("valid");
+            navigate('/connexion');
           }
-      } else {
-          // Si aucun token n'est trouvé, effectuer la déconnexion aussi
-          logout();
-      }
-  }, []);
+        })
+        .catch(err => console.error(err));
+    };
+  
+ 
 
   // Données pour les graphiques
   const performanceData = [
@@ -94,7 +67,7 @@ const DashboardDirecteurFinancier = () => {
     const fetchData = async () => {
       try {
         const [auditsResponse, rapportsResponse] = await Promise.all([
-          axios.get('http://votre-api.com/audits'),
+          axios.get('http://127.0.0.1:8000/audit'),
           axios.get('http://votre-api.com/rapports')
         ]);
         setAuditsData(auditsResponse.data);
@@ -110,20 +83,7 @@ const DashboardDirecteurFinancier = () => {
     fetchData();
   }, []);
 
-  // Gestion de la déconnexion
-  /*
-  const handleLogout = () => {
-    axios.get(  "http://127.0.0.1:8000/api/logout/")  // L'URL doit être celle du serveur Django
-      .then(result => {
-        if (result.data.Status) {
-          localStorage.removeItem("valid");
-          navigate('/login');
-        }
-      })
-      .catch(err => console.error(err));
-  };*/
-
-  // Gestion des audits
+ 
   const saveAudit = async (auditData) => {
     try {
       const response = await axios.post('http://votre-api.com/audits', auditData, {
@@ -159,14 +119,18 @@ const DashboardDirecteurFinancier = () => {
     }
   };
 
-  const deleteAudit = async (id) => {
-    try {
-      await axios.delete(`http://votre-api.com/audits/${id}`);
-      setAuditsData(auditsData.filter(audit => audit.id !== id));
-      toast.success("Audit supprimé avec succès");
-    } catch (error) {
-      toast.error("Erreur lors de la suppression");
-      console.error(error);
+  const handleDelete = async (id) => {
+    if (window.confirm("Êtes-vous sûr de vouloir supprimer cet audit ?")) {
+      try {
+        await axios.delete(`http://127.0.0.1:8000/api/audit/${id}/`, {
+          withCredentials: true
+        });
+        setAudits(audits.filter(audit => audit.id !== id));
+        toast.success("Audit supprimé avec succès");
+      } catch (error) {
+        toast.error(error.response?.data?.error || "Erreur lors de la suppression");
+        console.error("Erreur:", error.response?.data || error.message);
+      }
     }
   };
 
@@ -244,18 +208,10 @@ const DashboardDirecteurFinancier = () => {
       </nav>
 
       <div className="p-4 border-t border-indigo-700">
-        <div className="flex items-center mb-4 p-3 rounded-lg bg-indigo-700 bg-opacity-50">
-          <div className="h-10 w-10 rounded-full bg-white bg-opacity-20 flex items-center justify-center">
-            <FaUserCircle className="text-xl text-white" />
-          </div>
-          <div className="ml-3">
-            <p className="text-sm font-medium text-white">Directeur Financier</p>
-            <p className="text-xs text-blue-200">compte@entreprise.com</p>
-          </div>
-        </div>
+        
 
         <button 
-          onClick={logout}
+          onClick={handleLogout}
           className="flex items-center w-full p-3 text-indigo-100 hover:bg-indigo-700 rounded-lg transition-colors duration-200"
         >
           <FaSignOutAlt className="mr-3 text-blue-300" />
@@ -450,7 +406,7 @@ const DashboardDirecteurFinancier = () => {
                               <FaEdit size={14} />
                             </button>
                             <button 
-                              onClick={() => deleteAudit(audit.id)}
+                              onClick={() => handleDelete(audit.id)}
                               className="text-red-600 hover:text-red-800"
                             >
                               <FaTrash size={14} />

@@ -1,56 +1,105 @@
-import axios from "axios";
-import React, { useEffect, useState } from "react";
-import { FaClipboardList, FaExclamationTriangle, FaTrash, FaUserCheck, FaUserTimes } from "react-icons/fa";
+import React, { useState, useEffect, useMemo } from 'react';
+import axios from 'axios';
+import { FaUserTie, FaSearch, FaFilter, FaSync } from 'react-icons/fa';
+import { toast } from 'react-toastify';
 
-const Validation = () => {
-  const [users, setUsers] = useState([]);
+const AdminActionsList = () => {
+  const [actions, setActions] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [filterType, setFilterType] = useState('Tous');
+  const [filterRole, setFilterRole] = useState('Tous');
+  const [lastRefresh, setLastRefresh] = useState(null);
+
+  // Configurations (à remplacer par un appel API si dynamique)
+  const ACTION_TYPES = useMemo(() => [
+    'Tous',
+    'Ajout Audit',
+    'Modification Audit',
+    'Suppression Audit',
+    'Consultation Audit',
+    'Connexion',
+    'Déconnexion'
+  ], []);
+
+  const USER_ROLES = useMemo(() => [
+    'Tous',
+    'admin',
+    'comptable',
+    'directeur',
+    'auditeur'
+  ], []);
+
+  // Classes de type d'action
+  const ACTION_TYPE_CLASSES = useMemo(() => ({
+    'Ajout': 'bg-green-100 text-green-800',
+    'Modification': 'bg-yellow-100 text-yellow-800',
+    'Suppression': 'bg-red-100 text-red-800',
+    'Consultation': 'bg-blue-100 text-blue-800',
+    'Connexion': 'bg-purple-100 text-purple-800',
+    'Déconnexion': 'bg-gray-100 text-gray-800'
+  }), []);
+
+  // Charger les actions
+  const fetchActions = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const response = await axios.get('http://127.0.0.1:8000/api/actions/', {
+        params: {
+          cacheBuster: Date.now() // Evite le cache
+        }
+      });
+      setActions(response.data.actions);
+      setLastRefresh(new Date());
+    } catch (err) {
+      console.error("Erreur de chargement:", err);
+      setError("Échec du chargement des actions");
+      toast.error("Erreur lors du chargement des actions");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    axios
-      .get("http://localhost:3000/auth/validation")
-      .then((result) => {
-        if (result.data.Status) {
-          setUsers(result.data.Result);
-        } else {
-          alert(result.data.Error);
-        }
-      })
-      .catch((err) => console.log(err))
-      .finally(() => setLoading(false));
+    fetchActions();
   }, []);
 
-  const handleDelete = (id) => {
-    if (window.confirm("Êtes-vous sûr de vouloir supprimer cet utilisateur ?")) {
-      axios.delete("http://localhost:3000/api/delete_user/" + id)
-        .then(result => {
-          if (result.data.Status) {
-            setUsers(users.filter(user => user.id !== id));
-          } else {
-            alert(result.data.Error);
-          }
-        });
-    }
+  // Filtrage optimisé avec useMemo
+  const filteredActions = useMemo(() => {
+    const term = searchTerm.toLowerCase();
+    return actions.filter(action => {
+      const matchesSearch = 
+        (action.description?.toLowerCase().includes(term)) || 
+        (action.audit?.toLowerCase().includes(term)) ||
+        (action.username?.toLowerCase().includes(term));
+      
+      const matchesType = filterType === 'Tous' || action.action_type === filterType;
+      const matchesRole = filterRole === 'Tous' || action.role === filterRole;
+      
+      return matchesSearch && matchesType && matchesRole;
+    });
+  }, [actions, searchTerm, filterType, filterRole]);
+
+  const getActionClass = (actionType) => {
+    if (!actionType) return 'bg-gray-100 text-gray-800';
+    const typeKey = Object.keys(ACTION_TYPE_CLASSES).find(
+      type => actionType.includes(type)
+    );
+    return ACTION_TYPE_CLASSES[typeKey] || 'bg-gray-100 text-gray-800';
   };
 
-  const handleSignal = (id) => {
-    if (window.confirm("Signaler ce compte à l'administrateur ?")) {
-      // Ajoutez la logique pour signaler un compte ici
-      alert(`Compte ${id} signalé avec succès`);
-    }
-  };
+  // Statistiques calculées une seule fois
+  const stats = useMemo(() => ({
+    total: actions.length,
+    additions: actions.filter(a => a.action_type?.includes('Ajout')).length,
+    modifications: actions.filter(a => a.action_type?.includes('Modification')).length,
+    deletions: actions.filter(a => a.action_type?.includes('Suppression')).length,
+    logins: actions.filter(a => a.action_type?.includes('Connexion')).length
+  }), [actions]);
 
-  const handleValidate = (id) => {
-    // Logique de validation du compte
-    alert(`Compte ${id} validé`);
-  };
-
-  const handleReject = (id) => {
-    // Logique de rejet du compte
-    alert(`Compte ${id} rejeté`);
-  };
-
-  if (loading) {
+  if (loading && actions.length === 0) {
     return (
       <div className="flex justify-center items-center h-64">
         <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500"></div>
@@ -58,176 +107,228 @@ const Validation = () => {
     );
   }
 
-  return (
-   
-      <div className="max-w-7xl mx-auto">
-        {/* Header */}
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-8">
-          <div className="flex items-center mb-4 md:mb-0">
-            <FaClipboardList className="text-blue-600 text-2xl mr-3" />
-            <h1 className="text-2xl font-bold text-gray-800">Validation des Comptes</h1>
-          </div>
-          <div className="flex items-center space-x-2">
-            <span className="bg-blue-100 text-blue-800 text-xs font-medium px-2.5 py-0.5 rounded-full">
-              {users.length} comptes à vérifier
-            </span>
-          </div>
+  if (error) {
+    return (
+      <div className="p-6 bg-white rounded-lg shadow">
+        <div className="text-red-500 text-center py-10">
+          {error}
+          <button 
+            onClick={fetchActions}
+            className="mt-4 px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 flex items-center mx-auto"
+          >
+            <FaSync className="mr-2" /> Réessayer
+          </button>
         </div>
-
-        {/* Table */}
-        <div className="bg-white shadow-md rounded-lg overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    ID
-                  </th>
-                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Nom
-                  </th>
-                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Email
-                  </th>
-                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Rôle
-                  </th>
-                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Statut
-                  </th>
-                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Actions
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
-                {users.length > 0 ? (
-                  users.map((user) => (
-                    <tr key={user.id} className="hover:bg-gray-50">
-                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                        {user.id}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        {user.nom}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        {user.email}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        <span className={`px-2 py-1 text-xs rounded-full ${
-                          user.role === 'admin' 
-                            ? 'bg-purple-100 text-purple-800' 
-                            : 'bg-blue-100 text-blue-800'
-                        }`}>
-                          {user.role}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        <span className={`px-2 py-1 text-xs rounded-full ${
-                          user.statut === 'actif' 
-                            ? 'bg-green-100 text-green-800' 
-                            : user.statut === 'en attente'
-                            ? 'bg-yellow-100 text-yellow-800'
-                            : 'bg-red-100 text-red-800'
-                        }`}>
-                          {user.statut}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                        <div className="flex space-x-2">
-                          <button
-                            onClick={() => handleValidate(user.id)}
-                            className="text-green-600 hover:text-green-900 p-1 rounded-full hover:bg-green-50"
-                            title="Valider"
-                          >
-                            <FaUserCheck className="text-lg" />
-                          </button>
-                          <button
-                            onClick={() => handleReject(user.id)}
-                            className="text-red-600 hover:text-red-900 p-1 rounded-full hover:bg-red-50"
-                            title="Rejeter"
-                          >
-                            <FaUserTimes className="text-lg" />
-                          </button>
-                          <button
-                            onClick={() => handleSignal(user.id)}
-                            className="text-yellow-600 hover:text-yellow-900 p-1 rounded-full hover:bg-yellow-50"
-                            title="Signaler"
-                          >
-                            <FaExclamationTriangle className="text-lg" />
-                          </button>
-                          <button
-                            onClick={() => handleDelete(user.id)}
-                            className="text-gray-600 hover:text-gray-900 p-1 rounded-full hover:bg-gray-100"
-                            title="Supprimer"
-                          >
-                            <FaTrash className="text-lg" />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))
-                ) : (
-                  <tr>
-                    <td colSpan="6" className="px-6 py-4 text-center text-sm text-gray-500">
-                      Aucun compte à valider pour le moment
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        {/* Stats */}
-        {users.length > 0 && (
-          <div className="mt-8 grid grid-cols-1 md:grid-cols-3 gap-6">
-            <div className="bg-white p-6 rounded-lg shadow-sm border-l-4 border-blue-500">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium text-gray-500">Comptes en attente</p>
-                  <p className="text-2xl font-bold mt-1">
-                    {users.filter(u => u.statut === 'en attente').length}
-                  </p>
-                </div>
-                <div className="p-3 rounded-full bg-blue-100 text-blue-600">
-                  <FaUserTimes className="text-xl" />
-                </div>
-              </div>
-            </div>
-
-            <div className="bg-white p-6 rounded-lg shadow-sm border-l-4 border-green-500">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium text-gray-500">Comptes actifs</p>
-                  <p className="text-2xl font-bold mt-1">
-                    {users.filter(u => u.statut === 'actif').length}
-                  </p>
-                </div>
-                <div className="p-3 rounded-full bg-green-100 text-green-600">
-                  <FaUserCheck className="text-xl" />
-                </div>
-              </div>
-            </div>
-
-            <div className="bg-white p-6 rounded-lg shadow-sm border-l-4 border-red-500">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium text-gray-500">Comptes rejetés</p>
-                  <p className="text-2xl font-bold mt-1">
-                    {users.filter(u => u.statut === 'rejeté').length}
-                  </p>
-                </div>
-                <div className="p-3 rounded-full bg-red-100 text-red-600">
-                  <FaExclamationTriangle className="text-xl" />
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
       </div>
-    
+    );
+  }
+
+  return (
+    <div className="p-6 bg-white rounded-lg shadow">
+      <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-6">
+        <h2 className="text-xl font-bold text-gray-800 flex items-center">
+          <FaUserTie className="mr-2 text-blue-600" />
+          Historique des Actions
+          {lastRefresh && (
+            <span className="text-xs text-gray-500 ml-3">
+              Dernière actualisation: {lastRefresh.toLocaleTimeString()}
+            </span>
+          )}
+        </h2>
+        
+        <div className="flex flex-col md:flex-row gap-4 mt-4 md:mt-0">
+          <button
+            onClick={fetchActions}
+            className="px-3 py-2 bg-gray-100 text-gray-700 rounded-md hover:bg-gray-200 flex items-center"
+            title="Actualiser"
+          >
+            <FaSync />
+          </button>
+          
+          <div className="relative">
+            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+              <FaSearch className="text-gray-400" />
+            </div>
+            <input
+              type="text"
+              placeholder="Rechercher..."
+              className="pl-10 pr-4 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500 w-full md:w-64"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+            />
+          </div>
+          
+          <div className="flex items-center">
+            <FaFilter className="text-gray-500 mr-2" />
+            <select
+              className="border border-gray-300 rounded-md px-3 py-2 focus:ring-blue-500 focus:border-blue-500"
+              value={filterType}
+              onChange={(e) => setFilterType(e.target.value)}
+            >
+              {ACTION_TYPES.map(type => (
+                <option key={type} value={type}>{type}</option>
+              ))}
+            </select>
+          </div>
+          
+          <div className="flex items-center">
+            <FaFilter className="text-gray-500 mr-2" />
+            <select
+              className="border border-gray-300 rounded-md px-3 py-2 focus:ring-blue-500 focus:border-blue-500"
+              value={filterRole}
+              onChange={(e) => setFilterRole(e.target.value)}
+            >
+              {USER_ROLES.map(role => (
+                <option key={role} value={role}>
+                  {role === 'Tous' ? role : role.charAt(0).toUpperCase() + role.slice(1)}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <div className="overflow-x-auto">
+        <table className="min-w-full divide-y divide-gray-200">
+          <thead className="bg-gray-50">
+            <tr>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Utilisateur</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Rôle</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Action</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Description</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Détails</th>
+            </tr>
+          </thead>
+          <tbody className="bg-white divide-y divide-gray-200">
+            {filteredActions.length > 0 ? (
+              filteredActions.map(action => (
+                <tr key={action.id} className="hover:bg-gray-50">
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <div className="text-sm font-medium text-gray-900">{action.username}</div>
+                    <div className="text-xs text-gray-500">{action.email}</div>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <span className="px-2 py-1 text-xs font-medium rounded-full bg-gray-100 text-gray-800">
+                      {action.role?.charAt(0).toUpperCase() + action.role?.slice(1)}
+                    </span>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <span className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${getActionClass(action.action_type)}`}>
+                      {action.action_type}
+                    </span>
+                  </td>
+                  <td className="px-6 py-4 max-w-xs">
+                    <div className="text-sm text-gray-900 truncate" title={action.description}>
+                      {action.description}
+                    </div>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <div className="text-sm text-gray-500">
+                      {new Date(action.timestamp).toLocaleString()}
+                    </div>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    {action.details ? (
+                      <button 
+                        onClick={() => toast.info(
+                          <div>
+                            <h3 className="font-bold mb-2">Détails complets</h3>
+                            <pre className="whitespace-pre-wrap">{action.details}</pre>
+                          </div>,
+                          {autoClose: false}
+                        )} 
+                        className="text-blue-500 hover:text-blue-700"
+                      >
+                        Voir
+                      </button>
+                    ) : (
+                      <span className="text-gray-400">-</span>
+                    )}
+                  </td>
+                </tr>
+              ))
+            ) : (
+              <tr>
+                <td colSpan="6" className="px-6 py-4 text-center text-gray-500">
+                  {actions.length === 0 ? 
+                    "Aucune action disponible" : 
+                    "Aucun résultat correspond aux filtres"}
+                  <button 
+                    onClick={() => {
+                      setSearchTerm('');
+                      setFilterType('Tous');
+                      setFilterRole('Tous');
+                    }}
+                    className="text-blue-500 hover:text-blue-700 ml-2"
+                  >
+                    Réinitialiser les filtres
+                  </button>
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Statistiques améliorées */}
+      <div className="mt-8 grid grid-cols-1 md:grid-cols-5 gap-4">
+        <StatCard 
+          title="Total" 
+          value={stats.total} 
+          color="blue" 
+          icon="📊"
+        />
+        <StatCard 
+          title="Ajouts" 
+          value={stats.additions} 
+          color="green" 
+          icon="➕"
+        />
+        <StatCard 
+          title="Modifications" 
+          value={stats.modifications} 
+          color="yellow" 
+          icon="✏️"
+        />
+        <StatCard 
+          title="Suppressions" 
+          value={stats.deletions} 
+          color="red" 
+          icon="🗑️"
+        />
+        <StatCard 
+          title="Connexions" 
+          value={stats.logins} 
+          color="purple" 
+          icon="🔑"
+        />
+      </div>
+    </div>
   );
 };
 
-export default Validation;
+// Composant StatCard pour les statistiques
+const StatCard = ({ title, value, color, icon }) => {
+  const colorClasses = {
+    blue: 'bg-blue-50 border-blue-500',
+    green: 'bg-green-50 border-green-500',
+    yellow: 'bg-yellow-50 border-yellow-500',
+    red: 'bg-red-50 border-red-500',
+    purple: 'bg-purple-50 border-purple-500'
+  };
+
+  return (
+    <div className={`p-4 rounded-lg border-l-4 ${colorClasses[color]}`}>
+      <div className="flex justify-between items-center">
+        <div>
+          <h3 className="text-sm font-medium text-gray-500">{title}</h3>
+          <p className="text-2xl font-bold">{value}</p>
+        </div>
+        <span className="text-2xl">{icon}</span>
+      </div>
+    </div>
+  );
+};
+
+export default AdminActionsList;

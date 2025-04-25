@@ -4,7 +4,7 @@ import './App.css';
 import 'bootstrap/dist/css/bootstrap.min.css';
 import 'bootstrap/dist/js/bootstrap.bundle.min';
 import 'animate.css';
-
+import Activatecompte from './Components/Activatecompte';
 import Callback from './Components/Callback';
 import Home from './Components/Home';
 import Contact from './Components/Contact';
@@ -67,6 +67,7 @@ function App() {
             <Route path="/forgot-password" element={<ForgotPassword />} />
             <Route path="/reset-password/:token" element={<ResetPassword />} />
             <Route path="/auth/google/callback" element={<Callback />} />
+            <Route path="/activate/:token" element={<Activatecompte />} />
 
             {/* Routes Dashboard (admin ou général) */}
             <Route
@@ -80,7 +81,7 @@ function App() {
               <Route path="comptes" element={<Compte />} />
               <Route path="profile" element={<Profil />} />
               <Route path="validation" element={<Validation />} />
-              <Route path="signalercompte" element={<SignalerCompte />} />
+              <Route path="signalercompte/:userId" element={<SignalerCompte />} />
               <Route path="edit-profile" element={<ModifProfil />} />
             </Route>
 
@@ -112,7 +113,7 @@ function App() {
               }
             >
               <Route path="profildirecteur" element={<ProfilDirecteur />} />
-              <Route path="modify_profil/:id" element={<ModifDirecteur />} />
+              <Route path="modify_profil" element={<ModifDirecteur />} />
               <Route path="audits" element={<Audit />} />
               <Route path="calendar" element={<Calendar/>} />
             </Route>

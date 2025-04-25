@@ -6,7 +6,7 @@ import {
   FaCheckCircle, FaSignOutAlt, FaSearch, FaBell,
   FaCog, FaUserCircle, FaMoneyBillWave, 
   FaRobot, FaFileAlt, FaCalculator,
-  FaClipboardCheck, FaCoins, FaShieldAlt,
+  FaClipboardCheck, FaCoins, FaShieldAlt,FaFileInvoiceDollar,FaUniversity,
   FaChevronDown, FaChevronRight
 } from "react-icons/fa";
 
@@ -83,7 +83,34 @@ const DashboardComptable = () => {
                   <span>Factures</span>
                 
                 </Link>
+                <Link 
+                  to="/dashboardcomptable/banque" 
+                  className={`flex items-center p-3 rounded-lg transition-all ${
+                    isActive("/dashboardcomptable/banque") 
+                      ? 'bg-indigo-700 text-white shadow font-semibold' 
+                      : 'text-indigo-100 hover:bg-indigo-700 hover:text-white'
+                  }`}
+                >
+                  <FaUniversity className={`text-lg mr-3 ${
+                    isActive("/dashboardcomptable/banque") ? 'text-white' : 'text-indigo-300'
+                  }`} />
+                  <span>Banques</span>
                 
+                </Link>
+                <Link 
+                  to="/dashboardcomptable/rapprochement" 
+                  className={`flex items-center p-3 rounded-lg transition-all ${
+                    isActive("/dashboardcomptable/rapprochement") 
+                      ? 'bg-indigo-700 text-white shadow font-semibold' 
+                      : 'text-indigo-100 hover:bg-indigo-700 hover:text-white'
+                  }`}
+                >
+                  <FaFileInvoiceDollar className={`text-lg mr-3 ${
+                    isActive("/dashboardcomptable/rapprochement") ? 'text-white' : 'text-indigo-300'
+                  }`} />
+                  <span>Rapprochements</span>
+                
+                </Link>
                 <Link 
                   to="/dashboardcomptable/rapports" 
                   className={`flex items-center p-3 rounded-lg transition-all ${
@@ -145,6 +172,8 @@ const DashboardComptable = () => {
             {isActive("/dashboardcomptable/profilcomptable") && "Profil Comptable"}
             {isActive("/dashboardcomptable/rapports") && "Rapports Comptables"}
             {isActive("/dashboardcomptable/facture") && "Gestion des Factures"}
+            {isActive("/dashboardcomptable/banque") && "Banque"}
+            {isActive("/dashboardcomptable/rapprochement") && "Rapprochement"}
           </h1>
 
           <div className="flex items-center space-x-4">

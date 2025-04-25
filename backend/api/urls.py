@@ -5,7 +5,14 @@ from .views import (
     home,
     ProfilAdminApi,
     ProfilComptableApi,
-
+    ProfilDirecteurApi,
+    AuditApi,
+    CompteApi,
+    ListeComptes,
+    SignalerCompte,
+    activate_account,
+    AdminActionsApi,
+     MesActionsApi,FactureApi, download_facture,validate_facture,
     login_view,
     GoogleLogin,
     register_user,
@@ -30,6 +37,7 @@ urlpatterns = [
     # Authentification et gestion des comptes
     path('login/', login_view, name='login'),
     path('signup/', register_user, name='signup'),
+    path('activate/<str:token>/', activate_account, name='activate'),
     path('home/', home, name='home'),
     path('forgot-password/', PasswordResetRequestView.as_view(), name='forgot_password'),
     path('reset-password/', reset_password, name='reset_password'),
@@ -57,9 +65,25 @@ urlpatterns = [
     path('profiladmin/<str:id>/', ProfilAdminApi, name='profiladmin-detail'),
     path('profilcomptable/', ProfilComptableApi, name='profilcomptable-list'),
     path('profilcomptable/<str:id>/', ProfilComptableApi, name='profilcomptable-detail'),
+    path('profildirecteur/', ProfilDirecteurApi, name='profildirecteur-list'),
+    path('profildirecteur/<str:id>/', ProfilDirecteurApi, name='profildirecteur-detail'),
    
+   #path audit
+    path('audit/', AuditApi, name='audit-list'),
+    path('audit/<str:id>/', AuditApi, name='audit-detail'),
    
+    path('compte/<str:id>/', CompteApi, name='compte_api'),
+    path('comptes/', ListeComptes, name='liste_comptes'),
+    path('signaler-compte/', SignalerCompte, name='signaler_compte'),
+    path('actions/', AdminActionsApi, name='directeur_actions'),
+      path('mes-actions/', MesActionsApi, name='mes_actions'),
+    
+    #factures 
+     path('factures/', FactureApi, name='facture-api'),
+    path('factures/<str:id>/', FactureApi, name='facture-detail'),
+    
+    # Endpoint pour le téléchargement des fichiers
+    path('factures/<str:id>/download/', download_facture, name='download-facture'),
+    path('factures/<str:id>/validate/', validate_facture, name='validate-facture'),
    
-   
-    #path('token/refresh/', refresh_token_view, name='refresh_token'),
 ]

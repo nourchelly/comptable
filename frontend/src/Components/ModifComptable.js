@@ -271,7 +271,7 @@ const ModifierProfilComptable = () => {
           {/* Colonne de droite - Image */}
           <div className="md:w-1/3 bg-indigo-600 p-8 flex flex-col items-center justify-center">
             <motion.img 
-              src="/images/comptable.jpg" 
+              src="/images/nou.jpg" 
               alt="Modification profil comptable"
               initial={{ scale: 0.9 }}
               animate={{ scale: 1 }}
