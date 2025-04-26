@@ -2,11 +2,12 @@ import { FaCheck, FaTimes, FaEye, FaFileInvoice, FaUpload, FaTimesCircle } from 
 import { Link } from 'react-router-dom'
 import { useEffect, useState } from 'react'
 import axios from 'axios'
-import { useUser } from './UserContext';
+import { useUser } from './UserContext'
 
 export default function FactureList() {
-  const { user } = useUser();
+  const { user } = useUser()
   const [factures, setFactures] = useState([])
+  const [clients, setClients] = useState([])
   const [loading, setLoading] = useState(true)
   const [showImportModal, setShowImportModal] = useState(false)
   const [selectedFile, setSelectedFile] = useState(null)
@@ -14,40 +15,58 @@ export default function FactureList() {
   const [uploadStatus, setUploadStatus] = useState(null)
   const [formData, setFormData] = useState({
     numero: '',
-    client: '',
+    client_id: '',
+    client_nom: '',
     date_emission: '',
-    montant: ''
+    montant: '',
+    statut: 'impayée'
   })
 
   useEffect(() => {
-    fetchFactures()
-  }, [])
-
-  const fetchFactures = async () => {
-    try {
-      const response = await axios.get('http://127.0.0.1:8000/api/factures/', {
-        withCredentials: true
-      });
-      setFactures(response.data)
-    } catch (error) {
-      console.error('Erreur:', error)
-    } finally {
-      setLoading(false)
-    }
-  }
+    const fetchData = async () => {
+      try {
+        const [facturesRes, clientsRes] = await Promise.all([
+          axios.get('http://127.0.0.1:8000/api/factures/', { withCredentials: true }),
+          axios.get('http://127.0.0.1:8000/api/clients/', { withCredentials: true })
+        ]);
+  
+        // Filtrez et transformez les clients pour garantir des IDs uniques
+        const formattedClients = clientsRes.data
+          .filter(client => client._id || client.id) // Filtre les clients sans ID
+          .map((client, index) => ({
+            id: client._id || client.id || `temp-${index}`, // Fallback si aucun ID
+            nom: client.nom,
+            email: client.email,
+            adresse: client.adresse
+          }));
+  
+        setFactures(facturesRes.data);
+        setClients(formattedClients);
+      } catch (error) {
+        console.error('Erreur:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchData();
+  }, []);
 
   const handleValidation = async (id, action) => {
     try {
-      await axios.patch(
+      const response = await axios.patch(
         `http://127.0.0.1:8000/api/factures/${id}/`,
         { statut: action === 'validate' ? 'valide' : 'rejete' },
         { withCredentials: true }
       )
+      
+      const updatedStatus = response.data.statut || (action === 'validate' ? 'payée' : 'impayée')
+      
       setFactures(factures.map(f => 
-        f.id === id ? { ...f, statut: action === 'validate' ? 'valide' : 'rejete' } : f
+        f.id === id ? { ...f, statut: updatedStatus } : f
       ))
     } catch (error) {
       console.error('Erreur:', error)
+      alert(`Erreur lors de la validation: ${error.response?.data?.error || error.message}`)
     }
   }
 
@@ -63,44 +82,50 @@ export default function FactureList() {
 
   const handleInputChange = (e) => {
     const { name, value } = e.target
-    setFormData({ ...formData, [name]: value })
+    setFormData(prev => ({ ...prev, [name]: value }))
+  }
+
+  const handleClientChange = (e) => {
+    const clientId = e.target.value
+    const selectedClient = clients.find(c => c.id === clientId)
+    setFormData({
+      ...formData,
+      client_id: clientId,
+      client_nom: selectedClient ? selectedClient.nom : ''
+    })
+  }
+
+  const validateFormData = () => {
+    // Vérification de l'ObjectId du client
+    if (!/^[0-9a-fA-F]{24}$/.test(formData.client_id)) {
+      alert("Veuillez sélectionner un client valide")
+      return false
+    }
+
+    if (!selectedFile) {
+      alert('Veuillez sélectionner un fichier')
+      return false
+    }
+
+    if (!formData.numero || !formData.date_emission || !formData.montant) {
+      alert('Veuillez remplir tous les champs obligatoires')
+      return false
+    }
+
+    return true
   }
 
   const handleUpload = async () => {
-    if (!selectedFile) {
-      alert('Veuillez sélectionner un fichier');
-      return;
-    }
-  
-    // Vérification des champs obligatoires
-    if (!formData.numero || !formData.client || !formData.date_emission || !formData.montant) {
-      alert('Veuillez remplir tous les champs obligatoires');
-      return;
-    }
-  
-    const uploadData = new FormData();
-    uploadData.append('fichier', selectedFile);
-    uploadData.append('numero', formData.numero);
-    uploadData.append('client', formData.client);
-    uploadData.append('date_emission', formData.date_emission);
-    uploadData.append('montant', formData.montant.toString()); // Convertir en string
-    
-    // Ajouter les champs optionnels
-    if (formData.date_echeance) {
-      uploadData.append('date_echeance', formData.date_echeance);
-    }
-    if (formData.statut) {
-      uploadData.append('statut', formData.statut);
-    }
-  
-    console.log("Données envoyées:", {
-      numero: formData.numero,
-      client: formData.client,
-      date_emission: formData.date_emission,
-      montant: formData.montant,
-      fileName: selectedFile.name
-    });
-  
+    if (!validateFormData()) return
+
+    const uploadData = new FormData()
+    uploadData.append('fichier', selectedFile)
+    uploadData.append('numero', formData.numero)
+    uploadData.append('client_id', formData.client_id)
+    uploadData.append('date_emission', formData.date_emission)
+    uploadData.append('montant', formData.montant)
+    uploadData.append('statut', formData.statut)
+
     try {
       const response = await axios.post('http://127.0.0.1:8000/api/factures/', uploadData, {
         headers: {
@@ -108,43 +133,83 @@ export default function FactureList() {
         },
         withCredentials: true,
         onUploadProgress: (progressEvent) => {
-          const percentCompleted = Math.round((progressEvent.loaded * 100) / progressEvent.total);
-          setUploadProgress(percentCompleted);
+          const percentCompleted = Math.round((progressEvent.loaded * 100) / progressEvent.total)
+          setUploadProgress(percentCompleted)
         }
-      });
-  
-      setUploadStatus('success');
+      })
+
+      setUploadStatus('success')
       setTimeout(() => {
-        setShowImportModal(false);
-        fetchFactures();
-        setSelectedFile(null);
-        setUploadProgress(0);
-        setFormData({
-          numero: '',
-          client: '',
-          date_emission: '',
-          date_echeance: '',
-          montant: '',
-          statut: 'impayée'
-        });
-      }, 1500);
+        setShowImportModal(false)
+        fetchFactures()
+        resetForm()
+      }, 1500)
     } catch (error) {
-      console.error('Erreur complète:', error);
-      if (error.response) {
-        console.error('Réponse du serveur:', error.response.data);
-        alert(`Erreur: ${error.response.data.error || 'Erreur lors de l\'import'}`);
-      } else {
-        alert('Erreur réseau ou serveur indisponible');
-      }
-      setUploadStatus('error');
+      console.error('Erreur:', error)
+      const errorMessage = error.response?.data?.error || 
+                         error.response?.data?.message || 
+                         "Erreur lors de l'import"
+      alert(errorMessage)
+      setUploadStatus('error')
     }
-  };
+  }
+
+  const fetchFactures = async () => {
+    try {
+      const response = await axios.get('http://127.0.0.1:8000/api/factures/', {
+        withCredentials: true
+      })
+      // Ajoutez l'URL du fichier à chaque facture
+      const facturesWithFileUrl = response.data.map(facture => ({
+        ...facture,
+        fileUrl: facture.fichier ? `http://127.0.0.1:8000${facture.fichier}` : null
+      }))
+      setFactures(facturesWithFileUrl)
+    } catch (error) {
+      console.error('Erreur:', error)
+    }
+  }
+
+  const resetForm = () => {
+    setSelectedFile(null)
+    setUploadProgress(0)
+    setFormData({
+      numero: '',
+      client_id: '',
+      client_nom: '',
+      date_emission: '',
+      montant: '',
+      statut: 'impayée'
+    })
+  }
 
   const closeModal = () => {
     setShowImportModal(false)
-    setSelectedFile(null)
-    setUploadProgress(0)
+    resetForm()
     setUploadStatus(null)
+  }
+
+  const getStatusDisplayClass = (status) => {
+    switch(status) {
+      case 'payée':
+      case 'valide':
+        return 'bg-green-100 text-green-800';
+      case 'impayée':
+      case 'rejete':
+        return 'bg-red-100 text-red-800';
+      case 'annulée':
+        return 'bg-yellow-100 text-yellow-800';
+      default:
+        return 'bg-blue-100 text-blue-800';
+    }
+  }
+
+  const canValidate = (status) => {
+    return status !== 'payée' && status !== 'valide';
+  }
+
+  const canReject = (status) => {
+    return status !== 'impayée' && status !== 'rejete';
   }
 
   return (
@@ -193,32 +258,28 @@ export default function FactureList() {
               </tr>
             ) : (
               factures.map(facture => (
-                <tr key={facture.id}>
+                <tr key={`facture-${facture.id}`}>
                   <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{facture.numero}</td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{facture.client?.nom || 'N/A'}</td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{facture.client_nom || 'N/A'}</td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{facture.montant} €</td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                     {new Date(facture.date_emission).toLocaleDateString()}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
-                    <span className={`px-2 py-1 text-xs rounded-full ${
-                      facture.statut === 'valide' ? 'bg-green-100 text-green-800' :
-                      facture.statut === 'rejete' ? 'bg-red-100 text-red-800' : 
-                      facture.statut === 'payée' ? 'bg-blue-100 text-blue-800' : 'bg-yellow-100 text-yellow-800'
-                    }`}>
+                    <span className={`px-2 py-1 text-xs rounded-full ${getStatusDisplayClass(facture.statut)}`}>
                       {facture.statut}
                     </span>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                     <div className="flex space-x-2">
                       <Link 
-                        to={`/factures/${facture.id}`}
+                        to={`/dashboardcomptable/factures/${facture.id}`}
                         className="p-2 bg-blue-100 text-blue-600 rounded hover:bg-blue-200"
                         title="Voir détails"
                       >
                         <FaEye />
                       </Link>
-                      {facture.statut !== 'valide' && (
+                      {canValidate(facture.statut) && (
                         <button
                           onClick={() => handleValidation(facture.id, 'validate')}
                           className="p-2 bg-green-100 text-green-600 rounded hover:bg-green-200"
@@ -227,7 +288,7 @@ export default function FactureList() {
                           <FaCheck />
                         </button>
                       )}
-                      {facture.statut !== 'rejete' && (
+                      {canReject(facture.statut) && (
                         <button
                           onClick={() => handleValidation(facture.id, 'reject')}
                           className="p-2 bg-red-100 text-red-600 rounded hover:bg-red-200"
@@ -272,18 +333,27 @@ export default function FactureList() {
                 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Client</label>
-                  <input
-                    type="text"
-                    name="client"
-                    value={formData.client}
-                    onChange={handleInputChange}
-                    className="w-full p-2 border rounded"
-                    required
-                  />
+                  <select
+  name="client_id"
+  value={formData.client_id}
+  onChange={handleClientChange}
+  className="w-full p-2 border rounded"
+  required
+>
+  <option value="">Sélectionnez un client</option>
+  {clients.map(client => (
+    <option 
+      key={`client-${client.id}`} // Utilisez l'ID comme clé
+      value={client.id}
+    >
+      {client.nom}
+    </option>
+  ))}
+</select>
                 </div>
                 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Date</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Date d'émission</label>
                   <input
                     type="date"
                     name="date_emission"
@@ -295,7 +365,7 @@ export default function FactureList() {
                 </div>
                 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Montant</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Montant (€)</label>
                   <input
                     type="number"
                     name="montant"
@@ -305,6 +375,19 @@ export default function FactureList() {
                     step="0.01"
                     required
                   />
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Statut</label>
+                  <select
+                    name="statut"
+                    value={formData.statut}
+                    onChange={handleInputChange}
+                    className="w-full p-2 border rounded"
+                  >
+                    <option value="impayée">Impayée</option>
+                    <option value="payée">Payée</option>
+                  </select>
                 </div>
                 
                 <div>

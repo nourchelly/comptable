@@ -1,4 +1,6 @@
 from django.urls import path
+from django.conf.urls.static import static
+from django.conf import settings
 #from .views import CustomTokenObtainPairView
 #from rest_framework_simplejwt.views import TokenRefreshView
 from .views import (
@@ -9,10 +11,11 @@ from .views import (
     AuditApi,
     CompteApi,
     ListeComptes,
+    client_api,
     SignalerCompte,
     activate_account,
     AdminActionsApi,
-     MesActionsApi,FactureApi, download_facture,validate_facture,
+     MesActionsApi,facture_api, download_facture,#serve_facture_file, 
     login_view,
     GoogleLogin,
     register_user,
@@ -79,11 +82,11 @@ urlpatterns = [
       path('mes-actions/', MesActionsApi, name='mes_actions'),
     
     #factures 
-     path('factures/', FactureApi, name='facture-api'),
-    path('factures/<str:id>/', FactureApi, name='facture-detail'),
-    
-    # Endpoint pour le téléchargement des fichiers
-    path('factures/<str:id>/download/', download_facture, name='download-facture'),
-    path('factures/<str:id>/validate/', validate_facture, name='validate-facture'),
+     path('factures/', facture_api, name='facture-api'),
+    path('factures/<str:id>/', facture_api, name='facture-detail'),
+     path('clients/', client_api, name='client-api'),
+     path('api/factures/download/<id>/', download_facture, name='download_facture'),
+   # path('media/<path:file_path>', serve_facture_file, name='serve_facture_file'),
+] #+ static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
    
-]
+

@@ -1,4 +1,5 @@
 import React from "react";
+import { useState } from 'react';
 import { Link, Outlet, useLocation, useNavigate } from "react-router-dom";
 import axios from "axios";
 import { 
@@ -13,9 +14,10 @@ import {
 const DashboardComptable = () => {
   const navigate = useNavigate();
   const location = useLocation();
+  const [showConfirm, setShowConfirm] = useState(false);
   
   const handleLogout = () => {
-    axios.get(  "http://127.0.0.1:8000/api/logout/")  // L'URL doit être celle du serveur Django
+    axios.get("http://127.0.0.1:8000/api/logout/")
       .then(result => {
         if (result.data.Status) {
           localStorage.removeItem("valid");
@@ -24,13 +26,44 @@ const DashboardComptable = () => {
       })
       .catch(err => console.error(err));
   };
-  
 
+  const handleCancel = () => {
+    setShowConfirm(false);
+  };
+  
   // Vérifie si un lien est actif
   const isActive = (path) => location.pathname === path;
 
   return (
     <div className="flex h-screen bg-gray-50 font-sans">
+      {/* Fenêtre de confirmation modale - Version améliorée */}
+      {showConfirm && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-8 w-96 text-center shadow-xl">
+            <div className="flex justify-center mb-4">
+              <FaSignOutAlt className="text-red-500 text-4xl" />
+            </div>
+            <h3 className="text-xl font-bold text-gray-800 mb-3">Confirmation de déconnexion</h3>
+            <p className="text-gray-600 mb-6">Êtes-vous sûr de vouloir vous déconnecter de votre session ?</p>
+            <div className="flex justify-center space-x-4">
+              <button 
+                onClick={handleLogout}
+                className="bg-red-600 hover:bg-red-700 text-white px-6 py-3 rounded-lg flex items-center transition-colors"
+              >
+                <FaSignOutAlt className="mr-2" />
+                Déconnexion
+              </button>
+              <button 
+                onClick={handleCancel}
+                className="bg-gray-200 hover:bg-gray-300 text-gray-800 px-6 py-3 rounded-lg flex items-center transition-colors"
+              >
+                Annuler
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Sidebar - Version améliorée */}
       <div className="w-64 bg-gradient-to-b from-indigo-800 to-indigo-900 text-white flex flex-col shadow-xl">
         {/* Logo */}
@@ -54,12 +87,12 @@ const DashboardComptable = () => {
                   : 'text-indigo-100 hover:bg-indigo-700 hover:text-white'
               }`}
             >
-              <FaHome className={`text-lg mr-3 ${
+              <FaHome className={`text-xl mr-3 ${
                 isActive("/dashboardcomptable") ? 'text-indigo-600' : 'text-indigo-300'
               }`} />
               <span>Tableau de bord</span>
               {isActive("/dashboardcomptable") && (
-                <FaChevronRight className="ml-auto text-indigo-600 text-xs" />
+                <FaChevronRight className="ml-auto text-indigo-600 text-sm" />
               )}
             </Link>
 
@@ -77,11 +110,10 @@ const DashboardComptable = () => {
                       : 'text-indigo-100 hover:bg-indigo-700 hover:text-white'
                   }`}
                 >
-                  <FaFileInvoice className={`text-lg mr-3 ${
+                  <FaFileInvoice className={`text-xl mr-3 ${
                     isActive("/dashboardcomptable/facture") ? 'text-white' : 'text-indigo-300'
                   }`} />
                   <span>Factures</span>
-                
                 </Link>
                 <Link 
                   to="/dashboardcomptable/banque" 
@@ -91,11 +123,10 @@ const DashboardComptable = () => {
                       : 'text-indigo-100 hover:bg-indigo-700 hover:text-white'
                   }`}
                 >
-                  <FaUniversity className={`text-lg mr-3 ${
+                  <FaUniversity className={`text-xl mr-3 ${
                     isActive("/dashboardcomptable/banque") ? 'text-white' : 'text-indigo-300'
                   }`} />
                   <span>Banques</span>
-                
                 </Link>
                 <Link 
                   to="/dashboardcomptable/rapprochement" 
@@ -105,11 +136,10 @@ const DashboardComptable = () => {
                       : 'text-indigo-100 hover:bg-indigo-700 hover:text-white'
                   }`}
                 >
-                  <FaFileInvoiceDollar className={`text-lg mr-3 ${
+                  <FaFileInvoiceDollar className={`text-xl mr-3 ${
                     isActive("/dashboardcomptable/rapprochement") ? 'text-white' : 'text-indigo-300'
                   }`} />
                   <span>Rapprochements</span>
-                
                 </Link>
                 <Link 
                   to="/dashboardcomptable/rapports" 
@@ -119,7 +149,7 @@ const DashboardComptable = () => {
                       : 'text-indigo-100 hover:bg-indigo-700 hover:text-white'
                   }`}
                 >
-                  <FaFileAlt className={`text-lg mr-3 ${
+                  <FaFileAlt className={`text-xl mr-3 ${
                     isActive("/dashboardcomptable/rapports") ? 'text-white' : 'text-indigo-300'
                   }`} />
                   <span>Rapports</span>
@@ -141,7 +171,7 @@ const DashboardComptable = () => {
                       : 'text-indigo-100 hover:bg-indigo-700 hover:text-white'
                   }`}
                 >
-                  <FaUserCircle className={`text-lg mr-3 ${
+                  <FaUserCircle className={`text-xl mr-3 ${
                     isActive("/dashboardcomptable/profilcomptable") ? 'text-white' : 'text-indigo-300'
                   }`} />
                   <span>Mon Profil</span>
@@ -154,14 +184,14 @@ const DashboardComptable = () => {
         {/* Déconnexion */}
         <div className="p-4 border-t border-indigo-700">
           <button 
-            onClick={handleLogout}
+            onClick={() => setShowConfirm(true)}
             className="flex items-center w-full p-3 text-indigo-100 hover:bg-indigo-700 rounded-lg transition-colors"
           >
-            <FaSignOutAlt className="mr-3 text-indigo-300" />
+            <FaSignOutAlt className="mr-3 text-indigo-300 text-xl" />
             <span className="font-medium">Déconnexion</span>
           </button>
         </div>
-      </div>
+      </div> {/* End of sidebar */}
 
       {/* Main Content */}
       <div className="flex-1 flex flex-col overflow-hidden">
@@ -178,7 +208,7 @@ const DashboardComptable = () => {
 
           <div className="flex items-center space-x-4">
             <div className="relative">
-              <FaSearch className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
+              <FaSearch className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 text-lg" />
               <input 
                 type="text" 
                 placeholder="Rechercher..." 
@@ -186,18 +216,18 @@ const DashboardComptable = () => {
               />
             </div>
             <button className="p-2 text-gray-500 hover:text-indigo-600 relative">
-              <FaBell />
+              <FaBell className="text-xl" />
               <span className="absolute top-0 right-0 h-2 w-2 rounded-full bg-red-500"></span>
             </button>
             <button className="p-2 text-gray-500 hover:text-indigo-600">
-              <FaCog />
+              <FaCog className="text-xl" />
             </button>
             <div className="flex items-center space-x-2">
-              <div className="h-8 w-8 rounded-full bg-indigo-100 flex items-center justify-center">
-                <FaUserCircle className="text-indigo-600 text-xl" />
+              <div className="h-10 w-10 rounded-full bg-indigo-100 flex items-center justify-center">
+                <FaUserCircle className="text-indigo-600 text-2xl" />
               </div>
               <span className="font-medium text-gray-700">Comptable</span>
-              <FaChevronDown className="text-gray-500 text-xs" />
+              <FaChevronDown className="text-gray-500 text-sm" />
             </div>
           </div>
         </header>
@@ -219,7 +249,7 @@ const DashboardComptable = () => {
                       <p className="text-xs text-green-500 mt-1">+2.5% vs mois dernier</p>
                     </div>
                     <div className="p-3 bg-blue-50 rounded-full">
-                      <FaMoneyBillWave className="text-blue-500 text-xl" />
+                      <FaMoneyBillWave className="text-blue-500 text-2xl" />
                     </div>
                   </div>
                 </div>
@@ -232,7 +262,7 @@ const DashboardComptable = () => {
                       <p className="text-xs text-blue-500 mt-1">12 nouvelles aujourd'hui</p>
                     </div>
                     <div className="p-3 bg-green-50 rounded-full">
-                      <FaCoins className="text-green-500 text-xl" />
+                      <FaCoins className="text-green-500 text-2xl" />
                     </div>
                   </div>
                 </div>
@@ -245,7 +275,7 @@ const DashboardComptable = () => {
                       <p className="text-xs text-purple-500 mt-1">Économie de 42h/mois</p>
                     </div>
                     <div className="p-3 bg-purple-50 rounded-full">
-                      <FaRobot className="text-purple-500 text-xl" />
+                      <FaRobot className="text-purple-500 text-2xl" />
                     </div>
                   </div>
                 </div>
@@ -260,25 +290,25 @@ const DashboardComptable = () => {
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
                   <button className="flex flex-col items-center p-4 border border-gray-100 rounded-lg hover:border-indigo-300 hover:bg-indigo-50 transition-colors group">
                     <div className="p-3 bg-blue-100 rounded-full mb-2 group-hover:bg-blue-200 transition-colors">
-                      <FaFileInvoice className="text-blue-600 text-xl" />
+                      <FaFileInvoice className="text-blue-600 text-2xl" />
                     </div>
                     <span className="text-sm font-medium text-gray-700">Créer Facture</span>
                   </button>
                   <button className="flex flex-col items-center p-4 border border-gray-100 rounded-lg hover:border-green-300 hover:bg-green-50 transition-colors group">
                     <div className="p-3 bg-green-100 rounded-full mb-2 group-hover:bg-green-200 transition-colors">
-                      <FaCalculator className="text-green-600 text-xl" />
+                      <FaCalculator className="text-green-600 text-2xl" />
                     </div>
                     <span className="text-sm font-medium text-gray-700">Nouveau Rapport</span>
                   </button>
                   <button className="flex flex-col items-center p-4 border border-gray-100 rounded-lg hover:border-yellow-300 hover:bg-yellow-50 transition-colors group">
                     <div className="p-3 bg-yellow-100 rounded-full mb-2 group-hover:bg-yellow-200 transition-colors">
-                      <FaClipboardCheck className="text-yellow-600 text-xl" />
+                      <FaClipboardCheck className="text-yellow-600 text-2xl" />
                     </div>
                     <span className="text-sm font-medium text-gray-700">Valider Écritures</span>
                   </button>
                   <button className="flex flex-col items-center p-4 border border-gray-100 rounded-lg hover:border-purple-300 hover:bg-purple-50 transition-colors group">
                     <div className="p-3 bg-purple-100 rounded-full mb-2 group-hover:bg-purple-200 transition-colors">
-                      <FaShieldAlt className="text-purple-600 text-xl" />
+                      <FaShieldAlt className="text-purple-600 text-2xl" />
                     </div>
                     <span className="text-sm font-medium text-gray-700">Audit Comptable</span>
                   </button>
@@ -294,7 +324,7 @@ const DashboardComptable = () => {
                       <div className={`p-3 rounded-full mr-4 ${
                         item % 2 === 0 ? 'bg-green-100 text-green-600' : 'bg-blue-100 text-blue-600'
                       }`}>
-                        {item % 2 === 0 ? <FaCheckCircle /> : <FaFileInvoice />}
+                        {item % 2 === 0 ? <FaCheckCircle className="text-xl" /> : <FaFileInvoice className="text-xl" />}
                       </div>
                       <div className="flex-1">
                         <p className="text-sm font-medium text-gray-800">
@@ -311,7 +341,7 @@ const DashboardComptable = () => {
                   ))}
                 </div>
                 <button className="mt-4 text-sm text-indigo-600 hover:text-indigo-800 font-medium flex items-center">
-                  Voir toutes les activités <FaChevronRight className="ml-1 text-xs" />
+                  Voir toutes les activités <FaChevronRight className="ml-1 text-sm" />
                 </button>
               </div>
             </div>

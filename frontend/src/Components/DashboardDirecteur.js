@@ -5,7 +5,7 @@ import { toast } from "react-toastify";
 import { 
   FaHome, FaChartPie, FaFileAlt, FaClipboardCheck, 
   FaUserCircle, FaSignOutAlt, FaSearch, FaBell,
-   FaCalendarAlt, FaChartLine,
+  FaCalendarAlt, FaChartLine,
   FaMoneyBillWave, FaPercentage, FaBalanceScale, FaDatabase, FaQrcode,
   FaEdit, FaTrash, FaPlus
 } from "react-icons/fa";
@@ -17,19 +17,20 @@ const DashboardDirecteurFinancier = () => {
   const location = useLocation();
   const [isLoading, setIsLoading] = useState(true);
   const [User, setUser] = useState();
-  
-    const handleLogout = () => {
-      axios.get(  "http://127.0.0.1:8000/api/logout/")  // L'URL doit être celle du serveur Django
-        .then(result => {
-          if (result.data.Status) {
-            localStorage.removeItem("valid");
-            navigate('/connexion');
-          }
-        })
-        .catch(err => console.error(err));
-    };
-  
- 
+  const [showLogoutModal, setShowLogoutModal] = useState(false);
+  const [auditsData, setAuditsData] = useState([]);
+  const [rapportsData, setRapportsData] = useState([]);
+  const [formData, setFormData] = useState({
+    nom: "",
+    type: "Financier",
+    responsable: "",
+    dateDebut: "",
+    dateFin: "",
+    priorite: "Moyenne"
+  });
+  const [showForm, setShowForm] = useState(false);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [filterStatus, setFilterStatus] = useState("Tous");
 
   // Données pour les graphiques
   const performanceData = [
@@ -47,22 +48,6 @@ const DashboardDirecteurFinancier = () => {
     { name: 'Production', budget: 6000, utilisé: 4800 },
   ];
 
-  // États pour les audits
-  const [auditsData, setAuditsData] = useState([]);
-  const [rapportsData, setRapportsData] = useState([]);
-  const [formData, setFormData] = useState({
-    nom: "",
-    type: "Financier",
-    responsable: "",
-    dateDebut: "",
-    dateFin: "",
-    priorite: "Moyenne"
-  });
-  const [showForm, setShowForm] = useState(false);
-  const [searchTerm, setSearchTerm] = useState("");
-  const [filterStatus, setFilterStatus] = useState("Tous");
-
-  // Chargement initial des données
   useEffect(() => {
     const fetchData = async () => {
       try {
@@ -83,7 +68,21 @@ const DashboardDirecteurFinancier = () => {
     fetchData();
   }, []);
 
- 
+  const handleLogout = () => {
+    axios.get("http://127.0.0.1:8000/api/logout/")
+      .then(result => {
+        if (result.data.Status) {
+          localStorage.removeItem("valid");
+          navigate('/connexion');
+        }
+      })
+      .catch(err => console.error(err));
+  };
+
+  const cancelLogout = () => {
+    setShowLogoutModal(false);
+  };
+
   const saveAudit = async (auditData) => {
     try {
       const response = await axios.post('http://votre-api.com/audits', auditData, {
@@ -134,14 +133,12 @@ const DashboardDirecteurFinancier = () => {
     }
   };
 
-  // Filtrage des audits
   const filteredAudits = auditsData.filter(audit => {
     const matchesSearch = audit.nom.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesStatus = filterStatus === "Tous" || audit.statut === filterStatus;
     return matchesSearch && matchesStatus;
   });
 
-  // Sidebar component
   const Sidebar = () => (
     <div className="w-64 bg-gradient-to-b from-indigo-900 to-indigo-800 text-white flex flex-col h-full shadow-xl">
       <div className="p-6 flex items-center justify-center border-b border-indigo-700">
@@ -208,14 +205,12 @@ const DashboardDirecteurFinancier = () => {
       </nav>
 
       <div className="p-4 border-t border-indigo-700">
-        
-
         <button 
-          onClick={handleLogout}
-          className="flex items-center w-full p-3 text-indigo-100 hover:bg-indigo-700 rounded-lg transition-colors duration-200"
+          onClick={() => setShowLogoutModal(true)}
+          className="flex items-center w-full p-3 text-indigo-100 hover:bg-red-600 hover:text-white rounded-lg transition-all duration-200 group"
         >
-          <FaSignOutAlt className="mr-3 text-blue-300" />
-          <span>Déconnexion</span>
+          <FaSignOutAlt className="mr-3 text-blue-300 group-hover:text-white" />
+          <span className="font-medium">Déconnexion</span>
         </button>
       </div>
     </div>
@@ -231,6 +226,38 @@ const DashboardDirecteurFinancier = () => {
 
   return (
     <div className="flex h-screen bg-gray-50 font-sans">
+      {/* Modal de déconnexion */}
+      {showLogoutModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl shadow-2xl overflow-hidden w-full max-w-md">
+            <div className="p-8 text-center">
+              <div className="mx-auto flex items-center justify-center h-20 w-20 rounded-full bg-red-100 mb-6">
+                <FaSignOutAlt className="h-10 w-10 text-red-600 animate-pulse" />
+              </div>
+              <h3 className="text-2xl font-bold text-gray-900 mb-3">Déconnexion</h3>
+              <p className="text-gray-600 mb-8">
+                Vous êtes sur le point de vous déconnecter. Voulez-vous vraiment quitter votre session ?
+              </p>
+              <div className="flex justify-center space-x-6">
+                <button
+                  onClick={cancelLogout}
+                  className="px-8 py-3 bg-gray-200 hover:bg-gray-300 text-gray-800 rounded-xl font-medium transition-all duration-200 shadow-sm hover:shadow-md"
+                >
+                  Annuler
+                </button>
+                <button
+                  onClick={handleLogout}
+                  className="px-8 py-3 bg-red-600 hover:bg-red-700 text-white rounded-xl font-medium transition-all duration-200 shadow-sm hover:shadow-md flex items-center"
+                >
+                  <FaSignOutAlt className="mr-2" />
+                  Se déconnecter
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       <Sidebar />
 
       <div className="flex-1 flex flex-col overflow-hidden">

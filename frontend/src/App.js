@@ -35,6 +35,7 @@ import ModifDirecteur from './Components/ModifDirecteur';
 import Facture from './Components/Facture';
 import Audit from './Components/Audit';
 import Calendar from './Components/Calender';
+import FactureDetail from './Components/FactureDetail';
 //import { BrowserRouter, useNavigate, useLocation } from 'react-router-dom';
 import { GoogleOAuthProvider } from '@react-oauth/google';
 import { UserProvider } from './Components/UserContext';
@@ -101,6 +102,7 @@ function App() {
               <Route path="exporter_rapport/:id" element={<ExporterRapport />} />
               <Route path="modif_profil" element={<ModifComptable />} />
               <Route path="facture" element={<Facture />} />
+              <Route path="factures/:id" element={<FactureDetail />} />
             </Route>
 
             {/* Routes Directeur */}

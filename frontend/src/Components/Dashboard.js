@@ -1,21 +1,20 @@
-
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import { Link, Outlet, useLocation, useNavigate } from "react-router-dom";
 import axios from "axios";
 import { 
   FaHome, FaCheckCircle, FaSignOutAlt, 
-  FaSearch, FaBell, FaUserCircle
-  , FaUsersCog, FaUserShield, FaFileInvoiceDollar,
+  FaSearch, FaBell, FaUserCircle,
+  FaUsersCog, FaUserShield, FaFileInvoiceDollar,
   FaShieldAlt, FaDatabase, FaQrcode
 } from "react-icons/fa";
 
 const Dashboard = () => {
   const navigate = useNavigate();
   const location = useLocation();
- const [User, setUser] = useState();
-   // Fonction pour se déconnecter
-   const handleLogout = () => {
-    axios.get(  "http://127.0.0.1:8000/api/logout/")  // L'URL doit être celle du serveur Django
+  const [showLogoutModal, setShowLogoutModal] = useState(false);
+
+  const handleLogout = () => {
+    axios.get("http://127.0.0.1:8000/api/logout/")
       .then(result => {
         if (result.data.Status) {
           localStorage.removeItem("valid");
@@ -23,21 +22,8 @@ const Dashboard = () => {
         }
       })
       .catch(err => console.error(err));
-  }; // Liste de dépendances vide pour que l'effet soit exécuté une seule fois au montage du composant
+  };
 
-
-   // Fonction pour se déconnecter
-  /* const handleLogout = () => {
-    axios.post(  "http://127.0.0.1:8000/api/logout/")  // L'URL doit être celle du serveur Django
-      .then(result => {
-        if (result.data.Status) {
-          localStorage.removeItem("valid");
-          navigate('/login');
-        }
-      })
-      .catch(err => console.error(err));
-  };*/
-  
   const getPageTitle = () => {
     switch (location.pathname) {
       case "/dashboard": return "Tableau de bord";
@@ -51,6 +37,38 @@ const Dashboard = () => {
 
   return (
     <div className="flex h-screen bg-gray-50">
+      {/* Modal de déconnexion amélioré */}
+      {showLogoutModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-xl overflow-hidden w-full max-w-md">
+            <div className="p-6 text-center">
+              <div className="mx-auto flex items-center justify-center h-16 w-16 rounded-full bg-red-100 mb-4">
+                <FaSignOutAlt className="h-8 w-8 text-red-600" />
+              </div>
+              <h3 className="text-xl font-bold text-gray-900 mb-2">Déconnexion</h3>
+              <p className="text-gray-600 mb-6">
+                Êtes-vous sûr de vouloir vous déconnecter ? Vous devrez vous reconnecter pour accéder à nouveau au tableau de bord.
+              </p>
+              <div className="flex justify-center space-x-4">
+                <button
+                  onClick={() => setShowLogoutModal(false)}
+                  className="px-6 py-2.5 bg-gray-200 hover:bg-gray-300 text-gray-800 rounded-lg font-medium transition-colors duration-200"
+                >
+                  Annuler
+                </button>
+                <button
+                  onClick={handleLogout}
+                  className="px-6 py-2.5 bg-red-600 hover:bg-red-700 text-white rounded-lg font-medium transition-colors duration-200 flex items-center"
+                >
+                  <FaSignOutAlt className="mr-2" />
+                  Déconnexion
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Sidebar */}
       <div className="w-64 bg-white border-r border-gray-200 flex flex-col shadow-sm">
         <div className="p-4 border-b border-gray-200 flex items-center">
@@ -132,11 +150,11 @@ const Dashboard = () => {
 
         <div className="p-4 border-t border-gray-200">
           <button 
-            onClick={handleLogout}
-            className="w-full flex items-center p-3 rounded-lg text-gray-600 hover:bg-gray-100 hover:text-gray-800 transition-all"
+            onClick={() => setShowLogoutModal(true)}
+            className="w-full flex items-center justify-center p-3 rounded-lg text-gray-600 hover:bg-red-50 hover:text-red-600 transition-all group"
           >
-            <FaSignOutAlt className="mr-3 text-lg text-gray-500" />
-            <span>Déconnexion</span>
+            <FaSignOutAlt className="mr-3 text-lg text-gray-500 group-hover:text-red-500" />
+            <span className="font-medium">Déconnexion</span>
           </button>
         </div>
       </div>
@@ -184,7 +202,7 @@ const Dashboard = () => {
 
         {/* Content area */}
         <main className="flex-1 overflow-y-auto p-4 bg-gray-50">
-          <div >
+          <div>
             <Outlet />
             
             {/* Tableau de bord par défaut */}

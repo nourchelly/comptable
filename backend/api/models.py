@@ -459,36 +459,58 @@ def facture_upload_path(instance, filename):
     filename = f"{uuid.uuid4()}.{ext}"
     return os.path.join('factures', filename)
 
+class Client(Document):
+    nom = fields.StringField(required=True, unique=True, max_length=100)
+    email = fields.StringField(required=True, unique=True)
+    telephone = fields.StringField(max_length=20)
+    adresse = fields.StringField()
+
+    meta = {
+        'collection': 'clients',
+        'indexes': [
+            {
+                'fields': ['nom'],
+                'unique': True,
+                'name': 'nom_unique_idx'
+            },
+            {
+                'fields': ['email'],
+                'unique': True,
+                'name': 'email_unique_idx'  # Nom personnalisé pour éviter les conflits
+            }
+        ]
+    }
+
+    def __str__(self):
+        return self.nom
+
 class Facture(Document):
+    STATUT_CHOICES = (
+        ('impayée', 'Impayée'),
+        ('payée', 'Payée'),
+        ('annulée', 'Annulée'),
+    )
+    
     numero = fields.StringField(required=True, unique=True)
-    client = fields.ReferenceField('Client', required=True)
+    client = fields.ReferenceField(Client, required=True)
     date_emission = fields.DateTimeField(required=True)
     date_echeance = fields.DateTimeField()
     montant = fields.DecimalField(required=True, precision=2)
-    statut = fields.StringField(choices=('impayée', 'payée', 'annulée'), default='impayée')
+    statut = fields.StringField(choices=STATUT_CHOICES, default='impayée')
     fichier = fields.FileField(upload_to=facture_upload_path)
     created_at = fields.DateTimeField(default=datetime.datetime.now)
     created_by = fields.ReferenceField('User')
     
     meta = {
         'collection': 'factures',
-        'ordering': ['-date_emission'],
         'indexes': [
             'numero',
             'client',
             'statut',
             'date_emission'
-        ]
+        ],
+        'ordering': ['-date_emission']
     }
 
     def __str__(self):
         return f"Facture {self.numero} - {self.client.nom}"
-class Client(Document):
-    nom = fields.StringField(required=True)
-    email = fields.EmailField(required=True)
-    adresse = fields.StringField()
-    
-    meta = {
-        'collection': 'clients',
-        'indexes': ['nom', 'email']
-    }

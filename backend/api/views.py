@@ -1647,177 +1647,154 @@ def MesActionsApi(request):
     
     return JsonResponse({'error': 'Méthode non autorisée'}, status=405)
 #importer facture
+logger = logging.getLogger(__name__)
+
 @csrf_exempt
-def FactureApi(request, id=None):
+def client_api(request):
+    if request.method == 'GET':
+        clients = Client.objects.all()
+        clients_data = [{
+            'id': str(client.id),
+            'nom': client.nom,
+            'email': client.email,
+            'adresse': client.adresse
+        } for client in clients]
+        return JsonResponse(clients_data, safe=False)
+
+    elif request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            client = Client(
+                nom=data['nom'],
+                email=data['email'],
+                adresse=data.get('adresse', '')
+              
+            )
+            client.save()
+            return JsonResponse({
+                'id': str(client.id),
+                'message': 'Client créé avec succès'
+            }, status=201)
+        except Exception as e:
+            return JsonResponse({'error': str(e)}, status=400)
+
+@csrf_exempt
+def facture_api(request, id=None):
     if request.method == 'GET':
         if id:
-            # Récupérer une facture spécifique
             try:
-                facture = Facture.objects.get(id=id)
+                facture = Facture.objects.get(id=ObjectId(id))
                 return JsonResponse({
                     'id': str(facture.id),
                     'numero': facture.numero,
-                    'client': str(facture.client.id),
+                    'client_id': str(facture.client.id),
+                    'client_nom': facture.client.nom,
                     'date_emission': facture.date_emission.isoformat(),
                     'date_echeance': facture.date_echeance.isoformat() if facture.date_echeance else None,
                     'montant': float(facture.montant),
                     'statut': facture.statut,
-                    'fichier_url': request.build_absolute_uri(f'/factures/{str(facture.id)}/download/'),
-                    'created_at': facture.created_at.isoformat(),
+                    'created_at': facture.created_at.isoformat()
                 })
-            except Facture.DoesNotExist:
-                return JsonResponse({"error": "Facture non trouvée"}, status=404)
+            except (DoesNotExist, InvalidId):
+                return JsonResponse({'error': 'Facture non trouvée'}, status=404)
         else:
-            # Lister toutes les factures
             factures = Facture.objects.all()
-            factures_list = []
+            factures_data = []
             for facture in factures:
-                factures_list.append({
+                factures_data.append({
                     'id': str(facture.id),
                     'numero': facture.numero,
-                    'client': str(facture.client.id),
-                    'client_nom': facture.client.nom,  # Supposons que le client a un champ 'nom'
+                    'client_id': str(facture.client.id),
+                    'client_nom': facture.client.nom,
                     'date_emission': facture.date_emission.isoformat(),
                     'montant': float(facture.montant),
-                    'statut': facture.statut,
-                    'fichier_url': request.build_absolute_uri(f'/factures/{str(facture.id)}/download/'),
+                    'statut': facture.statut
                 })
-            return JsonResponse(factures_list, safe=False)
+            return JsonResponse(factures_data, safe=False)
 
     elif request.method == 'POST':
-     try:
-        # Debug amélioré
-        logger.debug("Données POST reçues : %s", dict(request.POST))
-        logger.debug("Fichiers reçus : %s", dict(request.FILES))
-
-        # Vérification du fichier avec validation de type
-        if 'fichier' not in request.FILES:
-            logger.warning("Aucun fichier fourni dans la requête")
-            return JsonResponse({"error": "Aucun fichier fourni"}, status=400)
-        
-        fichier = request.FILES['fichier']
-        if fichier.content_type not in ['application/pdf', 'image/jpeg', 'image/png']:
-            logger.warning("Type de fichier non autorisé : %s", fichier.content_type)
-            return JsonResponse({"error": "Type de fichier non supporté. Formats acceptés: PDF, JPEG, PNG"}, status=400)
-
-        # Validation des champs avec messages détaillés
-        required_fields = {
-            'numero': "Numéro de facture requis",
-            'client': "Client requis",
-            'date_emission': "Date d'émission requise (format: AAAA-MM-JJ)",
-            'montant': "Montant requis (format: 123.45)"
-        }
-        
-        errors = {}
-        for field, message in required_fields.items():
-            if field not in request.POST or not request.POST[field].strip():
-                errors[field] = message
-
-        if errors:
-            logger.warning("Champs manquants/invalides : %s", errors)
-            return JsonResponse({
-                "error": "Données invalides",
-                "details": errors
-            }, status=400)
-
-        # Conversion et validation des données
         try:
-            client_id = ObjectId(request.POST['client'])
-            if not Client.objects.filter(id=client_id).first():
-                raise InvalidId("Client non existant")
+            # Handle both JSON and form-data
+            if request.content_type == 'application/json':
+                data = json.loads(request.body)
+                client_id = data['client_id']
+            else:
+                data = request.POST
+                client_id = data['client_id']
+            if not ObjectId.is_valid(client_id):
+             return JsonResponse({'error': 'ID client invalide'}, status=400)
 
-            data = {
-                'numero': request.POST['numero'].strip(),
-                'client': client_id,
-                'date_emission': datetime.strptime(request.POST['date_emission'], '%Y-%m-%d').date(),
-                'montant': Decimal(request.POST['montant']),
-                'statut': request.POST.get('statut', 'impayée').lower(),
-                'fichier': fichier,
-                'created_by': ObjectId(request.user.id) if request.user.is_authenticated else None
-            }
-
-            # Champ optionnel
-            if request.POST.get('date_echeance'):
-                data['date_echeance'] = datetime.strptime(request.POST['date_echeance'], '%Y-%m-%d').date()
-                if data['date_echeance'] < data['date_emission']:
-                    raise ValueError("La date d'échéance ne peut pas être antérieure à la date d'émission")
-
-            if data['montant'] <= Decimal('0'):
-                raise InvalidOperation("Le montant doit être positif")
-
-        except ValueError as e:
-            logger.warning("Erreur de format : %s", str(e))
-            return JsonResponse({"error": str(e)}, status=400)
-        except InvalidOperation as e:
-            logger.warning("Erreur montant : %s", str(e))
-            return JsonResponse({"error": str(e)}, status=400)
-        except InvalidId as e:
-            logger.warning("ID client invalide : %s", str(e))
-            return JsonResponse({"error": str(e)}, status=400)
-
-        # Création et validation de la facture
-        try:
-            facture = Facture(**data)
-            facture.full_clean()  # Validation supplémentaire
+            client = Client.objects.get(id=ObjectId(client_id))
+            
+            facture = Facture(
+                numero=data['numero'],
+                client=client,
+                date_emission=datetime.strptime(data['date_emission'], '%Y-%m-%d'),
+                montant=Decimal(data['montant']),
+                statut=data.get('statut', 'impayée')
+            )
+            
+            if 'date_echeance' in data:
+                facture.date_echeance = datetime.strptime(data['date_echeance'], '%Y-%m-%d')
+            
+            if 'fichier' in request.FILES:
+                facture.fichier = request.FILES['fichier']
+            
             facture.save()
-
-            logger.info("Facture créée avec succès : %s", facture.numero)
+            
             return JsonResponse({
-                'status': 'success',
-                'facture_id': str(facture.id),
-                'numero': facture.numero,
-                'fichier_url': request.build_absolute_uri(f'/api/factures/{str(facture.id)}/download/')
+                'id': str(facture.id),
+                'message': 'Facture créée avec succès'
             }, status=201)
-
-        except ValidationError as e:
-            logger.warning("Erreur de validation : %s", str(e))
-            return JsonResponse({
-                "error": "Erreur de validation",
-                "details": dict(e)
-            }, status=400)
-        except NotUniqueError:
-            logger.warning("Numéro de facture dupliqué : %s", data['numero'])
-            return JsonResponse({"error": "Ce numéro de facture existe déjà"}, status=400)
-
-     except Exception as e:
-        logger.error("Erreur serveur : %s", str(e), exc_info=True)
-        return JsonResponse({
-            "error": "Erreur interne du serveur",
-            "debug": str(e) if settings.DEBUG else None
-        }, status=500)
-
-    elif request.method == 'DELETE' and id:
-        try:
-            facture = Facture.objects.get(id=id)
-            facture.delete()
-            return JsonResponse({"status": "success", "message": "Facture supprimée"})
-        except Facture.DoesNotExist:
-            return JsonResponse({"error": "Facture non trouvée"}, status=404)
+            
         except Exception as e:
-            return JsonResponse({"error": str(e)}, status=500)
+            logger.error(f"Erreur création facture: {str(e)}")
+            return JsonResponse({'error': str(e)}, status=400)
 
-    return JsonResponse({"error": "Méthode non autorisée"}, status=405)
+    elif request.method == 'PATCH':
+        try:
+            data = json.loads(request.body)
+            facture = Facture.objects.get(id=ObjectId(id))
+            
+            if 'statut' in data:
+                # Harmonisation des statuts avec le frontend
+                statut_map = {
+                    'valide': 'payée',
+                    'rejete': 'impayée'
+                }
+                new_statut = statut_map.get(data['statut'], data['statut'])
+                facture.statut = new_statut
+                facture.save()
+            
+            return JsonResponse({
+                'message': 'Facture mise à jour',
+                'statut': facture.statut
+            })
+        except (DoesNotExist, InvalidId):
+            return JsonResponse({'error': 'Facture non trouvée'}, status=404)
+        except Exception as e:
+            return JsonResponse({'error': str(e)}, status=400)
 
+    elif request.method == 'DELETE':
+        try:
+            facture = Facture.objects.get(id=ObjectId(id))
+            facture.delete()
+            return JsonResponse({'message': 'Facture supprimée'})
+        except (DoesNotExist, InvalidId):
+            return JsonResponse({'error': 'Facture non trouvée'}, status=404)
+        except Exception as e:
+            return JsonResponse({'error': str(e)}, status=500)
 
-# Vue pour télécharger le fichier de facture
+    return JsonResponse({'error': 'Méthode non autorisée'}, status=405)
+
 def download_facture(request, id):
     try:
-        facture = Facture.objects.get(id=id)
+        facture = Facture.objects.get(id=ObjectId(id))
         if not facture.fichier:
-            raise Http404("Fichier non trouvé")
-
+            return JsonResponse({'error': 'Fichier non disponible'}, status=404)
+        
         response = HttpResponse(facture.fichier.read(), content_type='application/octet-stream')
         response['Content-Disposition'] = f'attachment; filename="{facture.fichier.name}"'
         return response
-    except Facture.DoesNotExist:
-        raise Http404("Facture non trouvée")
-def validate_facture(request, id):
-    if request.method == 'PATCH':
-        try:
-            data = json.loads(request.body)
-            facture = Facture.objects.get(id=id)
-            facture.statut = data.get('statut', facture.statut)
-            facture.save()
-            return JsonResponse({'status': 'success', 'statut': facture.statut})
-        except Facture.DoesNotExist:
-            return JsonResponse({'error': 'Facture non trouvée'}, status=404)
+    except (DoesNotExist, InvalidId):
+        return JsonResponse({'error': 'Facture non trouvée'}, status=404)
