@@ -1,17 +1,61 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { Link, Outlet, useLocation, useNavigate } from "react-router-dom";
 import axios from "axios";
 import { 
   FaHome, FaCheckCircle, FaSignOutAlt, 
   FaSearch, FaBell, FaUserCircle,
   FaUsersCog, FaUserShield, FaFileInvoiceDollar,
-  FaShieldAlt, FaDatabase, FaQrcode
+  FaShieldAlt, FaDatabase, FaQrcode,
+  FaSpinner, FaTimes
 } from "react-icons/fa";
 
 const Dashboard = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const [showLogoutModal, setShowLogoutModal] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState([]);
+  const [showResults, setShowResults] = useState(false);
+  const [isSearching, setIsSearching] = useState(false);
+  const [searchError, setSearchError] = useState(null);
+
+  // Fonction de recherche avec debounce
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (searchQuery.trim().length > 2) {
+        performSearch(searchQuery);
+      } else {
+        setSearchResults([]);
+        setShowResults(false);
+      }
+    }, 300);
+
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
+  const performSearch = async (query) => {
+    setIsSearching(true);
+    setSearchError(null);
+    
+    try {
+      // Remplacez cette URL par votre endpoint de recherche réel
+      const response = await axios.get("http://127.0.0.1:8000/api/search/", {
+        params: { q: query },
+        headers: {
+          Authorization: `Bearer ${localStorage.getItem("valid")}`
+        }
+      });
+      
+      setSearchResults(response.data.results || []);
+      setShowResults(true);
+    } catch (err) {
+      console.error("Search error:", err);
+      setSearchError("Erreur lors de la recherche");
+      setSearchResults([]);
+    } finally {
+      setIsSearching(false);
+    }
+  };
 
   const handleLogout = () => {
     axios.get("http://127.0.0.1:8000/api/logout/")
@@ -28,16 +72,22 @@ const Dashboard = () => {
     switch (location.pathname) {
       case "/dashboard": return "Tableau de bord";
       case "/dashboard/comptes": return "Gestion des comptes";
-      case "/dashboard/profilee": return " administrateur";
+      case "/dashboard/profile": return "Profil administrateur";
       case "/dashboard/validation": return "Validation des demandes";
       case "/dashboard/audit": return "Journal d'audit";
       default: return "";
     }
   };
 
+  const clearSearch = () => {
+    setSearchQuery("");
+    setSearchResults([]);
+    setShowResults(false);
+  };
+
   return (
-    <div className="flex h-screen bg-gray-50">
-      {/* Modal de déconnexion amélioré */}
+    <div className="flex h-screen bg-gray-50" onClick={() => showResults && setShowResults(false)}>
+      {/* Modal de déconnexion */}
       {showLogoutModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl shadow-xl overflow-hidden w-full max-w-md">
@@ -47,7 +97,7 @@ const Dashboard = () => {
               </div>
               <h3 className="text-xl font-bold text-gray-900 mb-2">Déconnexion</h3>
               <p className="text-gray-600 mb-6">
-                Êtes-vous sûr de vouloir vous déconnecter ? Vous devrez vous reconnecter pour accéder à nouveau au tableau de bord.
+                Êtes-vous sûr de vouloir vous déconnecter ?
               </p>
               <div className="flex justify-center space-x-4">
                 <button
@@ -130,7 +180,7 @@ const Dashboard = () => {
             <FaCheckCircle className={`mr-3 text-lg ${
               location.pathname === "/dashboard/validation" ? "text-indigo-600" : "text-gray-500"
             }`} />
-            <span>Validations</span>
+            <span>Supervisions</span>
           </Link>
 
           <Link 
@@ -177,9 +227,64 @@ const Dashboard = () => {
               <FaSearch className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
               <input
                 type="text"
-                placeholder="Rechercher actions, utilisateurs..."
-                className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all"
+                placeholder="Rechercher utilisateurs, transactions..."
+                className="w-full pl-10 pr-8 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all"
+                value={searchQuery}
+                onChange={(e) => {
+                  setSearchQuery(e.target.value);
+                  setShowResults(e.target.value.length > 0);
+                }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (searchQuery.length > 0) {
+                    setShowResults(true);
+                  }
+                }}
               />
+              
+              {searchQuery && (
+                <button
+                  onClick={clearSearch}
+                  className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                >
+                  <FaTimes />
+                </button>
+              )}
+              
+              {isSearching && (
+                <FaSpinner className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 animate-spin" />
+              )}
+              
+              {/* Résultats de recherche */}
+              {showResults && (
+                <div 
+                  className="absolute z-50 mt-1 w-full bg-white shadow-lg rounded-lg overflow-hidden border border-gray-200 max-h-96 overflow-y-auto"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  {searchError ? (
+                    <div className="p-4 text-center text-red-500">{searchError}</div>
+                  ) : searchResults.length > 0 ? (
+                    searchResults.map((result) => (
+                      <Link
+                        key={result.id}
+                        to={result.link}
+                        className="block px-4 py-3 hover:bg-gray-50 transition-colors border-b border-gray-100 last:border-b-0"
+                        onClick={() => {
+                          setShowResults(false);
+                          setSearchQuery("");
+                        }}
+                      >
+                        <div className="font-medium text-gray-800">{result.name}</div>
+                        <div className="text-xs text-gray-500 mt-1 capitalize">{result.type}</div>
+                      </Link>
+                    ))
+                  ) : (
+                    <div className="p-4 text-center text-gray-500">
+                      {searchQuery.length > 2 ? "Aucun résultat trouvé" : "Tapez au moins 3 caractères"}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
             
             <button className="p-2 rounded-full text-gray-500 hover:bg-gray-100 relative transition-colors">

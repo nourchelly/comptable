@@ -20,6 +20,7 @@ import {
 const UserProfileView = () => {
     const { user, logout } = useUser();
     const [profile, setProfile] = useState(null);
+    const [showDeleteConfirmation, setShowDeleteConfirmation] = useState(false);
     const [error, setError] = useState(null);
     const [loading, setLoading] = useState(true);
     const [hoverPhoto, setHoverPhoto] = useState(false);
@@ -70,22 +71,26 @@ const UserProfileView = () => {
         fetchProfile();
     }, [user]);
 
-    const handleDeleteAccount = async () => {
-        if (window.confirm("Êtes-vous sûr de vouloir supprimer votre compte ? Cette action est irréversible.")) {
-            try {
-                const response = await axios.delete(`http://127.0.0.1:8000/api/profiladmin/${user.id}/`, {
-                    withCredentials: true
-                });
-                
-                if (response.data.status === 'success') {
-                    alert("Votre compte a été supprimé avec succès");
-                    logout();
-                    navigate('/connexion');
-                }
-            } catch (err) {
-                console.error("Erreur lors de la suppression du compte:", err);
-                setError("Impossible de supprimer le compte");
+    const handleDelete = () => {
+        setShowDeleteConfirmation(true);
+    };
+    
+    const confirmDelete = async () => {
+        try {
+            const response = await axios.delete(`http://127.0.0.1:8000/api/profilcomptable/${user.id}/`, {
+                withCredentials: true
+            });
+            
+            if (response.data?.status === 'success') {
+                alert("Votre compte a été supprimé avec succès");
+                logout();
+                navigate('/connexion');
             }
+        } catch (err) {
+            console.error("Erreur lors de la suppression du compte:", err);
+            setError("Impossible de supprimer le compte");
+        } finally {
+            setShowDeleteConfirmation(false);
         }
     };
 
@@ -111,7 +116,6 @@ const UserProfileView = () => {
             );
 
             if (response.data.status === 'success') {
-                // Recharger les données du profil
                 const profileResponse = await axios.get(
                     `http://127.0.0.1:8000/api/profiladmin/${user.id}/`,
                     { withCredentials: true }
@@ -360,20 +364,80 @@ const UserProfileView = () => {
                                             'Date inconnue'}
                                     </p>
                                 </div>
-                                <div className="flex space-x-3">
-                                    <button
-                                        onClick={handleDeleteAccount}
-                                        className="px-5 py-2.5 bg-red-500 text-white font-medium rounded-lg hover:bg-red-600 transition-colors flex items-center"
-                                    >
-                                        <TrashIcon className="h-5 w-5 mr-2" />
-                                        Supprimer le compte
-                                    </button>
-                                </div>
+                                <button
+                                    onClick={handleDelete}
+                                    className="flex items-center space-x-2 px-4 py-2 bg-red-50 text-red-600 rounded-lg hover:bg-red-100 transition-colors"
+                                >
+                                    <TrashIcon className="h-5 w-5" />
+                                    <span>Supprimer le compte</span>
+                                </button>
                             </div>
                         </div>
                     </div>
                 </div>
             </div>
+
+            {/* Modal de confirmation de suppression */}
+            {showDeleteConfirmation && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+                    <div className="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden">
+                        <div className="bg-red-50 p-5 border-b border-red-100">
+                            <div className="flex flex-col items-center">
+                                <div className="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-red-100">
+                                    <ExclamationTriangleIcon className="h-6 w-6 text-red-600" />
+                                </div>
+                                <h3 className="mt-4 text-xl font-bold text-red-600">Confirmation requise</h3>
+                            </div>
+                        </div>
+
+                        <div className="p-6 space-y-4">
+                            <div className="flex items-start">
+                                <div className="flex-shrink-0 text-red-500">
+                                    <ExclamationTriangleIcon className="h-5 w-5" />
+                                </div>
+                                <div className="ml-3">
+                                    <h3 className="text-lg font-medium text-gray-900">Êtes-vous sûr de vouloir supprimer ce compte ?</h3>
+                                </div>
+                            </div>
+
+                            <div className="bg-yellow-50 rounded-lg p-4">
+                                <div className="flex">
+                                    <div className="flex-shrink-0 text-yellow-500">
+                                        <ExclamationTriangleIcon className="h-5 w-5" />
+                                    </div>
+                                    <div className="ml-3">
+                                        <div className="text-sm text-yellow-700">
+                                            <p className="font-medium">Cette action est irréversible !</p>
+                                            <ul className="mt-1 list-disc list-inside space-y-1">
+                                                <li>L'utilisateur perdra immédiatement l'accès</li>
+                                                <li>Toutes les données seront définitivement supprimées</li>
+                                                <li>Cette opération ne peut pas être annulée</li>
+                                            </ul>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="bg-gray-50 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse">
+                            <button
+                                type="button"
+                                onClick={confirmDelete}
+                                className="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-red-600 text-base font-medium text-white hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 sm:ml-3 sm:w-auto sm:text-sm"
+                            >
+                                Supprimer définitivement
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => setShowDeleteConfirmation(false)}
+                                className="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 sm:mt-0 sm:ml-3 sm:w-auto sm:text-sm"
+                            >
+                                Annuler
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* Modal d'ajout d'informations */}
             {showAddForm && (

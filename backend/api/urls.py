@@ -11,7 +11,8 @@ from .views import (
     AuditApi,
     CompteApi,
     ListeComptes,
-    client_api,
+    releve_api,
+    download_releve,
     SignalerCompte,
     activate_account,
     AdminActionsApi,
@@ -20,6 +21,7 @@ from .views import (
     GoogleLogin,
     register_user,
     PasswordResetRequestView,
+    facebook_auth_callback,
     reset_password,
     logout_view,
     google_auth_callback,
@@ -27,11 +29,12 @@ from .views import (
      # Si tu veux garder cette vue spécifique
     ComptableProfileView,
     DeleteProfilView,
-    RapportListView,
-    RapportEditView,
-    RapportDeleteView,
-    create_rapport,
-    exporter_rapport
+   api_rapports,
+   mes_notifications,
+   get_unread_count,
+   mark_all_notifications_read,
+   mark_notification_read,
+   delete_notification
 )
 
 app_name = 'api'
@@ -49,15 +52,13 @@ urlpatterns = [
     # Authentification via Google
     path('auth/google/callback/', google_auth_callback, name='google_callback'),
     path("get-csrf/", get_csrf, name="get-csrf"),
-    
+    path('auth/facebook/callback/', facebook_auth_callback, name='google_callback'),
     # Gestion des profils et rapports
     path('profil/', ComptableProfileView.as_view(), name='profilcomptable'),
     path('profil/delete/<str:user_id>', DeleteProfilView.as_view(), name='deletecomptable'),
-    path('rapports/', RapportListView.as_view(), name='rapport-list'),
-    path('rapports/create/', create_rapport, name='rapport-create'),
-    path('rapports/<str:pk>/edit/', RapportEditView.as_view(), name='rapport-edit'),  # ✏️ Modifier un rapport
-    path('rapports/<str:pk>/delete/', RapportDeleteView.as_view(), name='rapport-delete'),
-    path('rapports/<str:id>/export', exporter_rapport, name='exporter_rapport'),
+    path('rapports/', api_rapports, name='rapport-list'),
+    path('rapports/<str:id>/', api_rapports, name='rapport-detail'),  # ✏️ Modifier un rapport
+   
     
     # Vue personnalisée pour rafraîchir le token (si tu la veux encore)
     path('google/login/', GoogleLogin.as_view(), name='google_login'),
@@ -79,14 +80,23 @@ urlpatterns = [
     path('comptes/', ListeComptes, name='liste_comptes'),
     path('signaler-compte/', SignalerCompte, name='signaler_compte'),
     path('actions/', AdminActionsApi, name='directeur_actions'),
-      path('mes-actions/', MesActionsApi, name='mes_actions'),
+    path('mes-actions/', MesActionsApi, name='mes_actions'),
     
     #factures 
-     path('factures/', facture_api, name='facture-api'),
+    path('factures/', facture_api, name='facture-api'),
     path('factures/<str:id>/', facture_api, name='facture-detail'),
-     path('clients/', client_api, name='client-api'),
-     path('api/factures/download/<id>/', download_facture, name='download_facture'),
+    path('factures/<str:id>/download/', download_facture, name='download_facture'),
+    path('banques/', releve_api, name='releve-api'),
+    path('banques/<str:id>/', releve_api, name='releve-detail'),
+    path('banques/<str:id>/download/', download_releve, name='download_releve'),
+
+    # Notifications - adaptées au composant React existant
+    path('notifications/', mes_notifications, name='get_notifications'),
+    path('notifications/unread-count/', get_unread_count, name='get_unread_count'),
+    path('notifications/read-all/', mark_all_notifications_read, name='mark_all_notifications_read'),
+    path('notifications/<str:notification_id>/read/', mark_notification_read, name='mark_notification_read'),
+    path('notifications/<str:notification_id>/', delete_notification, name='delete_notification'),
    # path('media/<path:file_path>', serve_facture_file, name='serve_facture_file'),
-] #+ static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
+] + static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
    
 

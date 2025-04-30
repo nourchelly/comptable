@@ -2,7 +2,8 @@ from rest_framework.views import APIView
 import logging
 from bson.errors import InvalidId
 from decimal import Decimal,InvalidOperation
-from django.http import Http404, HttpResponse, JsonResponse
+from datetime import datetime as dt
+from django.http import Http404, HttpResponse, JsonResponse,FileResponse
 from mongoengine.errors import NotUniqueError, ValidationError
 from django.utils.timezone import now as timezone_now
 from rest_framework.decorators import permission_classes
@@ -11,16 +12,14 @@ from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from django.utils import timezone
-from rest_framework.decorators import api_view,  authentication_classes 
+from rest_framework.decorators import api_view
 from datetime import datetime, timedelta
 from django.core.mail import send_mail 
 from django.conf import settings
 import jwt
-from .permissions import IsComptable
     #exporter
 from bson import ObjectId
-from .models import Rapport ,ActionLog,Facture,Client # MongoEngine model
-import io
+from .models import Rapport ,ActionLog,Facture,Banque,Notification # MongoEngine model
 from reportlab.pdfgen import canvas
 from openpyxl import Workbook
 
@@ -44,7 +43,7 @@ from api.models import CustomUser,AuditFinancier,Admin
  
 
 from .models import CustomUser,Comptable,DirecteurFinancier
-from .serializers import RegisterSerializer, PasswordResetRequestSerializer, PasswordResetSerializer
+from .serializers import PasswordResetRequestSerializer
 from allauth.socialaccount.providers.google.views import GoogleOAuth2Adapter
 from allauth.socialaccount.providers.oauth2.client import OAuth2Client
 from dj_rest_auth.registration.views import SocialLoginView
@@ -67,11 +66,8 @@ logger = logging.getLogger(__name__)
 @ensure_csrf_cookie
 def get_csrf(request):
     return JsonResponse({"detail": "CSRF cookie set"})
-# Token CSRF
-#@api_view(['GET'])
-#def csrf_token_view(request):
-    #return JsonResponse({'csrfToken': get_token(request)})
 
+from allauth.socialaccount.providers.facebook.views import FacebookOAuth2Adapter
 # Vue pour GoogleLogin
 class GoogleLogin(SocialLoginView):
     authentication_classes = []  # Désactive l'authentification par défaut
@@ -80,6 +76,10 @@ class GoogleLogin(SocialLoginView):
     callback_url = "http://localhost:3000/google/callback"  # Adapte l'URL en fonction de ton frontend
     client_class = OAuth2Client
 
+class FacebookLogin(SocialLoginView):
+    adapter_class = FacebookOAuth2Adapter
+    callback_url = "http://localhost:3000/auth/facebook/callback"
+    client_class = OAuth2Client
 
 def get_serializer(self, *args, **kwargs):
         serializer_class = self.get_serializer_class()
@@ -105,9 +105,10 @@ from django.conf import settings
 from .models import CustomUser
 from django.contrib.auth.hashers import make_password
 import jwt
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta,timezone
 from django.core.exceptions import ValidationError
 from django.core.validators import validate_email
+
 
 @api_view(['POST'])
 @permission_classes([AllowAny])
@@ -117,10 +118,10 @@ def register_user(request):
     # Validation de base
     if CustomUser.objects.filter(email=data['email']).first():
         return Response({'error': 'Email déjà utilisé'}, status=400)
-
+    
     if data['password'] != data.get('confirmPassword', ''):
         return Response({'error': 'Les mots de passe ne correspondent pas'}, status=400)
-
+    
     # Validation des emails secondaires
     secondary_emails = data.get('secondary_emails', [])
     valid_secondary_emails = []
@@ -131,8 +132,8 @@ def register_user(request):
             if email != data['email']:  # Ne pas ajouter l'email principal
                 valid_secondary_emails.append(email)
         except ValidationError:
-            continue  # Ignore les emails invalides
-
+            continue
+    
     # Création de l'utilisateur
     try:
         user = CustomUser(
@@ -143,14 +144,14 @@ def register_user(request):
             is_active=False
         )
         user.set_password(data['password'])
-        user.save()
-
-        # Génération du token
+        user.save()  # Sauvegarde initiale pour avoir un ID
+        
+        # Génération du token APRÈS la sauvegarde
         activation_token = user.generate_activation_token()
-
+        
         # Liste de tous les emails à notifier
         all_emails = [user.email] + valid_secondary_emails
-
+        
         # Envoi des emails
         activation_link = f"{settings.FRONTEND_URL}/activate/{activation_token}"
         send_mail(
@@ -170,14 +171,17 @@ def register_user(request):
             all_emails,
             fail_silently=False,
         )
-
+        
         return Response({
             'success': True,
             'message': f'Inscription réussie. Email(s) envoyé(s) à {len(all_emails)} adresse(s).',
             'emails_sent_to': all_emails
         }, status=201)
-
+    
     except Exception as e:
+        import traceback
+        error_traceback = traceback.format_exc()
+        print(f"Erreur d'inscription : {str(e)}\n{error_traceback}")
         return Response({
             'success': False,
             'error': str(e)
@@ -199,7 +203,7 @@ def activate_account(request, token):
         
         return Response({
             'success': True,
-            'message': 'Compte activé avec succès ! Vous pouvez maintenant vous connecter.'
+            'message': 'Compte activé avec succès !'
         })
         
     except jwt.ExpiredSignatureError:
@@ -215,7 +219,7 @@ def activate_account(request, token):
 
 from .models import CustomUser
 
-
+from django.core.validators import validate_email
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from mongoengine import DoesNotExist
@@ -792,7 +796,7 @@ class PasswordResetRequestView(APIView):
         if serializer.is_valid():
             user = serializer.validated_data['user']
             user.reset_token = str(uuid.uuid4()) # Convert UUID to string
-            user.reset_token_expires = datetime.now() + timedelta(hours=24)
+            user.reset_token_expires = datetime.datetime.now() + timedelta(hours=24)
             user.save()
 
             reset_link = f"{settings.FRONTEND_URL}/reset-password/{user.reset_token}/"
@@ -807,55 +811,59 @@ class PasswordResetRequestView(APIView):
             return Response({"message": "Un lien de réinitialisation a été envoyé à votre email."}, status=status.HTTP_200_OK)
         else:
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+from django.utils.timezone import now  # Import correct pour le timezone aware datetime
+from django.utils.timezone import make_aware, get_current_timezone
+from django.utils.timezone import is_naive
+
 @csrf_exempt
 @api_view(['POST'])
 @permission_classes([AllowAny])
 def reset_password(request):
-     # au cas où pas encore importé
-    data = json.loads(request.body)
-
-    token = data.get('token')
-    new_password = data.get('new_password')
-    confirm_password = data.get('confirm_password')
-
-    if not token:
-        return Response({"detail": "Token manquant"}, status=400)
-
-
-        # Vérification que le token est bien celui actuellement en base
-        
-# ...
-
     try:
-        user = CustomUser.objects.get(reset_token=token)
-    except CustomUser.DoesNotExist:
-        return Response({"detail": "Lien invalide ou expiré."}, status=404)
-   
-   
-    now = timezone.now()
-    # Vérification de l'expiration du token
-       # Corrige le type de datetime si nécessaire
-    token_expires = user.reset_token_expires
-    if is_naive(token_expires):
-        token_expires = make_aware(token_expires, get_current_timezone())
-    if token_expires < now:
-        return Response({"detail": "Lien expiré."}, status=400)
+        data = json.loads(request.body)
+        token = data.get('token')
+        new_password = data.get('new_password')
+        confirm_password = data.get('confirm_password')
 
-        
+        if not token:
+            return Response({"detail": "Token manquant"}, status=400)
 
-    # Vérification que les mots de passe correspondent
-    if new_password != confirm_password:
-        return Response({"detail": "Les mots de passe ne correspondent pas."}, status=400)
+        if not new_password or not confirm_password:
+            return Response({"detail": "Nouveau mot de passe manquant"}, status=400)
 
-    # Mise à jour du mot de passe
-    user.set_password(new_password)
-    
-    # Réinitialisation du token et expiration dans la base
-    user.reset_token = None
-    user.reset_token_expires = None
-    user.save()
+        if new_password != confirm_password:
+            return Response({"detail": "Les mots de passe ne correspondent pas."}, status=400)
 
-    return Response({"detail": "Mot de passe réinitialisé avec succès."}, status=200)
+        try:
+            user = CustomUser.objects.get(reset_token=token)
+        except CustomUser.DoesNotExist:
+            return Response({"detail": "Lien invalide ou expiré."}, status=404)
+
+        # Vérification de l'expiration du token
+        current_time = now()  # Utilisez now() de django.utils.timezone
+        token_expires = user.reset_token_expires
+
+        if token_expires is None:
+            return Response({"detail": "Token invalide (pas de date d'expiration)."}, status=400)
+
+        if is_naive(token_expires):
+            token_expires = make_aware(token_expires, get_current_timezone())
+
+        if token_expires < current_time:
+            return Response({"detail": "Lien expiré."}, status=400)
+
+        # Mise à jour du mot de passe
+        user.set_password(new_password)
+        user.reset_token = None
+        user.reset_token_expires = None
+        user.save()
+
+        return Response({"detail": "Mot de passe réinitialisé avec succès."}, status=200)
+
+    except json.JSONDecodeError:
+        return Response({"detail": "Données JSON invalides"}, status=400)
+    except Exception as e:
+        return Response({"detail": str(e)}, status=500)
 
 # Vue de déconnexion
 from django.utils.timezone import is_naive, make_aware, get_current_timezone
@@ -888,7 +896,6 @@ def home(request):
 @api_view(['GET'])
 def google_auth(request):
     return Response({'message': 'Endpoint Google Auth'})
-
 @api_view(['POST'])
 @csrf_exempt
 @permission_classes([AllowAny])
@@ -945,18 +952,18 @@ def google_auth_callback(request):
         user = CustomUser.objects.create(
             email=email,
             username=username,
-            role="admin",
+            role="admin",  # Vous pourriez vouloir changer ce rôle par défaut
             password="",  # Auth externe
             is_active=True
         )
 
-    # 4. Générer le JWT
+    # 4. Générer le JWT (version corrigée)
     payload = {
         "user_id": str(user.id),
         "email": user.email,
         "role": user.role,
-        "exp": datetime.utcnow() + timedelta(hours=24),
-        "iat": datetime.utcnow()
+        "exp": datetime.datetime.utcnow() + datetime.timedelta(hours=24),
+        "iat": datetime.datetime.utcnow()
     }
 
     jwt_token = jwt.encode(payload, settings.SECRET_KEY, algorithm="HS256")
@@ -964,7 +971,8 @@ def google_auth_callback(request):
     return JsonResponse({
         "token": jwt_token,
         "role": user.role,
-        "user_id": str(user.id)
+        "user_id": str(user.id),
+        "email": user.email
     })
 
 #from rest_framework_simplejwt.tokens import UntypedToken
@@ -1037,169 +1045,164 @@ class DeleteProfilView(APIView):
 
 #rapport 
 from .models import Rapport
-from .serializers import RapportSerializer
 from rest_framework_simplejwt.authentication import JWTAuthentication
-from .permissions import IsComptable
-@api_view(['POST'])
-@authentication_classes([JWTAuthentication])  # Ajout crucial
-@permission_classes([IsAuthenticated])
-def create_rapport(request):
-    # Vérification du rôle
-    if request.user.role != 'comptable':
-        return Response(
-            {"error": "Accès réservé aux comptables"},
-            status=status.HTTP_403_FORBIDDEN
-        )
-
+@csrf_exempt
+def api_rapports(request, id=None):
     try:
-        comptable = Comptable.objects.get(user=request.user.id)
-    except Comptable.DoesNotExist:
-        return Response(
-            {"error": "Profil comptable introuvable"},
-            status=status.HTTP_404_NOT_FOUND
-        )
+        if request.method == 'GET':
+            if id and id != 'undefined':
+                try:
+                    rapport = Rapport.objects.get(id=id)
+                    rapport_data = {
+                        'id': str(rapport.id),
+                        'nom': rapport.nom,
+                        'type': rapport.type,
+                        'statut': rapport.statut,
+                        'date': rapport.date.isoformat(),
+                        'contenu': rapport.contenu,
+                        'facture_id': rapport.facture_id,
+                        'created_at': rapport.created_at.isoformat(),
+                        'updated_at': rapport.updated_at.isoformat() if rapport.updated_at else None,
+                        'validated_at': rapport.validated_at.isoformat() if rapport.validated_at else None
+                    }
+                    return JsonResponse(rapport_data)
+                except DoesNotExist:
+                    return JsonResponse({"error": "Rapport non trouvé"}, status=404)
+                except ValidationError:
+                    return JsonResponse({"error": "ID de rapport invalide"}, status=400)
+            else:
+                # Ensure we're only selecting fields that exist in the model
+                rapports = Rapport.objects.only(
+                    'id', 'nom', 'type', 'statut', 'date', 'facture_id'
+                )
+                rapports_list = [{
+                    'id': str(rapport.id),
+                    'nom': rapport.nom,
+                    'type': rapport.type,
+                    'statut': rapport.statut,
+                    'date': rapport.date.isoformat(),
+                    'facture_id': rapport.facture_id
+                } for rapport in rapports]
+                return JsonResponse({'rapports': rapports_list}, safe=False)
 
-    data = {
-        **request.data,
-        "comptable": str(comptable.id),
-        "created_by": str(request.user.id)
-    }
+        elif request.method == 'POST':
+            try:
+                data = json.loads(request.body)
+                
+                rapport = Rapport(
+                    nom=data.get('nom', 'Nouveau Rapport'),
+                    type=data.get('type', 'Financier'),
+                    statut=data.get('statut', 'Brouillon'),
+                    contenu=data.get('contenu', ''),
+                    facture_id=data.get('facture_id')
+                )
+                
+                if 'date' in data:
+                    try:
+                        rapport.date = dt.fromisoformat(data['date'])
+                    except ValueError:
+                        return JsonResponse({"error": "Format de date invalide"}, status=400)
+                
+                rapport.save()
+                
+                return JsonResponse({
+                    "status": "success", 
+                    "message": "Rapport créé avec succès",
+                    "id": str(rapport.id)
+                }, status=201)
+                
+            except json.JSONDecodeError:
+                return JsonResponse({"error": "Données JSON invalides"}, status=400)
+            except ValidationError as e:
+                return JsonResponse({"error": str(e)}, status=400)
 
-    serializer = RapportSerializer(data=data)
-    if serializer.is_valid():
-        rapport = serializer.save()
-        return Response({
-            "message": "Rapport créé avec succès",
-            "data": serializer.data
-        }, status=status.HTTP_201_CREATED)
+        elif request.method == 'PUT':
+            if not id or id == 'undefined':
+                return JsonResponse({"error": "ID de rapport requis"}, status=400)
+            
+            try:
+                # Parse les données JSON
+                try:
+                    data = json.loads(request.body)
+                except json.JSONDecodeError:
+                    return JsonResponse({"error": "Données JSON invalides"}, status=400)
+
+                # Récupère le rapport existant
+                try:
+                    rapport = Rapport.objects.get(id=id)
+                except (DoesNotExist, ValidationError):
+                    return JsonResponse({"error": "Rapport non trouvé"}, status=404)
+
+                # Liste des champs autorisés à être mis à jour
+                fields_to_update = ['nom', 'type', 'statut', 'contenu', 'facture_id']
+                for field in fields_to_update:
+                    if field in data:
+                        setattr(rapport, field, data[field] if data[field] is not None else "")
+
+                # Gestion spéciale pour la date
+                if 'date' in data:
+                    if data['date']:
+                        try:
+                            rapport.date = dt.fromisoformat(data['date'])
+                        except ValueError:
+                            return JsonResponse({"error": "Format de date invalide"}, status=400)
+                    else:
+                        rapport.date = None
+
+                # Mise à jour du statut
+                if data.get('statut') == 'Validé':
+                    rapport.validated_at = dt.now()
+
+                # Sauvegarde
+                rapport.save()
+
+                # Construction de la réponse
+                response_data = {
+                    "status": "success", 
+                    "message": "Rapport mis à jour avec succès",
+                    "data": {
+                        "id": str(rapport.id),
+                        "nom": rapport.nom,
+                        "type": rapport.type,
+                        "statut": rapport.statut,
+                        "date": rapport.date.isoformat() if rapport.date else None,
+                        "contenu": rapport.contenu,
+                        "facture_id": rapport.facture_id
+                    }
+                }
+                return JsonResponse(response_data)
+
+            except Exception as e:
+                # Log l'erreur complète pour le débogage
+                import traceback
+                traceback.print_exc()
+                return JsonResponse({
+                    "error": "Erreur lors de la mise à jour du rapport",
+                    "details": str(e)
+                }, status=500)
+
+        elif request.method == 'DELETE':
+            if not id or id == 'undefined':
+                return JsonResponse({"error": "ID de rapport requis"}, status=400)
+            
+            try:
+                rapport = Rapport.objects.get(id=id)
+                rapport.delete()
+                return JsonResponse({
+                    "status": "success", 
+                    "message": "Rapport supprimé avec succès"
+                })
+            except DoesNotExist:
+                return JsonResponse({"error": "Rapport non trouvé"}, status=404)
+        
+        return JsonResponse({"error": "Méthode non autorisée"}, status=405)
+
+    except Exception as e:
+        return JsonResponse({"error": f"Erreur serveur: {str(e)}"}, status=500)
+
+ 
     
-    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-# 📄 Affichage des rapports du comptable connecté
-class RapportListView(APIView):
-    permission_classes = [IsAuthenticated]
-
-    def get(self, request, *args, **kwargs):
-        comptable = Comptable.objects.get(user=request.user)
-        rapports = Rapport.objects.filter(comptable=comptable)  # 🔐 Restriction à ses propres rapports
-        rapports_data = [{
-            "id": str(r.id),
-            "nom": r.nom,
-            "type": r.type,
-            "statut": r.statut,
-            "date": r.date.strftime('%Y-%m-%d')
-        } for r in rapports]
-        return Response(rapports_data, status=status.HTTP_200_OK)
-
-class RapportEditView(APIView):
-    permission_classes = [IsAuthenticated, IsComptable]
-
-    def put(self, request, pk, *args, **kwargs):
-        try:
-            rapport = Rapport.objects.get(id=pk)
-        except Rapport.DoesNotExist:
-            return Response({"message": "Rapport non trouvé"}, status=status.HTTP_404_NOT_FOUND)
-
-        # Vérifie que le rapport appartient bien au comptable connecté
-        comptable = Comptable.objects.get(user=request.user)
-        if rapport.comptable != comptable:
-            return Response({"message": "Vous n'avez pas le droit de modifier ce rapport"}, status=status.HTTP_403_FORBIDDEN)
-
-        # Vérifie que le rapport n'est pas validé
-        if rapport.statut == "Validé":
-            return Response({"message": "Impossible de modifier un rapport déjà validé"}, status=status.HTTP_403_FORBIDDEN)
-
-        # Mise à jour des champs
-        rapport.nom = request.data.get('nom', rapport.nom)
-        rapport.type = request.data.get('type', rapport.type)
-        rapport.save()
-
-        return Response({"message": "Rapport modifié avec succès"}, status=status.HTTP_200_OK)
-
-class RapportDeleteView(APIView):
-    permission_classes = [IsAuthenticated, IsComptable]
-
-    def delete(self, request, pk, *args, **kwargs):
-        try:
-            rapport = Rapport.objects.get(id=pk)
-        except Rapport.DoesNotExist:
-            return Response({"message": "Rapport non trouvé"}, status=status.HTTP_404_NOT_FOUND)
-
-        if rapport.statut == "Validé":
-            return Response({"message": "Impossible de supprimer un rapport validé"}, status=status.HTTP_403_FORBIDDEN)
-
-        rapport.delete()
-        return Response({"message": "Rapport supprimé avec succès"}, status=status.HTTP_204_NO_CONTENT)
-
-
-
-@api_view(['GET'])
-@permission_classes([IsComptable])
-def exporter_rapport(request, id):
-    format_export = request.GET.get('format', '').lower()
-    if format_export not in ['pdf', 'excel']:
-        return Response({'error': 'Format invalide'}, status=status.HTTP_400_BAD_REQUEST)
-
-    try:
-        rapport = Rapport.objects.get(id=ObjectId(id))
-    except Rapport.DoesNotExist:
-        return Response({'error': 'Rapport introuvable'}, status=status.HTTP_404_NOT_FOUND)
-
-    if format_export == 'pdf':
-        buffer = io.BytesIO()
-        p = canvas.Canvas(buffer, pagesize=A4)
-        width, height = A4
-
-        # 📌 Ajout d'un logo (remplace le chemin par le tien)
-        logo_path = os.path.join('static', 'images', 'logo.png')  # chemin relatif
-        if os.path.exists(logo_path):
-            logo = ImageReader(logo_path)
-            p.drawImage(logo, 40, height - 100, width=100, height=50)
-
-        # 📄 Détails du rapport
-        p.setFont("Helvetica-Bold", 14)
-        p.drawString(100, height - 150, f"Rapport: {rapport.nom}")
-        p.drawString(100, height - 180, f"Type: {rapport.type}")
-        p.drawString(100, height - 210, f"Date: {rapport.date.strftime('%Y-%m-%d')}")
-        p.drawString(100, height - 240, f"Statut: {rapport.statut}")
-        p.showPage()
-        p.save()
-
-        buffer.seek(0)
-        response = HttpResponse(buffer, content_type='application/pdf')
-        response['Content-Disposition'] = f'attachment; filename="{rapport.nom}.pdf"'
-        return response
-
-    elif format_export == 'excel':
-        wb = Workbook()
-        ws = wb.active
-        ws.title = "Rapport"
-
-        # 🧾 En-tête
-        ws.append(["Nom", "Type", "Date", "Statut"])
-        ws.append([rapport.nom, rapport.type, rapport.date.strftime('%Y-%m-%d'), rapport.statut])
-
-        # ➕ Lignes de transactions simulées
-        ws.append([])  # ligne vide
-        ws.append(["Transactions"])
-        ws.append(["Date", "Description", "Montant"])
-
-        # Exemple de données simulées (à remplacer avec des vraies données si disponibles)
-        transactions = [
-            ("2025-04-01", "Achat matériel", 1200.00),
-            ("2025-04-02", "Vente service", 2500.00),
-            ("2025-04-03", "Frais déplacement", 300.00),
-        ]
-
-        for t in transactions:
-            ws.append(t)
-
-        buffer = io.BytesIO()
-        wb.save(buffer)
-        buffer.seek(0)
-        response = HttpResponse(buffer, content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
-        response['Content-Disposition'] = f'attachment; filename="{rapport.nom}.xlsx"'
-        return response
-
+    
 
 #tokenview
 # api/views.py
@@ -1517,54 +1520,84 @@ def ListeComptes(request):
         except Exception as e:
             logger.error(f"Erreur: {str(e)}")
             return JsonResponse({"error": str(e)}, status=500)
+logger = logging.getLogger(__name__)
+
 @csrf_exempt
 def SignalerCompte(request):
     if request.method == 'POST':
         try:
-            if request.headers.get('Content-Type') == 'application/json':
-                data = json.loads(request.body)
-            else:
-                data = request.POST
-                
+            # Récupération des données
+            data = json.loads(request.body) if request.content_type == 'application/json' else request.POST
+            
             user_id = data.get('user_id')
             motif = data.get('motif')
             description = data.get('description')
-            
-            if not user_id or not motif or not description:
-                return JsonResponse({"status": "error", "message": "Informations incomplètes"}, status=400)
-                
+
+            if not all([user_id, motif, description]):
+                return JsonResponse({
+                    "status": "error",
+                    "message": "Tous les champs (user_id, motif, description) sont requis"
+                }, status=400)
+
+            # Récupération des objets avec MongoEngine
             user = CustomUser.objects.get(id=user_id)
             compte = Compte.objects.get(user=user)
-            
+
             # Mise à jour du compte
-            compte.statut = "Inactif"
-            compte.motif_signalement = motif
-            compte.description_signalement = description
-            compte.date_signalement = datetime.now()
-            
-            # Gestion du fichier (si présent et si vous avez un stockage configuré)
-            if request.FILES and 'file' in request.FILES:
-                file = request.FILES['file']
-                # Implémentez le stockage du fichier selon votre configuration
-                
-            compte.save()
-            
-            # Journalisation
-            logger.info(f"Compte {user.username} signalé. Motif: {motif}")
-            
-            return JsonResponse({"status": "success", "message": "Compte signalé avec succès"})
+            compte.update(
+                statut="Inactif",
+                motif_signalement=motif,
+                description_signalement=description,
+                date_signalement=datetime.datetime.now()
+            )
+
+            # Vérification et traitement de l'expéditeur
+            expediteur = None
+            if hasattr(request, 'user') and not request.user.is_anonymous:
+                try:
+                    expediteur = CustomUser.objects.get(id=request.user.id)
+                except CustomUser.DoesNotExist:
+                    logger.warning(f"Utilisateur expéditeur {request.user.id} non trouvé")
+
+            # Création de la notification
+            notification = Notification(
+                destinataire=user,
+                expediteur=expediteur,  # Soit None soit un CustomUser valide
+                titre="Signalement de votre compte",
+                message=f"Votre compte a été signalé. Motif: {motif}",
+                type_notification='signalement'
+            )
+            notification.save()
+
+            logger.info(f"Notification créée: {notification.id} pour {user.username}")
+
+            return JsonResponse({
+                "status": "success",
+                "message": "Compte signalé et notification créée",
+                "notification_id": str(notification.id)
+            })
+
         except CustomUser.DoesNotExist:
-            return JsonResponse({"status": "error", "message": "Utilisateur non trouvé"}, status=404)
+            return JsonResponse({
+                "status": "error",
+                "message": "Utilisateur non trouvé"
+            }, status=404)
         except Compte.DoesNotExist:
-            return JsonResponse({"status": "error", "message": "Compte non trouvé"}, status=404)
+            return JsonResponse({
+                "status": "error",
+                "message": "Compte non trouvé"
+            }, status=404)
         except Exception as e:
-            logger.error(f"Erreur lors du signalement: {str(e)}")
-            return JsonResponse({"status": "error", "message": str(e)}, status=500)
-    else:
-        return JsonResponse({"status": "error", "message": "Méthode non autorisée"}, status=405)
+            logger.error(f"Erreur lors du signalement: {str(e)}", exc_info=True)
+            return JsonResponse({
+                "status": "error",
+                "message": "Erreur interne du serveur"
+            }, status=500)
 
-
-#Actions des utilisateurs pour afficher dans la liste admin
+    return JsonResponse({
+        "status": "error",
+        "message": "Méthode non autorisée"
+    }, status=405)
 
 from datetime import datetime
 
@@ -1648,153 +1681,436 @@ def MesActionsApi(request):
     return JsonResponse({'error': 'Méthode non autorisée'}, status=405)
 #importer facture
 logger = logging.getLogger(__name__)
-
-@csrf_exempt
-def client_api(request):
-    if request.method == 'GET':
-        clients = Client.objects.all()
-        clients_data = [{
-            'id': str(client.id),
-            'nom': client.nom,
-            'email': client.email,
-            'adresse': client.adresse
-        } for client in clients]
-        return JsonResponse(clients_data, safe=False)
-
-    elif request.method == 'POST':
-        try:
-            data = json.loads(request.body)
-            client = Client(
-                nom=data['nom'],
-                email=data['email'],
-                adresse=data.get('adresse', '')
-              
-            )
-            client.save()
-            return JsonResponse({
-                'id': str(client.id),
-                'message': 'Client créé avec succès'
-            }, status=201)
-        except Exception as e:
-            return JsonResponse({'error': str(e)}, status=400)
-
 @csrf_exempt
 def facture_api(request, id=None):
-    if request.method == 'GET':
-        if id:
-            try:
+    try:
+        if request.method == 'GET':
+            if id:
                 facture = Facture.objects.get(id=ObjectId(id))
                 return JsonResponse({
                     'id': str(facture.id),
                     'numero': facture.numero,
-                    'client_id': str(facture.client.id),
-                    'client_nom': facture.client.nom,
-                    'date_emission': facture.date_emission.isoformat(),
-                    'date_echeance': facture.date_echeance.isoformat() if facture.date_echeance else None,
-                    'montant': float(facture.montant),
-                    'statut': facture.statut,
-                    'created_at': facture.created_at.isoformat()
+                    'fichier_url': request.build_absolute_uri(f'/api/factures/{facture.id}/download/'),
+                    'filename': facture.fichier.filename if facture.fichier else None
                 })
-            except (DoesNotExist, InvalidId):
-                return JsonResponse({'error': 'Facture non trouvée'}, status=404)
-        else:
-            factures = Facture.objects.all()
-            factures_data = []
-            for facture in factures:
-                factures_data.append({
-                    'id': str(facture.id),
-                    'numero': facture.numero,
-                    'client_id': str(facture.client.id),
-                    'client_nom': facture.client.nom,
-                    'date_emission': facture.date_emission.isoformat(),
-                    'montant': float(facture.montant),
-                    'statut': facture.statut
-                })
-            return JsonResponse(factures_data, safe=False)
-
-    elif request.method == 'POST':
-        try:
-            # Handle both JSON and form-data
-            if request.content_type == 'application/json':
-                data = json.loads(request.body)
-                client_id = data['client_id']
             else:
-                data = request.POST
-                client_id = data['client_id']
-            if not ObjectId.is_valid(client_id):
-             return JsonResponse({'error': 'ID client invalide'}, status=400)
-
-            client = Client.objects.get(id=ObjectId(client_id))
+                factures = Facture.objects.all()
+                return JsonResponse([{
+                    'id': str(f.id),
+                    'numero': f.numero,
+                    'fichier_url': request.build_absolute_uri(f'/api/factures/{f.id}/download/') if f.fichier else None,
+                    'filename': f.fichier.filename if f.fichier else None
+                } for f in factures], safe=False)
+                
+        elif request.method == 'POST':
+            if 'fichier' not in request.FILES:
+                return JsonResponse({'error': 'Aucun fichier fourni'}, status=400)
             
-            facture = Facture(
-                numero=data['numero'],
-                client=client,
-                date_emission=datetime.strptime(data['date_emission'], '%Y-%m-%d'),
-                montant=Decimal(data['montant']),
-                statut=data.get('statut', 'impayée')
-            )
+            fichier = request.FILES['fichier']
+            if not fichier.name.lower().endswith('.pdf'):
+                return JsonResponse({'error': 'Seuls les fichiers PDF sont acceptés'}, status=400)
             
-            if 'date_echeance' in data:
-                facture.date_echeance = datetime.strptime(data['date_echeance'], '%Y-%m-%d')
+            numero = request.POST.get('numero')
+            if not numero:
+                return JsonResponse({'error': 'Le numéro de facture est requis'}, status=400)
             
-            if 'fichier' in request.FILES:
-                facture.fichier = request.FILES['fichier']
+            if Facture.objects.filter(numero=numero).count() > 0:
+                return JsonResponse({'error': 'Ce numéro de facture existe déjà'}, status=400)
             
+            facture = Facture(numero=numero)
+            facture.fichier.put(fichier, content_type='application/pdf', filename=fichier.name)
             facture.save()
             
             return JsonResponse({
                 'id': str(facture.id),
-                'message': 'Facture créée avec succès'
+                'numero': facture.numero,
+                'fichier_url': request.build_absolute_uri(f'/api/factures/{facture.id}/download/'),
+                'filename': fichier.name
             }, status=201)
             
-        except Exception as e:
-            logger.error(f"Erreur création facture: {str(e)}")
-            return JsonResponse({'error': str(e)}, status=400)
-
-    elif request.method == 'PATCH':
-        try:
-            data = json.loads(request.body)
-            facture = Facture.objects.get(id=ObjectId(id))
-            
-            if 'statut' in data:
-                # Harmonisation des statuts avec le frontend
-                statut_map = {
-                    'valide': 'payée',
-                    'rejete': 'impayée'
-                }
-                new_statut = statut_map.get(data['statut'], data['statut'])
-                facture.statut = new_statut
-                facture.save()
-            
-            return JsonResponse({
-                'message': 'Facture mise à jour',
-                'statut': facture.statut
-            })
-        except (DoesNotExist, InvalidId):
-            return JsonResponse({'error': 'Facture non trouvée'}, status=404)
-        except Exception as e:
-            return JsonResponse({'error': str(e)}, status=400)
-
-    elif request.method == 'DELETE':
-        try:
+        elif request.method == 'DELETE':
+            if not id:
+                return JsonResponse({'error': 'ID requis'}, status=400)
+                
             facture = Facture.objects.get(id=ObjectId(id))
             facture.delete()
             return JsonResponse({'message': 'Facture supprimée'})
-        except (DoesNotExist, InvalidId):
-            return JsonResponse({'error': 'Facture non trouvée'}, status=404)
-        except Exception as e:
-            return JsonResponse({'error': str(e)}, status=500)
-
+            
+    except (DoesNotExist, InvalidId):
+        return JsonResponse({'error': 'Facture non trouvée'}, status=404)
+    except Exception as e:
+        logger.error(f"Erreur: {str(e)}", exc_info=True)
+        return JsonResponse({'error': str(e)}, status=500)
+    
     return JsonResponse({'error': 'Méthode non autorisée'}, status=405)
 
+@csrf_exempt
 def download_facture(request, id):
     try:
         facture = Facture.objects.get(id=ObjectId(id))
-        if not facture.fichier:
-            return JsonResponse({'error': 'Fichier non disponible'}, status=404)
         
-        response = HttpResponse(facture.fichier.read(), content_type='application/octet-stream')
-        response['Content-Disposition'] = f'attachment; filename="{facture.fichier.name}"'
+        if not facture.fichier:
+            return JsonResponse({'error': 'Aucun fichier associé à cette facture'}, status=404)
+        
+        # Utilisation directe de GridFS
+        data = facture.fichier.read()
+        response = HttpResponse(data, content_type='application/pdf')
+        
+        filename = facture.fichier.filename or f'facture-{facture.numero}.pdf'
+        response['Content-Disposition'] = f'inline; filename="{filename}"'
         return response
+            
     except (DoesNotExist, InvalidId):
         return JsonResponse({'error': 'Facture non trouvée'}, status=404)
+    except Exception as e:
+        logger.error(f"Erreur téléchargement: {str(e)}")
+        return JsonResponse({'error': str(e)}, status=500)
+@api_view(['POST'])
+@csrf_exempt
+@permission_classes([AllowAny])
+def facebook_auth_callback(request):
+    code = request.data.get('code')
+    print("Code Facebook reçu:", code)
+
+    if not code:
+        return JsonResponse({"error": "Code non fourni"}, status=400)
+
+    # 1. Obtenir le token d'accès depuis Facebook
+    token_url = "https://graph.facebook.com/v18.0/oauth/access_token"
+    redirect_uri = "http://localhost:3000/auth/facebook/callback"
+    client_id = "3737484549889496"  # Votre App ID Facebook
+    client_secret = "b0bf5f776c2dbfb0dd69a91c6191b3de"  # À mettre dans les variables d'environnement
+
+    token_params = {
+        "client_id": client_id,
+        "client_secret": client_secret,
+        "redirect_uri": redirect_uri,
+        "code": code
+    }
+
+    token_response = requests.get(token_url, params=token_params)
+    if token_response.status_code != 200:
+        return JsonResponse({"error": "Erreur token Facebook"}, status=400)
+
+    tokens = token_response.json()
+    access_token = tokens.get("access_token")
+
+    # 2. Récupérer les infos utilisateur
+    user_info_url = "https://graph.facebook.com/me"
+    user_info_params = {
+        "fields": "id,name,email,picture",
+        "access_token": access_token
+    }
+
+    user_info_response = requests.get(user_info_url, params=user_info_params)
+    if user_info_response.status_code != 200:
+        return JsonResponse({"error": "Erreur récupération infos utilisateur"}, status=400)
+
+    user_info = user_info_response.json()
+    print("Réponse Facebook:", user_info)
+
+    email = user_info.get("email")
+    if not email:
+        return JsonResponse({"error": "Email non récupéré depuis Facebook"}, status=400)
+
+    username = user_info.get("name", email.split("@")[0])
+    facebook_id = user_info.get("id")
+
+    # 3. Vérifier ou créer l'utilisateur dans MongoEngine
+    try:
+        user = CustomUser.objects.get(email=email)
+    except CustomUser.DoesNotExist:
+        user = CustomUser.objects.create(
+            email=email,
+            username=username,
+            facebook_id=facebook_id,  # Stocker l'ID Facebook si besoin
+            role="user",  # Par défaut
+            password="",  # Auth externe
+            is_active=True
+        )
+
+    # 4. Générer le JWT (identique à Google)
+    payload = {
+        "user_id": str(user.id),
+        "email": user.email,
+        "role": user.role,
+        "exp": datetime.utcnow() + timedelta(hours=24),
+        "iat": datetime.utcnow()
+    }
+
+    jwt_token = jwt.encode(payload, settings.SECRET_KEY, algorithm="HS256")
+
+    return JsonResponse({
+        "token": jwt_token,
+        "role": user.role,
+        "user_id": str(user.id),
+        "username": user.username
+    })
+
+
+
+#reeeeeeeleveeeeeee bancaireeeeee
+logger = logging.getLogger(__name__)
+@csrf_exempt
+def releve_api(request, id=None):
+    try:
+        if request.method == 'GET':
+            if id:
+                releve = Banque.objects.get(id=ObjectId(id))
+                return JsonResponse({
+                    'id': str(releve.id),
+                    'numero': releve.numero,
+                    'fichier_url': request.build_absolute_uri(f'/api/banques/{releve.id}/download/'),
+                    'filename': releve.fichier.filename if releve.fichier else None
+                })
+            else:
+                releves = Banque.objects.all()
+                return JsonResponse([{
+                    'id': str(f.id),
+                    'numero': f.numero,
+                    'fichier_url': request.build_absolute_uri(f'/api/banques/{f.id}/download/') if f.fichier else None,
+                    'filename': f.fichier.filename if f.fichier else None
+                } for f in releves], safe=False)
+                
+        elif request.method == 'POST':
+            if 'fichier' not in request.FILES:
+                return JsonResponse({'error': 'Aucun fichier fourni'}, status=400)
+            
+            fichier = request.FILES['fichier']
+            if not fichier.name.lower().endswith('.pdf'):
+                return JsonResponse({'error': 'Seuls les fichiers PDF sont acceptés'}, status=400)
+            
+            numero = request.POST.get('numero')
+            if not numero:
+                return JsonResponse({'error': 'Le numéro de releve est requis'}, status=400)
+            
+            if Banque.objects.filter(numero=numero).count() > 0:
+                return JsonResponse({'error': 'Ce numéro de releve existe déjà'}, status=400)
+            
+            releve = Banque(numero=numero)
+            releve.fichier.put(fichier, content_type='application/pdf', filename=fichier.name)
+            releve.save()
+            
+            return JsonResponse({
+                'id': str(releve.id),
+                'numero': releve.numero,
+                'fichier_url': request.build_absolute_uri(f'/api/banques/{releve.id}/download/'),
+                'filename': fichier.name
+            }, status=201)
+            
+        elif request.method == 'DELETE':
+            if not id:
+                return JsonResponse({'error': 'ID requis'}, status=400)
+                
+            releve = Banque.objects.get(id=ObjectId(id))
+            releve.delete()
+            return JsonResponse({'message': 'Relevé supprimée'})
+            
+    except (DoesNotExist, InvalidId):
+        return JsonResponse({'error': 'Relevé non trouvée'}, status=404)
+    except Exception as e:
+        logger.error(f"Erreur: {str(e)}", exc_info=True)
+        return JsonResponse({'error': str(e)}, status=500)
+    
+    return JsonResponse({'error': 'Méthode non autorisée'}, status=405)
+
+@csrf_exempt
+def download_releve(request, id):
+    try:
+        releve = Banque.objects.get(id=ObjectId(id))
+        
+        if not releve.fichier:
+            return JsonResponse({'error': 'Aucun fichier associé à cette releve'}, status=404)
+        
+        # Utilisation directe de GridFS
+        data = releve.fichier.read()
+        response = HttpResponse(data, content_type='application/pdf')
+        
+        filename = releve.fichier.filename or f'relevé-{releve.numero}.pdf'
+        response['Content-Disposition'] = f'inline; filename="{filename}"'
+        return response
+            
+    except (DoesNotExist, InvalidId):
+        return JsonResponse({'error': 'Relevé non trouvée'}, status=404)
+    except Exception as e:
+        logger.error(f"Erreur téléchargement: {str(e)}")
+        return JsonResponse({'error': str(e)}, status=500)
+    
+
+
+
+
+
+
+from django.http import JsonResponse
+from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_http_methods
+import json
+import datetime
+from .models import Notification
+
+
+@api_view(['GET'])
+@csrf_exempt
+@permission_classes([AllowAny]) 
+def mes_notifications(request):
+    try:
+        # Si vous voulez tester sans authentification, vous pouvez utiliser 
+        # cette approche temporaire (SEULEMENT POUR DÉVELOPPEMENT)
+        from api.models import CustomUser, Notification
+        # Remplacez par l'ID ou l'username d'un utilisateur de test
+        test_user = CustomUser.objects.first()  
+        
+        notifications = Notification.objects(destinataire=test_user).order_by('-date_creation')
+        data = []
+        for n in notifications:
+            data.append({
+                "id": str(n.id),
+                "titre": n.titre,
+                "message": n.message,
+                "type": n.type_notification,  # Notez que dans le React, c'est "type"
+                "lue": n.lue,
+                "date_creation": n.date_creation.strftime("%Y-%m-%d %H:%M:%S"),
+            })
+        # Format de réponse attendu par le composant React
+        return JsonResponse({
+            "status": "success",  # Ajout de status: "success"
+            "notifications": data
+        }, safe=False)
+    except Exception as e:
+        logger.error(f"Erreur récupération notifications: {str(e)}")
+        return JsonResponse({"status": "error", "error": "Erreur serveur"}, status=500)
+@csrf_exempt  
+@require_http_methods(["PUT"])
+def mark_notification_read(request, notification_id):
+    """
+    Marque une notification comme lue
+    PUT: /api/notifications/{notification_id}/read/
+    """
+    try:
+        if not request.user.is_authenticated:
+            return JsonResponse({
+                'status': 'error',
+                'message': 'Non authentifié'
+            }, status=401)
+            
+        user_id = request.user.id
+        
+        # Vérifier que la notification existe et appartient à l'utilisateur
+        notification = Notification.objects(id=notification_id, destinataire=user_id).first()
+        
+        if not notification:
+            return JsonResponse({
+                'status': 'error',
+                'message': 'Notification non trouvée ou non autorisée'
+            }, status=404)
+        
+        # Marquer comme lue
+        notification.lue = True
+        notification.save()
+        
+        return JsonResponse({
+            'status': 'success',
+            'message': 'Notification marquée comme lue'
+        })
+    except Exception as e:
+        return JsonResponse({
+            'status': 'error',
+            'message': str(e)
+        }, status=500)
+
+@csrf_exempt
+@require_http_methods(["PUT"])
+def mark_all_notifications_read(request):
+    """
+    Marque toutes les notifications de l'utilisateur comme lues
+    PUT: /api/notifications/read-all/
+    """
+    try:
+        if not request.user.is_authenticated:
+            return JsonResponse({
+                'status': 'error',
+                'message': 'Non authentifié'
+            }, status=401)
+            
+        user_id = request.user.id
+        
+        # Mettre à jour toutes les notifications non lues de l'utilisateur
+        result = Notification.objects(destinataire=user_id, lue=False).update(set__lue=True)
+        
+        return JsonResponse({
+            'status': 'success',
+            'message': f'{result} notifications marquées comme lues'
+        })
+    except Exception as e:
+        return JsonResponse({
+            'status': 'error',
+            'message': str(e)
+        }, status=500)
+
+@csrf_exempt
+@require_http_methods(["DELETE"])
+def delete_notification(request, notification_id):
+    """
+    Supprime une notification
+    DELETE: /api/notifications/{notification_id}/
+    """
+    try:
+        if not request.user.is_authenticated:
+            return JsonResponse({
+                'status': 'error',
+                'message': 'Non authentifié'
+            }, status=401)
+            
+        user_id = request.user.id
+        
+        # Vérifier que la notification existe et appartient à l'utilisateur
+        notification = Notification.objects(id=notification_id, destinataire=user_id).first()
+        
+        if not notification:
+            return JsonResponse({
+                'status': 'error',
+                'message': 'Notification non trouvée ou non autorisée'
+            }, status=404)
+        
+        # Supprimer la notification
+        notification.delete()
+        
+        return JsonResponse({
+            'status': 'success',
+            'message': 'Notification supprimée'
+        })
+    except Exception as e:
+        return JsonResponse({
+            'status': 'error',
+            'message': str(e)
+        }, status=500)
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def get_unread_count(request):
+    """
+    Récupère le nombre de notifications non lues
+    GET: /api/notifications/unread-count/
+    """
+    try:
+        if not request.user.is_authenticated:
+            return JsonResponse({
+                'status': 'error',
+                'message': 'Non authentifié'
+            }, status=401)
+            
+        user_id = request.user.id
+        
+        # Compter les notifications non lues
+        count = Notification.objects(destinataire=user_id, lue=False).count()
+        
+        return JsonResponse({
+            'status': 'success',
+            'count': count
+        })
+    except Exception as e:
+        return JsonResponse({
+            'status': 'error',
+            'message': str(e)
+        }, status=500)

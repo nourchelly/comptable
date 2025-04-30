@@ -11,7 +11,8 @@ import {
   FaFilter,
   FaEdit,
   FaEye,
-  FaUserCog
+  FaUserCog,
+  FaTimes
 } from "react-icons/fa";
 import { motion } from "framer-motion";
 
@@ -23,6 +24,15 @@ const Compte = () => {
   const [profile, setProfile] = useState(null);
   const [error, setError] = useState(null);
   const navigate = useNavigate();
+  const [deleteModal, setDeleteModal] = useState({
+    isOpen: false,
+    userId: null,
+    userName: ""
+  });
+  const [viewModal, setViewModal] = useState({
+    isOpen: false,
+    user: null
+  });
 
   // Récupérer le profil de l'utilisateur connecté
   useEffect(() => {
@@ -55,14 +65,9 @@ const Compte = () => {
     const fetchUsers = async () => {
       try {
         const response = await axios.get('http://127.0.0.1:8000/api/comptes/', {
-          withCredentials: true  // Gardez les credentials si nécessaire
+          withCredentials: true
         });
         
-        // Debug: affiche la réponse complète
-        console.log('Réponse complète:', response);
-        console.log('Données reçues:', response.data);
-        
-        // Filtre côté client pour ne garder que comptables et directeurs
         const filteredUsers = response.data.users.filter(user => 
           ['comptable', 'directeur'].includes(user.role)
         );
@@ -70,33 +75,61 @@ const Compte = () => {
         setUsers(filteredUsers);
         
       } catch (err) {
-        // Gestion détaillée des erreurs
         console.error("Erreur complète:", err);
-        console.error("Détails de la réponse:", err.response);
-        
         toast.error("Impossible de charger la liste des utilisateurs");
       }
     };
   
     fetchUsers();
-  }, []);  // Tableau de dépendances vide = exécuté une fois au montage
+  }, []);
 
-  const handleDeleteAccount = async (userId) => {
-    if (window.confirm("Êtes-vous sûr de vouloir supprimer ce compte ? Cette action est irréversible.")) {
-      try {
-        const response = await axios.delete(`http://127.0.0.1:8000/api/compte/${userId}/`, {
-          withCredentials: true
-        });
-        
-        if (response.data.status === 'success') {
-          toast.success("Compte supprimé avec succès");
-          // Mettre à jour la liste des utilisateurs
-          setUsers(users.filter(u => u.id !== userId));
-        }
-      } catch (err) {
-        console.error("Erreur lors de la suppression du compte:", err);
-        toast.error("Impossible de supprimer le compte");
+  const openDeleteModal = (userId, userName) => {
+    setDeleteModal({
+      isOpen: true,
+      userId,
+      userName
+    });
+  };
+
+  const closeDeleteModal = () => {
+    setDeleteModal({
+      isOpen: false,
+      userId: null,
+      userName: ""
+    });
+  };
+  
+  const openViewModal = (user) => {
+    setViewModal({
+      isOpen: true,
+      user
+    });
+  };
+
+  const closeViewModal = () => {
+    setViewModal({
+      isOpen: false,
+      user: null
+    });
+  };
+
+  const confirmDelete = async () => {
+    if (!deleteModal.userId) return;
+    
+    try {
+      const response = await axios.delete(`http://127.0.0.1:8000/api/compte/${deleteModal.userId}/`, {
+        withCredentials: true
+      });
+      
+      if (response.data.status === 'success') {
+        toast.success("Compte supprimé avec succès");
+        setUsers(users.filter(u => u.id !== deleteModal.userId));
       }
+    } catch (err) {
+      console.error("Erreur lors de la suppression du compte:", err);
+      toast.error("Impossible de supprimer le compte");
+    } finally {
+      closeDeleteModal();
     }
   };
 
@@ -258,14 +291,15 @@ const Compte = () => {
                           </Link>
                           
                           <button
+                            onClick={() => openViewModal(user)}
                             className="text-blue-600 hover:text-blue-800 p-2 rounded-lg hover:bg-blue-50 transition-colors"
-                            title="Voir"
+                            title="Voir détails"
                           >
                             <FaEye />
                           </button>
-                        
+                          
                           <button
-                            onClick={() => handleDeleteAccount(user.id)}
+                            onClick={() => openDeleteModal(user.id, user.nom || user.email)}
                             className="text-red-600 hover:text-red-800 p-2 rounded-lg hover:bg-red-50 transition-colors"
                             title="Supprimer"
                           >
@@ -306,6 +340,137 @@ const Compte = () => {
           </button>
         </div>
       </div>
+
+      {/* Modale de suppression */}
+      {deleteModal.isOpen && (
+        <motion.div 
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50"
+          onClick={closeDeleteModal}
+        >
+          <motion.div 
+            initial={{ scale: 0.9, y: 20 }}
+            animate={{ scale: 1, y: 0 }}
+            onClick={(e) => e.stopPropagation()}
+            className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden"
+          >
+            <div className="p-6">
+              <div className="flex items-center justify-center w-16 h-16 mx-auto bg-red-100 rounded-full mb-4">
+                <FaExclamationTriangle className="text-2xl text-red-600" />
+              </div>
+              <h3 className="text-xl font-bold text-center text-gray-800 mb-2">Confirmer la suppression</h3>
+              <p className="text-gray-600 text-center mb-6">
+                Êtes-vous sûr de vouloir supprimer le compte de <span className="font-semibold">{deleteModal.userName}</span> ? Cette action est irréversible.
+              </p>
+              
+              <div className="flex justify-center space-x-4">
+                <button
+                  onClick={closeDeleteModal}
+                  className="px-6 py-3 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors font-medium"
+                >
+                  Annuler
+                </button>
+                <button
+                  onClick={confirmDelete}
+                  className="px-6 py-3 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors font-medium flex items-center"
+                >
+                  <FaTrash className="mr-2" />
+                  Supprimer
+                </button>
+              </div>
+            </div>
+          </motion.div>
+        </motion.div>
+      )}
+
+      {/* View Modal */}
+      {viewModal.isOpen && viewModal.user && (
+        <motion.div 
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50"
+          onClick={closeViewModal}
+        >
+          <motion.div 
+            initial={{ scale: 0.9, y: 20 }}
+            animate={{ scale: 1, y: 0 }}
+            onClick={(e) => e.stopPropagation()}
+            className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden"
+          >
+            <div className="p-6">
+              <div className="flex items-center justify-between mb-6">
+                <h3 className="text-xl font-bold text-gray-800">Détails de l'utilisateur</h3>
+                <button
+                  onClick={closeViewModal}
+                  className="text-gray-400 hover:text-gray-500"
+                >
+                  <FaTimes />
+                </button>
+              </div>
+
+              <div className="space-y-4">
+                <div className="flex items-center">
+                  <div className="flex-shrink-0 h-12 w-12 bg-blue-100 rounded-full flex items-center justify-center">
+                    <span className="text-blue-600 font-medium">
+                      {viewModal.user.nom ? viewModal.user.nom.charAt(0).toUpperCase() : 'U'}
+                    </span>
+                  </div>
+                  <div className="ml-4">
+                    <h4 className="text-lg font-medium text-gray-900">{viewModal.user.nom || 'Utilisateur'}</h4>
+                    <p className="text-sm text-gray-500">ID: {viewModal.user.id}</p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4 pt-4">
+                  <div>
+                    <p className="text-sm text-gray-500">Email</p>
+                    <p className="text-sm font-medium text-gray-900">{viewModal.user.email || '-'}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-gray-500">Rôle</p>
+                    <p className="text-sm font-medium text-gray-900 capitalize">{viewModal.user.role || '-'}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-gray-500">Statut</p>
+                    <p className={`text-sm font-medium ${
+                      viewModal.user.statut === 'Actif' ? 'text-green-600' : 'text-red-600'
+                    }`}>
+                      {viewModal.user.statut || '-'}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-gray-500">Date de création</p>
+                    <p className="text-sm font-medium text-gray-900">
+                      {viewModal.user.created_at ? new Date(viewModal.user.created_at).toLocaleDateString() : '-'}
+                    </p>
+                  </div>
+                </div>
+
+                {viewModal.user.last_login && (
+                  <div className="pt-4">
+                    <p className="text-sm text-gray-500">Dernière connexion</p>
+                    <p className="text-sm font-medium text-gray-900">
+                      {new Date(viewModal.user.last_login).toLocaleString()}
+                    </p>
+                  </div>
+                )}
+              </div>
+
+              <div className="mt-6 pt-4 border-t border-gray-200 flex justify-end">
+                <button
+                  onClick={closeViewModal}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                >
+                  Fermer
+                </button>
+              </div>
+            </div>
+          </motion.div>
+        </motion.div>
+      )}
     </motion.div>
   );
 };

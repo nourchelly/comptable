@@ -51,23 +51,6 @@ export default function FactureDetail() {
             <p>{facture.numero}</p>
           </div>
           <div>
-            <p className="font-semibold">Client:</p>
-            <p>{facture.client_nom}</p>
-          </div>
-          <div>
-            <p className="font-semibold">Date d'émission:</p>
-            <p>{new Date(facture.date_emission).toLocaleDateString()}</p>
-          </div>
-          <div>
-            <p className="font-semibold">Montant:</p>
-            <p>{facture.montant} €</p>
-          </div>
-          <div>
-            <p className="font-semibold">Statut:</p>
-            <p className={`inline-block px-2 py-1 rounded-full ${getStatusDisplayClass(facture.statut)}`}>
-              {facture.statut}
-            </p>
-          </div>
         </div>
 
         {facture.fileUrl && (
@@ -92,20 +75,5 @@ export default function FactureDetail() {
         )}
       </div>
     </div>
-  )
-}
-
-function getStatusDisplayClass(status) {
-  switch(status) {
-    case 'payée':
-    case 'valide':
-      return 'bg-green-100 text-green-800';
-    case 'impayée':
-    case 'rejete':
-      return 'bg-red-100 text-red-800';
-    case 'annulée':
-      return 'bg-yellow-100 text-yellow-800';
-    default:
-      return 'bg-blue-100 text-blue-800';
-  }
-}
+ </div>
+  )}

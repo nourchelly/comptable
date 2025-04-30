@@ -7,6 +7,7 @@ import datetime
 import uuid
 import jwt
 from django.conf import settings 
+
 import os # Ajoutez cet import en haut du fichier
 
 class CustomUser(Document):
@@ -30,6 +31,8 @@ class CustomUser(Document):
     is_superuser = fields.BooleanField(default=False)
     last_login = fields.DateTimeField(null=True)
     date_joined = fields.DateTimeField(default=timezone.now)
+     
+    activation_token = fields.StringField(null=True) 
     secondary_emails = ListField(EmailField())  # Pour stocker les emails secondaires
     USERNAME_FIELD = 'email'  # pour l’authentification via email
     EMAIL_FIELD = 'email'  
@@ -72,18 +75,18 @@ class CustomUser(Document):
         self.save()
 
     def generate_activation_token(self):
-        """Génère un token JWT valide 24h"""
-        self.activation_token = jwt.encode(
-            {
-                'user_id': str(self.id),
-                'exp': datetime.utcnow() + timedelta(days=1)
-            },
-            settings.SECRET_KEY,
-            algorithm='HS256'
-        )
-        self.save()
-        return self.activation_token
-
+     payload = {
+        'user_id': str(self.id),
+        'exp': datetime.datetime.now(timezone.utc) + timedelta(hours=24)
+    }
+     token = jwt.encode(
+        payload,
+        settings.SECRET_KEY,
+        algorithm='HS256'
+    )
+     self.activation_token = str(token)  # Conversion en string
+     self.save()  # Sauvegarde sans spécifier update_fields
+     return str(token)
 
 
 class Admin(Document):
@@ -323,8 +326,6 @@ class Rapport(Document):
         ('Brouillon', 'Brouillon')
     ]
 
-    comptable = fields.ReferenceField(Comptable, reverse_delete_rule=NULLIFY) 
-    directeur = fields.ReferenceField(DirecteurFinancier, null=True)
     nom = fields.StringField(required=True)
     type = fields.StringField(choices=TYPE_CHOICES)
     date = fields.DateTimeField(default=datetime.datetime.now)
@@ -332,23 +333,23 @@ class Rapport(Document):
     contenu = fields.StringField(required=True)
     created_at = fields.DateTimeField(default=datetime.datetime.now)
     updated_at = fields.DateTimeField()
-    validated_at = fields.DateTimeField(null=True)
+    validated_at = fields.DateTimeField()
+    facture_id = fields.StringField()  # Référence à la facture associée
 
     meta = {
         'collection': 'rapports',
         'indexes': [
-            'comptable',
-            'directeur',
             'type',
             'statut',
             'date',
-            {'fields': ['created_at'], 'expireAfterSeconds': 3600*24*365*2}  # TTL 2 ans
+            'facture_id',
+            {'fields': ['created_at'], 'expireAfterSeconds': 3600*24*365*2}
         ]
     }
 
     def clean(self):
         self.updated_at = datetime.datetime.now()
-        if self.statut == 'Validé' and not self.validated_at:
+        if self.statut == 'Validé' and not hasattr(self, 'validated_at'):
             self.validated_at = datetime.datetime.now()
 
 # models.py
@@ -454,63 +455,67 @@ class ActionLog(Document):
     def get_type_action_display(self):
         return dict(self.TYPES_ACTION).get(self.type_action, self.type_action)
 
+
+
 def facture_upload_path(instance, filename):
     ext = filename.split('.')[-1]
     filename = f"{uuid.uuid4()}.{ext}"
     return os.path.join('factures', filename)
 
-class Client(Document):
-    nom = fields.StringField(required=True, unique=True, max_length=100)
-    email = fields.StringField(required=True, unique=True)
-    telephone = fields.StringField(max_length=20)
-    adresse = fields.StringField()
-
-    meta = {
-        'collection': 'clients',
-        'indexes': [
-            {
-                'fields': ['nom'],
-                'unique': True,
-                'name': 'nom_unique_idx'
-            },
-            {
-                'fields': ['email'],
-                'unique': True,
-                'name': 'email_unique_idx'  # Nom personnalisé pour éviter les conflits
-            }
-        ]
-    }
-
-    def __str__(self):
-        return self.nom
-
 class Facture(Document):
-    STATUT_CHOICES = (
-        ('impayée', 'Impayée'),
-        ('payée', 'Payée'),
-        ('annulée', 'Annulée'),
-    )
-    
     numero = fields.StringField(required=True, unique=True)
-    client = fields.ReferenceField(Client, required=True)
-    date_emission = fields.DateTimeField(required=True)
-    date_echeance = fields.DateTimeField()
-    montant = fields.DecimalField(required=True, precision=2)
-    statut = fields.StringField(choices=STATUT_CHOICES, default='impayée')
-    fichier = fields.FileField(upload_to=facture_upload_path)
+    fichier = fields.FileField()
     created_at = fields.DateTimeField(default=datetime.datetime.now)
-    created_by = fields.ReferenceField('User')
     
     meta = {
         'collection': 'factures',
-        'indexes': [
-            'numero',
-            'client',
-            'statut',
-            'date_emission'
-        ],
-        'ordering': ['-date_emission']
+        'indexes': ['numero']
     }
 
-    def __str__(self):
-        return f"Facture {self.numero} - {self.client.nom}"
+    @property
+    def fichier_url(self):
+        return f'/api/factures/{self.id}/download/'
+
+    @property
+    def filename(self):
+        if self.fichier and hasattr(self.fichier, 'name'):
+            return os.path.basename(str(self.fichier.name))
+        return None
+
+class Banque(Document):
+    numero = fields.StringField(required=True, unique=True)
+    fichier = fields.FileField()
+    created_at = fields.DateTimeField(default=datetime.datetime.now)
+    
+    meta = {
+        'collection': 'banques',
+        'indexes': ['numero']
+    }
+
+    @property
+    def fichier_url(self):
+        return f'/api/banques/{self.id}/download/'
+    
+# models.py
+class Notification(Document):
+    destinataire = ReferenceField('CustomUser', required=True)
+    expediteur = ReferenceField('CustomUser')
+    titre = fields.StringField(required=True, max_length=200)
+    message = fields.StringField(required=True)
+    type_notification = fields.StringField(
+        choices=('signalement', 'avertissement', 'info', 'autre'),
+        default='info'
+    )
+    lue = fields.BooleanField(default=False)
+    date_creation = fields.DateTimeField(default=datetime.datetime.utcnow)
+
+    meta = {
+        'collection': 'notifications',
+        'ordering': ['-date_creation'],
+        'indexes': [
+            {'fields': ['destinataire']},
+            {'fields': ['lue']},
+            {'fields': ['date_creation']}
+        ]
+    }
+

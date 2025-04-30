@@ -4,9 +4,9 @@ import axios from 'axios';
 import { useUser } from './UserContext';
 import { toast } from 'react-toastify';
 
-export default function FactureList() {
+export default function BanqueList() {
   const { user } = useUser();
-  const [factures, setFactures] = useState([]);
+  const [banques, setBanques] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [showImportModal, setShowImportModal] = useState(false);
@@ -18,10 +18,10 @@ export default function FactureList() {
   const [pdfPreview, setPdfPreview] = useState({ visible: false, url: null });
 
   useEffect(() => {
-    const fetchFactures = async () => {
+    const fetchBanques = async () => {
       try {
-        console.log('Début du chargement des factures...');
-        const { data } = await axios.get('http://localhost:8000/api/factures/', {
+        console.log('Début du chargement des Banques...');
+        const { data } = await axios.get('http://localhost:8000/api/banques/', {
           headers: {
             'Accept': 'application/json',
             'Content-Type': 'application/json'
@@ -31,10 +31,10 @@ export default function FactureList() {
         
         console.log('Données reçues:', data);
         
-        setFactures(data.map(f => ({
+        setBanques(data.map(f => ({
           ...f,
-          downloadUrl: f.id ? `http://localhost:8000/api/factures/${f.id}/download/` : null,
-          previewUrl: f.id ? `http://localhost:8000/api/factures/${f.id}/download/?preview=true` : null
+          downloadUrl: f.id ? `http://localhost:8000/api/banques/${f.id}/download/` : null,
+          previewUrl: f.id ? `http://localhost:8000/api/banques/${f.id}/download/?preview=true` : null
         })));
         
         setLoading(false);
@@ -44,11 +44,11 @@ export default function FactureList() {
         
         setError(err.message);
         setLoading(false);
-        toast.error(`Erreur de chargement des factures: ${err.message}`);
+        toast.error(`Erreur de chargement des Banques: ${err.message}`);
       }
     };
     
-    fetchFactures();
+    fetchBanques();
   }, []);
 
   const handleFileChange = (e) => {
@@ -76,7 +76,7 @@ export default function FactureList() {
 
   const validateForm = () => {
     if (!formData.numero || formData.numero.trim() === '') {
-      toast.error('Le numéro de facture est requis');
+      toast.error('Le numéro de banque est requis');
       return false;
     }
 
@@ -97,7 +97,7 @@ export default function FactureList() {
 
     try {
       setUploadStatus('uploading');
-      const response = await axios.post('http://localhost:8000/api/factures/', uploadData, {
+      const response = await axios.post('http://localhost:8000/api/banques/', uploadData, {
         headers: { 
           'Content-Type': 'multipart/form-data',
         },
@@ -109,15 +109,15 @@ export default function FactureList() {
       });
 
       setUploadStatus('success');
-      toast.success('Facture importée avec succès!');
+      toast.success('Relevé bancaire importé avec succès!');
       
-      const newFacture = {
+      const newBanque = {
         ...response.data,
-        downloadUrl: `http://localhost:8000/api/factures/${response.data.id}/download`,
-        previewUrl: `http://localhost:8000/api/factures/${response.data.id}/download/?preview=true`
+        downloadUrl: `http://localhost:8000/api/banques/${response.data.id}/download`,
+        previewUrl: `http://localhost:8000/api/banques/${response.data.id}/download/?preview=true`
       };
       
-      setFactures([newFacture, ...factures]);
+      setBanques([newBanque, ...banques]);
       
       setTimeout(() => {
         closeModal();
@@ -131,16 +131,16 @@ export default function FactureList() {
   };
 
   const handleDelete = async (id) => {
-    if (!window.confirm('Êtes-vous sûr de vouloir supprimer cette facture ?')) return;
+    if (!window.confirm('Êtes-vous sûr de vouloir supprimer ce relevé bancaire ?')) return;
     
     try {
       setIsDeleting(true);
-      await axios.delete(`http://localhost:8000/api/factures/${id}/`, {
+      await axios.delete(`http://localhost:8000/api/banques/${id}/`, {
         withCredentials: true
       });
       
-      setFactures(factures.filter(f => f.id !== id));
-      toast.success('Facture supprimée avec succès');
+      setBanques(banques.filter(f => f.id !== id));
+      toast.success('Relevé bancaire supprimé avec succès');
     } catch (err) {
       console.error('Erreur lors de la suppression:', err);
       toast.error(err.response?.data?.error || 'Erreur lors de la suppression');
@@ -170,14 +170,14 @@ export default function FactureList() {
       <div className="flex justify-between items-center mb-6">
         <div className="flex items-center">
           <FaFileInvoice className="text-blue-500 text-2xl mr-3" />
-          <h1 className="text-2xl font-bold">Gestion des Factures</h1>
+          <h1 className="text-2xl font-bold">Gestion des Relevés Bancaires</h1>
         </div>
         <button
           onClick={() => setShowImportModal(true)}
           className="flex items-center bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-lg transition"
         >
           <FaUpload className="mr-2" />
-          Importer Facture
+          Importer Relevé
         </button>
       </div>
 
@@ -185,12 +185,12 @@ export default function FactureList() {
       <div className="mb-4 p-4 bg-gray-100 rounded-lg">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
           <div>
-            <p><span className="font-semibold">Nombre de factures:</span> {factures.length}</p>
+            <p><span className="font-semibold">Nombre de Relevés:</span> {banques.length}</p>
           </div>
         </div>
       </div>
 
-      {/* Tableau des factures - TAILLE AJUSTÉE */}
+      {/* Tableau des Banques - TAILLE AJUSTÉE */}
       <div className="bg-white rounded-lg shadow overflow-hidden w-full max-w-4xl mx-auto">
         <table className="w-full divide-y divide-gray-200">
           <thead className="bg-gray-50">
@@ -208,23 +208,23 @@ export default function FactureList() {
                   </div>
                 </td>
               </tr>
-            ) : factures.length === 0 ? (
+            ) : banques.length === 0 ? (
               <tr>
                 <td colSpan="2" className="px-3 py-2 text-center text-gray-500">
-                  {error ? 'Erreur lors du chargement' : 'Aucune facture à afficher'}
+                  {error ? 'Erreur lors du chargement' : 'Aucun relevé bancaire à afficher'}
                 </td>
               </tr>
             ) : (
-              factures.map(facture => (
-                <tr key={`facture-${facture.id}`}>
+              banques.map(banque => (
+                <tr key={`banque-${banque.id}`}>
                   <td className="px-3 py-2 whitespace-nowrap text-sm font-medium text-gray-900 text-center">
-                    {facture.numero}
+                    {banque.numero}
                   </td>
                   <td className="px-3 py-3 whitespace-nowrap text-sm text-gray-500">
                     <div className="flex space-x-2">
-                      {facture.downloadUrl && (
+                      {banque.downloadUrl && (
                         <a
-                          href={facture.downloadUrl}
+                          href={banque.downloadUrl}
                           download
                           className="p-2 bg-red-100 text-red-600 rounded hover:bg-red-200"
                           title="Télécharger"
@@ -233,11 +233,11 @@ export default function FactureList() {
                         </a>
                       )}
                       <button
-                        onClick={() => handleDelete(facture.id)}
+                        onClick={() => handleDelete(banque.id)}
                         disabled={isDeleting}
                         className="text-red-500 hover:text-red-700"
                         title="Supprimer"
-                        aria-label="Supprimer la facture"
+                        aria-label="Supprimer le relevé bancaire"
                       >
                         {isDeleting ? (
                           <div className="flex items-center justify-center">
@@ -261,7 +261,7 @@ export default function FactureList() {
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-lg shadow-xl w-full max-w-md">
             <div className="flex justify-between items-center border-b p-4">
-              <h3 className="text-lg font-semibold">Importer une facture</h3>
+              <h3 className="text-lg font-semibold">Importer un relevé bancaire</h3>
               <button 
                 onClick={closeModal} 
                 className="text-gray-500 hover:text-gray-700"
@@ -275,7 +275,7 @@ export default function FactureList() {
               <div className="space-y-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Numéro de facture *
+                    Numéro de Relevé *
                   </label>
                   <input
                     type="text"
@@ -290,7 +290,7 @@ export default function FactureList() {
                 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Fichier de facture (PDF uniquement) *
+                    Fichier PDF du relevé bancaire *
                   </label>
                   <div className="mt-1 flex justify-center px-6 pt-5 pb-6 border-2 border-gray-300 border-dashed rounded-md">
                     <div className="space-y-1 text-center">
@@ -337,7 +337,7 @@ export default function FactureList() {
 
               {uploadStatus === 'success' && (
                 <div className="mt-4 p-3 bg-green-100 text-green-700 rounded text-sm">
-                  Facture importée avec succès!
+                  Relevé bancaire importé avec succès!
                 </div>
               )}
 

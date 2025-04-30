@@ -57,6 +57,7 @@ INSTALLED_APPS = [
     'allauth.socialaccount',
     #..include the providers you want
     'allauth.socialaccount.providers.google',
+     'allauth.socialaccount.providers.facebook',
 ]
 # Configuration des sessions
 SESSION_ENGINE = "django.contrib.sessions.backends.signed_cookies"
@@ -142,7 +143,29 @@ SOCIALACCOUNT_PROVIDERS = {
         'AUTH_PARAMS': {'access_type': 'online'},
     }
 }
-
+    
+SOCIALACCOUNT_PROVIDERS = {
+    'facebook': {
+        'APP': {
+            'client_id': '3737484549889496',
+            'secret': 'b0bf5f776c2dbfb0dd69a91c6191b3de',
+            'key': ''
+        },
+        'METHOD': 'oauth2',
+        'SCOPE': ['public_profile', 'email'],
+        'AUTH_PARAMS': {'access_type': 'online'},
+        'FIELDS': [
+            'id',
+            'email',
+            'name',
+            'first_name',
+            'last_name',
+        ],
+    }
+}
+# Configuration Facebook OAuth
+FACEBOOK_APP_ID = '3737484549889496'
+FACEBOOK_APP_SECRET = 'b0bf5f776c2dbfb0dd69a91c6191b3de'
 # Supprimez la première déclaration et gardez celle-ci :
 SIMPLE_JWT = {
     'AUTH_HEADER_TYPES': ('Bearer',),
@@ -298,9 +321,14 @@ SESSION_COOKIE_NAME = 'sessionid'
 # Suppression de la section 'DATABASES' pour éviter le conflit
 DATABASES = {
     'default': {
-       'ENGINE': 'django.db.backends.dummy',
-        'NAME': 'mydb',  # Remplacez par le nom de votre base de données
+        'ENGINE': 'django.db.backends.sqlite3',
+        'NAME': os.path.join(BASE_DIR, 'db.sqlite3'), # Remplacez par le nom de votre base de données
     }
 }
 
-
+# Taille max des uploads (20MB)
+DATA_UPLOAD_MAX_MEMORY_SIZE = 20971520
+FILE_UPLOAD_MAX_MEMORY_SIZE = 20971520
+# Configuration GridFS
+DEFAULT_FILE_STORAGE = 'mongoengine.storage.GridFSStorage'
+GRIDFS_DATABASE = 'mydb' 

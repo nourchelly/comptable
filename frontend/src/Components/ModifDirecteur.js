@@ -10,7 +10,6 @@ import {
   FaPhoneAlt, 
   FaGraduationCap,
   FaUserEdit,
-  FaChartLine,
   FaBriefcase
 } from "react-icons/fa";
 import { motion } from "framer-motion";

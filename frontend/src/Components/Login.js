@@ -90,6 +90,14 @@ const Login = () => {
         
         window.location.href = authURL;
     };
+    const reachFacebook = () => {
+        const clientID = "3737484549889496"; // Vérifiez que cet ID est correct
+        const redirectURI = encodeURIComponent("http://localhost:3000/auth/facebook/callback");
+        const scope = encodeURIComponent("public_profile email"); // Ordre important
+        const authURL = `https://www.facebook.com/v18.0/dialog/oauth?client_id=${clientID}&redirect_uri=${redirectURI}&scope=${scope}&response_type=code`;
+        
+        window.location.href = authURL;
+      };
 
     const togglePasswordVisibility = () => {
         setShowPassword(!showPassword);
@@ -182,9 +190,9 @@ const Login = () => {
                                     <img src="images/google-logo.png" alt="Google" style={{ width: '20px', marginRight: '10px' }} />
                                     Continuer avec Google
                                 </button>
-                                <button className="btn mb-3 border d-flex align-items-center justify-content-center">
-                                    <img src="images/mail-logo.png" alt="Mail" style={{ width: '20px', marginRight: '10px' }} />
-                                    S'inscrire avec un e-mail
+                                <button className="btn mb-3 border d-flex align-items-center justify-content-center" onClick={reachFacebook}>
+                                    <img src="images/facebook.png" alt="Facebbok" style={{ width: '20px', marginRight: '10px' }} />
+                                    Continuer avec Facebook
                                 </button>
                             </div>
 

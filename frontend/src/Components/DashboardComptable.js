@@ -1,5 +1,6 @@
 import React from "react";
 import { useState } from 'react';
+import Notification from './Notification'; // Adaptez le chemin selon votre structure
 import { Link, Outlet, useLocation, useNavigate } from "react-router-dom";
 import axios from "axios";
 import { 
@@ -7,13 +8,14 @@ import {
   FaCheckCircle, FaSignOutAlt, FaSearch, FaBell,
   FaCog, FaUserCircle, FaMoneyBillWave, 
   FaRobot, FaFileAlt, FaCalculator,
-  FaClipboardCheck, FaCoins, FaShieldAlt,FaFileInvoiceDollar,FaUniversity,
+  FaClipboardCheck, FaCoins, FaUserTie ,FaFileInvoiceDollar,FaUniversity,
   FaChevronDown, FaChevronRight
 } from "react-icons/fa";
 
 const DashboardComptable = () => {
   const navigate = useNavigate();
   const location = useLocation();
+  const [sidebarOpen, setSidebarOpen] = useState(true);
   const [showConfirm, setShowConfirm] = useState(false);
   
   const handleLogout = () => {
@@ -35,34 +37,36 @@ const DashboardComptable = () => {
   const isActive = (path) => location.pathname === path;
 
   return (
-    <div className="flex h-screen bg-gray-50 font-sans">
-      {/* Fenêtre de confirmation modale - Version améliorée */}
-      {showConfirm && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-8 w-96 text-center shadow-xl">
-            <div className="flex justify-center mb-4">
-              <FaSignOutAlt className="text-red-500 text-4xl" />
+    <div className="flex h-screen bg-gray-50 font-sans text-gray-800">
+    {/* Confirmation Modal */}
+    {showConfirm && (
+      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 backdrop-blur-sm">
+        <div className="bg-white rounded-xl p-8 w-full max-w-md">
+          <div className="flex flex-col items-center text-center space-y-4">
+            <div className="p-3 bg-red-100 rounded-full">
+              <FaSignOutAlt className="text-red-500 text-2xl" />
             </div>
-            <h3 className="text-xl font-bold text-gray-800 mb-3">Confirmation de déconnexion</h3>
-            <p className="text-gray-600 mb-6">Êtes-vous sûr de vouloir vous déconnecter de votre session ?</p>
-            <div className="flex justify-center space-x-4">
+            <h3 className="text-2xl font-bold text-gray-900">Déconnexion</h3>
+            <p className="text-gray-600">Êtes-vous sûr de vouloir vous déconnecter ?</p>
+            <div className="flex space-x-4 w-full mt-4">
               <button 
                 onClick={handleLogout}
-                className="bg-red-600 hover:bg-red-700 text-white px-6 py-3 rounded-lg flex items-center transition-colors"
+                className="flex-1 bg-red-600 hover:bg-red-700 text-white py-3 px-6 rounded-lg font-medium transition-colors flex items-center justify-center"
               >
                 <FaSignOutAlt className="mr-2" />
                 Déconnexion
               </button>
               <button 
-                onClick={handleCancel}
-                className="bg-gray-200 hover:bg-gray-300 text-gray-800 px-6 py-3 rounded-lg flex items-center transition-colors"
+                onClick={() => setShowConfirm(false)}
+                className="flex-1 bg-gray-200 hover:bg-gray-300 text-gray-800 py-3 px-6 rounded-lg font-medium transition-colors"
               >
                 Annuler
               </button>
             </div>
           </div>
         </div>
-      )}
+      </div>
+    )}
 
       {/* Sidebar - Version améliorée */}
       <div className="w-64 bg-gradient-to-b from-indigo-800 to-indigo-900 text-white flex flex-col shadow-xl">
@@ -182,55 +186,57 @@ const DashboardComptable = () => {
         </div>
 
         {/* Déconnexion */}
-        <div className="p-4 border-t border-indigo-700">
+               {/* Logout */}
+               <div className="p-4 border-t border-indigo-700">
           <button 
             onClick={() => setShowConfirm(true)}
             className="flex items-center w-full p-3 text-indigo-100 hover:bg-indigo-700 rounded-lg transition-colors"
           >
-            <FaSignOutAlt className="mr-3 text-indigo-300 text-xl" />
-            <span className="font-medium">Déconnexion</span>
+            <FaSignOutAlt className={`text-xl ${sidebarOpen ? 'mr-3' : 'mx-auto'}`} />
+            {sidebarOpen && <span className="font-medium">Déconnexion</span>}
           </button>
         </div>
       </div> {/* End of sidebar */}
 
-      {/* Main Content */}
-      <div className="flex-1 flex flex-col overflow-hidden">
-        {/* Header amélioré */}
-        <header className="bg-white border-b border-gray-200 py-4 px-6 flex items-center justify-between shadow-sm">
-          <h1 className="text-2xl font-bold text-gray-800">
-            {isActive("/dashboardcomptable") && "Tableau de Bord"}
-            {isActive("/dashboardcomptable/profilcomptable") && "Profil Comptable"}
-            {isActive("/dashboardcomptable/rapports") && "Rapports Comptables"}
-            {isActive("/dashboardcomptable/facture") && "Gestion des Factures"}
-            {isActive("/dashboardcomptable/banque") && "Banque"}
-            {isActive("/dashboardcomptable/rapprochement") && "Rapprochement"}
-          </h1>
+    {/* Main Content */}
+<div className="flex-1 flex flex-col overflow-hidden">
+  {/* Header amélioré */}
+  <header className="bg-white border-b border-gray-200 py-4 px-6 flex items-center justify-between shadow-sm">
+    <h1 className="text-2xl font-bold text-gray-800">
+      {isActive("/dashboardcomptable") && "Tableau de Bord"}
+      {isActive("/dashboardcomptable/profilcomptable") && "Profil Comptable"}
+      {isActive("/dashboardcomptable/rapports") && "Rapports Comptables"}
+      {isActive("/dashboardcomptable/facture") && "Gestion des Factures"}
+      {isActive("/dashboardcomptable/banque") && "Banque"}
+      {isActive("/dashboardcomptable/rapprochement") && "Rapprochement"}
+    </h1>
 
-          <div className="flex items-center space-x-4">
-            <div className="relative">
-              <FaSearch className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 text-lg" />
-              <input 
-                type="text" 
-                placeholder="Rechercher..." 
-                className="pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent w-64"
-              />
-            </div>
-            <button className="p-2 text-gray-500 hover:text-indigo-600 relative">
-              <FaBell className="text-xl" />
-              <span className="absolute top-0 right-0 h-2 w-2 rounded-full bg-red-500"></span>
-            </button>
-            <button className="p-2 text-gray-500 hover:text-indigo-600">
-              <FaCog className="text-xl" />
-            </button>
-            <div className="flex items-center space-x-2">
-              <div className="h-10 w-10 rounded-full bg-indigo-100 flex items-center justify-center">
-                <FaUserCircle className="text-indigo-600 text-2xl" />
-              </div>
-              <span className="font-medium text-gray-700">Comptable</span>
-              <FaChevronDown className="text-gray-500 text-sm" />
-            </div>
-          </div>
-        </header>
+    <div className="flex items-center space-x-4">
+      <div className="relative">
+        <FaSearch className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 text-lg" />
+        <input 
+          type="text" 
+          placeholder="Rechercher..." 
+          className="pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent w-64"
+        />
+      </div>
+      
+      {/* Remplacez le bouton de notification par le composant NotificationCenter */}
+      <Notification />
+      
+      <button className="p-2 text-gray-500 hover:text-indigo-600">
+        <FaCog className="text-xl" />
+      </button>
+      
+      <div className="flex items-center space-x-2">
+        <div className="h-10 w-10 rounded-full bg-indigo-100 flex items-center justify-center">
+          <FaUserCircle className="text-indigo-600 text-2xl" />
+        </div>
+        <span className="font-medium text-gray-700">Comptable</span>
+        <FaChevronDown className="text-gray-500 text-sm" />
+      </div>
+    </div>
+  </header>
 
         {/* Content */}
         <main className="flex-1 overflow-y-auto p-6 bg-gray-50">
@@ -288,30 +294,31 @@ const DashboardComptable = () => {
                   <span className="ml-auto text-sm text-indigo-600 font-normal">Fonctions fréquentes</span>
                 </h2>
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                  <button className="flex flex-col items-center p-4 border border-gray-100 rounded-lg hover:border-indigo-300 hover:bg-indigo-50 transition-colors group">
+                  <Link to="/dashboardcomptable/facture" className="flex flex-col items-center p-4 border border-gray-100 rounded-lg hover:border-indigo-300 hover:bg-indigo-50 transition-colors group">
                     <div className="p-3 bg-blue-100 rounded-full mb-2 group-hover:bg-blue-200 transition-colors">
                       <FaFileInvoice className="text-blue-600 text-2xl" />
                     </div>
-                    <span className="text-sm font-medium text-gray-700">Créer Facture</span>
-                  </button>
-                  <button className="flex flex-col items-center p-4 border border-gray-100 rounded-lg hover:border-green-300 hover:bg-green-50 transition-colors group">
+                    <span className="text-sm font-medium text-gray-700">Importer Facture</span>
+                  </Link>
+                 
+                  <Link to="/dashboardcomptable/rapports" className="flex flex-col items-center p-4 border border-gray-100 rounded-lg hover:border-green-300 hover:bg-green-50 transition-colors group">
                     <div className="p-3 bg-green-100 rounded-full mb-2 group-hover:bg-green-200 transition-colors">
                       <FaCalculator className="text-green-600 text-2xl" />
                     </div>
-                    <span className="text-sm font-medium text-gray-700">Nouveau Rapport</span>
-                  </button>
-                  <button className="flex flex-col items-center p-4 border border-gray-100 rounded-lg hover:border-yellow-300 hover:bg-yellow-50 transition-colors group">
+                    <span className="text-sm font-medium text-gray-700">Rapports</span>
+                  </Link>
+                  <Link to="/dashboardcomptable/rapprochement" className="flex flex-col items-center p-4 border border-gray-100 rounded-lg hover:border-yellow-300 hover:bg-yellow-50 transition-colors group">
                     <div className="p-3 bg-yellow-100 rounded-full mb-2 group-hover:bg-yellow-200 transition-colors">
                       <FaClipboardCheck className="text-yellow-600 text-2xl" />
                     </div>
-                    <span className="text-sm font-medium text-gray-700">Valider Écritures</span>
-                  </button>
-                  <button className="flex flex-col items-center p-4 border border-gray-100 rounded-lg hover:border-purple-300 hover:bg-purple-50 transition-colors group">
-                    <div className="p-3 bg-purple-100 rounded-full mb-2 group-hover:bg-purple-200 transition-colors">
-                      <FaShieldAlt className="text-purple-600 text-2xl" />
-                    </div>
-                    <span className="text-sm font-medium text-gray-700">Audit Comptable</span>
-                  </button>
+                    <span className="text-sm font-medium text-gray-700">Rapprochements</span>
+                  </Link>
+                  <Link to="/dashboardcomptable/profilcomptable" className="flex flex-col items-center p-4 border border-gray-100 rounded-lg hover:border-purple-300 hover:bg-purple-50 transition-colors group">
+  <div className="p-3 bg-purple-100 rounded-full mb-2 group-hover:bg-purple-200 transition-colors">
+    <FaUserTie className="text-purple-600 text-2xl" /> 
+  </div>
+  <span className="text-sm font-medium text-gray-700">Profil Comptable</span>
+</Link>
                 </div>
               </div>
 

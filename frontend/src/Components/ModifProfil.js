@@ -11,7 +11,6 @@ import {
   FaIdCard,
   FaPhone,
   FaUserEdit,
-  FaUserCircle,
   FaCheckCircle
 } from "react-icons/fa";
 
