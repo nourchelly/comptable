@@ -1,13 +1,15 @@
 import React, { useState, useEffect } from "react";
+import Search from './Search';
 import { Link, Outlet, useLocation, useNavigate } from "react-router-dom";
 import axios from "axios";
 import { 
   FaHome, FaCheckCircle, FaSignOutAlt, 
-  FaSearch, FaBell, FaUserCircle,
-  FaUsersCog, FaUserShield, FaFileInvoiceDollar,
+  FaSearch, FaBell, FaUserCircle, FaUsers, FaUserTie, FaUserCheck, FaUserTimes, FaUserPlus,
+  FaUsersCog, FaFileInvoiceDollar,
   FaShieldAlt, FaDatabase, FaQrcode,
-  FaSpinner, FaTimes
+  FaSpinner, FaTimes,FaUserShield, FaUserEdit, FaClipboardList, FaArrowRight
 } from "react-icons/fa";
+
 
 const Dashboard = () => {
   const navigate = useNavigate();
@@ -18,44 +20,46 @@ const Dashboard = () => {
   const [showResults, setShowResults] = useState(false);
   const [isSearching, setIsSearching] = useState(false);
   const [searchError, setSearchError] = useState(null);
-
-  // Fonction de recherche avec debounce
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      if (searchQuery.trim().length > 2) {
-        performSearch(searchQuery);
-      } else {
-        setSearchResults([]);
-        setShowResults(false);
-      }
-    }, 300);
-
-    return () => clearTimeout(timer);
-  }, [searchQuery]);
-
-  const performSearch = async (query) => {
-    setIsSearching(true);
-    setSearchError(null);
-    
-    try {
-      // Remplacez cette URL par votre endpoint de recherche réel
-      const response = await axios.get("http://127.0.0.1:8000/api/search/", {
-        params: { q: query },
-        headers: {
-          Authorization: `Bearer ${localStorage.getItem("valid")}`
+  const [userStats, setUserStats] = useState({
+    total: 0,
+    admin: 0,
+    comptable: 0,
+    directeur: 0,
+    active: 0,
+    inactive: 0,
+    newUsers: 0
+  });
+  const [loadingStats, setLoadingStats] = useState(true);
+    // Charger les statistiques utilisateurs
+    useEffect(() => {
+      const fetchStats = async () => {
+        setLoadingStats(true);
+        try {
+          const response = await axios.get('http://localhost:8000/api/user-stats/', {
+            withCredentials: true
+          });
+          
+          console.log('API Response:', response.data);
+          
+          // Correction ici - la structure est response.data.data.stats
+          if (response.data.status && response.data.data?.stats) {
+            setUserStats(response.data.data.stats);
+          } else {
+            console.error('Structure inattendue:', response.data);
+          }
+        } catch (err) {
+          console.error('Erreur API:', err);
+          if (err.response?.status === 401) {
+            navigate('/connexion');
+          }
+        } finally {
+          setLoadingStats(false);
         }
-      });
-      
-      setSearchResults(response.data.results || []);
-      setShowResults(true);
-    } catch (err) {
-      console.error("Search error:", err);
-      setSearchError("Erreur lors de la recherche");
-      setSearchResults([]);
-    } finally {
-      setIsSearching(false);
-    }
-  };
+      };
+      fetchStats();
+    }, []);
+  // Fonction de recherche avec debounce
+
 
   const handleLogout = () => {
     axios.get("http://127.0.0.1:8000/api/logout/")
@@ -177,25 +181,13 @@ const Dashboard = () => {
                 : "text-gray-600 hover:bg-gray-100 hover:text-gray-800"
             }`}
           >
-            <FaCheckCircle className={`mr-3 text-lg ${
+            <FaDatabase className={`mr-3 text-lg ${
               location.pathname === "/dashboard/validation" ? "text-indigo-600" : "text-gray-500"
             }`} />
             <span>Supervisions</span>
           </Link>
 
-          <Link 
-            to="/dashboard/audit" 
-            className={`flex items-center p-3 rounded-lg transition-all ${
-              location.pathname === "/dashboard/audit" 
-                ? "bg-indigo-50 text-indigo-700 font-medium border-l-4 border-indigo-600" 
-                : "text-gray-600 hover:bg-gray-100 hover:text-gray-800"
-            }`}
-          >
-            <FaDatabase className={`mr-3 text-lg ${
-              location.pathname === "/dashboard/audit" ? "text-indigo-600" : "text-gray-500"
-            }`} />
-            <span>Journal d'audit</span>
-          </Link>
+         
         </nav>
 
         <div className="p-4 border-t border-gray-200">
@@ -225,22 +217,8 @@ const Dashboard = () => {
           <div className="flex items-center space-x-4">
             <div className="relative w-64">
               <FaSearch className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
-              <input
-                type="text"
-                placeholder="Rechercher utilisateurs, transactions..."
-                className="w-full pl-10 pr-8 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all"
-                value={searchQuery}
-                onChange={(e) => {
-                  setSearchQuery(e.target.value);
-                  setShowResults(e.target.value.length > 0);
-                }}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  if (searchQuery.length > 0) {
-                    setShowResults(true);
-                  }
-                }}
-              />
+             <Search/>
+              
               
               {searchQuery && (
                 <button
@@ -329,23 +307,140 @@ const Dashboard = () => {
                   </div>
                 </div>
 
-                {/* Cartes statistiques */}
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-                  <div className="bg-white p-6 rounded-xl shadow-sm border-l-4 border-blue-500 hover:shadow-md transition-all transform hover:-translate-y-1">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="text-sm text-gray-500">Utilisateurs actifs</p>
-                        <p className="text-2xl font-bold mt-1">1,248</p>
-                      </div>
-                      <div className="p-3 rounded-full bg-blue-100 text-blue-600 shadow-inner">
-                        <FaUsersCog size={20} />
+                 {/* Section Statistiques Utilisateurs */}
+                 <div className="mb-8">
+                  <h3 className="text-xl font-semibold text-gray-800 mb-4 flex items-center">
+                    <FaUsers className="mr-2 text-indigo-600" />
+                    Statistiques Utilisateurs
+                  </h3>
+                  
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
+                    {/* Carte Total Utilisateurs */}
+                    <div className="bg-white p-6 rounded-xl shadow-sm border-l-4 border-blue-500 hover:shadow-md transition-all transform hover:-translate-y-1">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="text-sm text-gray-500">Total Utilisateurs</p>
+                          {loadingStats ? (
+                            <FaSpinner className="animate-spin text-gray-400 mt-2" />
+                          ) : (
+                            <p className="text-2xl font-bold mt-1">{userStats.total}</p>
+                          )}
+                        </div>
+                        <div className="p-3 rounded-full bg-blue-100 text-blue-600 shadow-inner">
+                          <FaUsers size={20} />
+                        </div>
                       </div>
                     </div>
-                    <div className="mt-4 flex items-center text-sm text-green-500">
-                      <span>↑ 12% ce mois</span>
+
+                    {/* Carte Admins */}
+                    <div className="bg-white p-6 rounded-xl shadow-sm border-l-4 border-purple-500 hover:shadow-md transition-all transform hover:-translate-y-1">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="text-sm text-gray-500">Administrateurs</p>
+                          {loadingStats ? (
+                            <FaSpinner className="animate-spin text-gray-400 mt-2" />
+                          ) : (
+                            <p className="text-2xl font-bold mt-1">{userStats.admin}</p>
+                          )}
+                        </div>
+                        <div className="p-3 rounded-full bg-purple-100 text-purple-600 shadow-inner">
+                          <FaUserShield size={20} />
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Carte Comptables */}
+                    <div className="bg-white p-6 rounded-xl shadow-sm border-l-4 border-green-500 hover:shadow-md transition-all transform hover:-translate-y-1">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="text-sm text-gray-500">Comptables</p>
+                          {loadingStats ? (
+                            <FaSpinner className="animate-spin text-gray-400 mt-2" />
+                          ) : (
+                            <p className="text-2xl font-bold mt-1">{userStats.comptable}</p>
+                          )}
+                        </div>
+                        <div className="p-3 rounded-full bg-green-100 text-green-600 shadow-inner">
+                          <FaUserTie size={20} />
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Carte Directeurs */}
+                    <div className="bg-white p-6 rounded-xl shadow-sm border-l-4 border-orange-500 hover:shadow-md transition-all transform hover:-translate-y-1">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="text-sm text-gray-500">Directeurs</p>
+                          {loadingStats ? (
+                            <FaSpinner className="animate-spin text-gray-400 mt-2" />
+                          ) : (
+                            <p className="text-2xl font-bold mt-1">{userStats.directeur}</p>
+                          )}
+                        </div>
+                        <div className="p-3 rounded-full bg-orange-100 text-orange-600 shadow-inner">
+                          <FaUserTie size={20} />
+                        </div>
+                      </div>
                     </div>
                   </div>
 
+                  {/* Deuxième ligne de statistiques */}
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    {/* Carte Utilisateurs Actifs */}
+                    <div className="bg-white p-6 rounded-xl shadow-sm border-l-4 border-teal-500 hover:shadow-md transition-all transform hover:-translate-y-1">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="text-sm text-gray-500">Utilisateurs Actifs</p>
+                          {loadingStats ? (
+                            <FaSpinner className="animate-spin text-gray-400 mt-2" />
+                          ) : (
+                            <p className="text-2xl font-bold mt-1">{userStats.active}</p>
+                          )}
+                        </div>
+                        <div className="p-3 rounded-full bg-teal-100 text-teal-600 shadow-inner">
+                          <FaUserCheck size={20} />
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Carte Utilisateurs Inactifs */}
+                    <div className="bg-white p-6 rounded-xl shadow-sm border-l-4 border-red-500 hover:shadow-md transition-all transform hover:-translate-y-1">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="text-sm text-gray-500">Utilisateurs Inactifs</p>
+                          {loadingStats ? (
+                            <FaSpinner className="animate-spin text-gray-400 mt-2" />
+                          ) : (
+                            <p className="text-2xl font-bold mt-1">{userStats.inactive}</p>
+                          )}
+                        </div>
+                        <div className="p-3 rounded-full bg-red-100 text-red-600 shadow-inner">
+                          <FaUserTimes size={20} />
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Carte Nouveaux Utilisateurs */}
+                    <div className="bg-white p-6 rounded-xl shadow-sm border-l-4 border-yellow-500 hover:shadow-md transition-all transform hover:-translate-y-1">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="text-sm text-gray-500">Nouveaux (30j)</p>
+                          {loadingStats ? (
+                            <FaSpinner className="animate-spin text-gray-400 mt-2" />
+                          ) : (
+                            <p className="text-2xl font-bold mt-1">{userStats.newUsers}</p>
+                          )}
+                        </div>
+                        <div className="p-3 rounded-full bg-yellow-100 text-yellow-600 shadow-inner">
+                          <FaUserPlus size={20} />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Cartes statistiques existantes */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
                   <div className="bg-white p-6 rounded-xl shadow-sm border-l-4 border-green-500 hover:shadow-md transition-all transform hover:-translate-y-1">
                     <div className="flex items-center justify-between">
                       <div>
@@ -394,42 +489,75 @@ const Dashboard = () => {
 
                 {/* Section rapide */}
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                  <Link to="/dashboard/comptes" className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 hover:shadow-md transition-all group transform hover:-translate-y-1">
-                    <div className="flex items-center mb-4">
-                      <div className="p-3 rounded-full bg-blue-100 text-blue-600 mr-4 group-hover:bg-blue-600 group-hover:text-white transition-colors shadow-inner">
-                        <FaUsersCog size={20} />
-                      </div>
-                      <h3 className="font-bold text-lg group-hover:text-blue-600 transition-colors">Gérer les comptes</h3>
-                    </div>
-                    <p className="text-gray-500 text-sm">
-                      Visualisez et gérez tous les comptes utilisateurs, modifiez les permissions et accès.
-                    </p>
-                  </Link>
+  {/* Carte Gérer les comptes */}
+  <Link 
+    to="/dashboard/comptes" 
+    className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 hover:shadow-md transition-all group transform hover:-translate-y-1 hover:border-blue-100"
+  >
+    <div className="flex items-center mb-4">
+      <div className="p-3 rounded-full bg-blue-50 text-blue-600 mr-4 group-hover:bg-blue-600 group-hover:text-white transition-colors shadow-inner">
+        <FaUserShield size={20} /> {/* Icône plus appropriée pour la gestion des accès */}
+      </div>
+      <div>
+        <h3 className="font-bold text-lg text-gray-800 group-hover:text-blue-600 transition-colors">
+          Gérer les comptes
+        </h3>
+        <p className="text-gray-500 text-sm mt-1">
+          Administration complète des utilisateurs et permissions
+        </p>
+      </div>
+    </div>
+    <div className="flex justify-end">
+      <FaArrowRight className="text-gray-300 group-hover:text-blue-400 transition-colors" />
+    </div>
+  </Link>
 
-                  <Link to="/dashboard/validation" className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 hover:shadow-md transition-all group transform hover:-translate-y-1">
-                    <div className="flex items-center mb-4">
-                      <div className="p-3 rounded-full bg-green-100 text-green-600 mr-4 group-hover:bg-green-600 group-hover:text-white transition-colors shadow-inner">
-                        <FaCheckCircle size={20} />
-                      </div>
-                      <h3 className="font-bold text-lg group-hover:text-green-600 transition-colors">Valider demandes</h3>
-                    </div>
-                    <p className="text-gray-500 text-sm">
-                      Approuvez ou rejetez les demandes en attente des utilisateurs.
-                    </p>
-                  </Link>
+  {/* Carte Gérer Profil */}
+  <Link 
+    to="/dashboard/profil" 
+    className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 hover:shadow-md transition-all group transform hover:-translate-y-1 hover:border-green-100"
+  >
+    <div className="flex items-center mb-4">
+      <div className="p-3 rounded-full bg-green-50 text-green-600 mr-4 group-hover:bg-green-600 group-hover:text-white transition-colors shadow-inner">
+        <FaUserEdit size={20} /> {/* Icône plus spécifique pour l'édition de profil */}
+      </div>
+      <div>
+        <h3 className="font-bold text-lg text-gray-800 group-hover:text-green-600 transition-colors">
+          Gestion de profil
+        </h3>
+        <p className="text-gray-500 text-sm mt-1">
+          Modifier vos informations personnelles et préférences
+        </p>
+      </div>
+    </div>
+    <div className="flex justify-end">
+      <FaArrowRight className="text-gray-300 group-hover:text-green-400 transition-colors" />
+    </div>
+  </Link>
 
-                  <Link to="/dashboard/audit" className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 hover:shadow-md transition-all group transform hover:-translate-y-1">
-                    <div className="flex items-center mb-4">
-                      <div className="p-3 rounded-full bg-purple-100 text-purple-600 mr-4 group-hover:bg-purple-600 group-hover:text-white transition-colors shadow-inner">
-                        <FaDatabase size={20} />
-                      </div>
-                      <h3 className="font-bold text-lg group-hover:text-purple-600 transition-colors">Journal d'audit</h3>
-                    </div>
-                    <p className="text-gray-500 text-sm">
-                      Consultez l'historique complet des actions administratives.
-                    </p>
-                  </Link>
-                </div>
+  {/* Carte Journal d'audit */}
+  <Link 
+    to="/dashboard/validation" 
+    className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 hover:shadow-md transition-all group transform hover:-translate-y-1 hover:border-purple-100"
+  >
+    <div className="flex items-center mb-4">
+      <div className="p-3 rounded-full bg-purple-50 text-purple-600 mr-4 group-hover:bg-purple-600 group-hover:text-white transition-colors shadow-inner">
+        <FaClipboardList size={20} /> {/* Icône plus représentative d'un journal */}
+      </div>
+      <div>
+        <h3 className="font-bold text-lg text-gray-800 group-hover:text-purple-600 transition-colors">
+          Journal d'audit
+        </h3>
+        <p className="text-gray-500 text-sm mt-1">
+          Historique détaillé de toutes les activités système
+        </p>
+      </div>
+    </div>
+    <div className="flex justify-end">
+      <FaArrowRight className="text-gray-300 group-hover:text-purple-400 transition-colors" />
+    </div>
+  </Link>
+</div>
               </div>
             )}
           </div>

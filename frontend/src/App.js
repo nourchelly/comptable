@@ -39,7 +39,8 @@ import FactureDetail from './Components/FactureDetail';
 //import { BrowserRouter, useNavigate, useLocation } from 'react-router-dom';
 import { GoogleOAuthProvider } from '@react-oauth/google';
 import { UserProvider } from './Components/UserContext';
-import Banque from './Components/Banque'
+import Banque from './Components/Banque';
+import Rapprochement from './Components/Rapprochement';
 // Composant pour vérifier l'authentification globale
 /*function AuthCheck() {
   const navigate = useNavigate();
@@ -105,6 +106,7 @@ function App() {
               <Route path="facture" element={<Facture />} />
               <Route path="factures/:id" element={<FactureDetail />} />
               <Route path="banque" element={<Banque />} />
+              <Route path="rapprochement" elemnet={<Rapprochement />} />
 
             </Route>
 

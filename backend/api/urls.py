@@ -4,6 +4,9 @@ from django.conf import settings
 #from .views import CustomTokenObtainPairView
 #from rest_framework_simplejwt.views import TokenRefreshView
 from .views import (
+    search_users,
+    user_stats,
+    users_stats,
     home,
     ProfilAdminApi,
     ProfilComptableApi,
@@ -96,6 +99,9 @@ urlpatterns = [
     path('notifications/read-all/', mark_all_notifications_read, name='mark_all_notifications_read'),
     path('notifications/<str:notification_id>/read/', mark_notification_read, name='mark_notification_read'),
     path('notifications/<str:notification_id>/', delete_notification, name='delete_notification'),
+    path('user-stats/', user_stats, name='user_stats'),
+     path('users-stats/', users_stats, name='users_stats'),
+    path('search/', search_users, name='search_users'),
    # path('media/<path:file_path>', serve_facture_file, name='serve_facture_file'),
 ] + static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
    

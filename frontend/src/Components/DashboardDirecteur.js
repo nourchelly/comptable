@@ -18,6 +18,8 @@ const DashboardDirecteurFinancier = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [User, setUser] = useState();
   const [showLogoutModal, setShowLogoutModal] = useState(false);
+    const [sidebarOpen, setSidebarOpen] = useState(true);
+    const [showConfirm, setShowConfirm] = useState(false);
   const [auditsData, setAuditsData] = useState([]);
   const [rapportsData, setRapportsData] = useState([]);
   const [formData, setFormData] = useState({
@@ -204,16 +206,17 @@ const DashboardDirecteurFinancier = () => {
         </Link>
       </nav>
 
-      <div className="p-4 border-t border-indigo-700">
-        <button 
-          onClick={() => setShowLogoutModal(true)}
-          className="flex items-center w-full p-3 text-indigo-100 hover:bg-red-600 hover:text-white rounded-lg transition-all duration-200 group"
-        >
-          <FaSignOutAlt className="mr-3 text-blue-300 group-hover:text-white" />
-          <span className="font-medium">Déconnexion</span>
-        </button>
-      </div>
-    </div>
+    <div className="p-4 border-t border-indigo-700">
+              <button 
+                onClick={() => setShowConfirm(true)}
+                className="flex items-center w-full p-3 text-indigo-100 hover:bg-indigo-700 rounded-lg transition-colors"
+              >
+                <FaSignOutAlt className={`text-xl ${sidebarOpen ? 'mr-3' : 'mx-auto'}`} />
+                {sidebarOpen && <span className="font-medium">Déconnexion</span>}
+              </button>
+            </div>
+          </div>
+ 
   );
 
   if (isLoading) {
@@ -226,37 +229,35 @@ const DashboardDirecteurFinancier = () => {
 
   return (
     <div className="flex h-screen bg-gray-50 font-sans">
-      {/* Modal de déconnexion */}
-      {showLogoutModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-xl shadow-2xl overflow-hidden w-full max-w-md">
-            <div className="p-8 text-center">
-              <div className="mx-auto flex items-center justify-center h-20 w-20 rounded-full bg-red-100 mb-6">
-                <FaSignOutAlt className="h-10 w-10 text-red-600 animate-pulse" />
-              </div>
-              <h3 className="text-2xl font-bold text-gray-900 mb-3">Déconnexion</h3>
-              <p className="text-gray-600 mb-8">
-                Vous êtes sur le point de vous déconnecter. Voulez-vous vraiment quitter votre session ?
-              </p>
-              <div className="flex justify-center space-x-6">
-                <button
-                  onClick={cancelLogout}
-                  className="px-8 py-3 bg-gray-200 hover:bg-gray-300 text-gray-800 rounded-xl font-medium transition-all duration-200 shadow-sm hover:shadow-md"
-                >
-                  Annuler
-                </button>
-                <button
-                  onClick={handleLogout}
-                  className="px-8 py-3 bg-red-600 hover:bg-red-700 text-white rounded-xl font-medium transition-all duration-200 shadow-sm hover:shadow-md flex items-center"
-                >
-                  <FaSignOutAlt className="mr-2" />
-                  Se déconnecter
-                </button>
+      {/* Confirmation Modal */}
+        {showConfirm && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 backdrop-blur-sm">
+            <div className="bg-white rounded-xl p-8 w-full max-w-md">
+              <div className="flex flex-col items-center text-center space-y-4">
+                <div className="p-3 bg-red-100 rounded-full">
+                  <FaSignOutAlt className="text-red-500 text-2xl" />
+                </div>
+                <h3 className="text-2xl font-bold text-gray-900">Déconnexion</h3>
+                <p className="text-gray-600">Êtes-vous sûr de vouloir vous déconnecter ?</p>
+                <div className="flex space-x-4 w-full mt-4">
+                  <button 
+                    onClick={handleLogout}
+                    className="flex-1 bg-red-600 hover:bg-red-700 text-white py-3 px-6 rounded-lg font-medium transition-colors flex items-center justify-center"
+                  >
+                    <FaSignOutAlt className="mr-2" />
+                    Déconnexion
+                  </button>
+                  <button 
+                    onClick={() => setShowConfirm(false)}
+                    className="flex-1 bg-gray-200 hover:bg-gray-300 text-gray-800 py-3 px-6 rounded-lg font-medium transition-colors"
+                  >
+                    Annuler
+                  </button>
+                </div>
               </div>
             </div>
           </div>
-        </div>
-      )}
+        )}
 
       <Sidebar />
 

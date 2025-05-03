@@ -42,7 +42,13 @@ class CustomUser(Document):
             {'fields': ['email'], 'unique': True},
             {'fields': ['username'], 'unique': True},
             'role',
-            'is_active'
+            'is_active',
+            {
+                'fields': ['$username', '$email', '$role'],
+                'default_language': 'french',
+                'weights': {'username': 10, 'email': 5, 'role': 2},
+                'name': 'text_search_index'
+            }
         ],
         'ordering': ['-date_joined']
     }

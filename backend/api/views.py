@@ -103,12 +103,12 @@ from rest_framework.response import Response
 from django.core.mail import send_mail
 from django.conf import settings
 from .models import CustomUser
+from django.db import transaction
 from django.contrib.auth.hashers import make_password
 import jwt
 from datetime import datetime, timedelta,timezone
 from django.core.exceptions import ValidationError
 from django.core.validators import validate_email
-
 
 @api_view(['POST'])
 @permission_classes([AllowAny])
@@ -136,47 +136,72 @@ def register_user(request):
     
     # Création de l'utilisateur
     try:
-        user = CustomUser(
-            username=data['username'],
-            email=data['email'],
-            role=data.get('role', 'comptable'),
-            secondary_emails=valid_secondary_emails,
-            is_active=False
-        )
-        user.set_password(data['password'])
-        user.save()  # Sauvegarde initiale pour avoir un ID
-        
-        # Génération du token APRÈS la sauvegarde
-        activation_token = user.generate_activation_token()
-        
-        # Liste de tous les emails à notifier
-        all_emails = [user.email] + valid_secondary_emails
-        
-        # Envoi des emails
-        activation_link = f"{settings.FRONTEND_URL}/activate/{activation_token}"
-        send_mail(
-            'Activation de compte',
-            f'''Bonjour,
+        with transaction.atomic():
+            # 1. Création de l'utilisateur
+            user = CustomUser(
+                username=data['username'],
+                email=data['email'],
+                role=data.get('role', 'comptable'),
+                secondary_emails=valid_secondary_emails,
+                is_active=False
+            )
+            user.set_password(data['password'])
+            user.save()  # Sauvegarde initiale pour avoir un ID
             
-            Un compte a été créé avec votre adresse email.
+            # 2. Création du compte associé
+            compte = Compte(
+                user=user,
+                statut='En cours'  # Statut par défaut à l'inscription
+            )
             
-            Veuillez cliquer sur le lien suivant pour activer le compte :
-            {activation_link}
+            # Si c'est un comptable ou directeur, on lie les références
+            if user.role == 'comptable':
+                try:
+                    comptable = Comptable.objects.get(user=user)
+                    compte.comptable = comptable
+                except Comptable.DoesNotExist:
+                    pass
+            elif user.role == 'directeur':
+                try:
+                    directeur = DirecteurFinancier.objects.get(user=user)
+                    compte.directeur = directeur
+                except DirecteurFinancier.DoesNotExist:
+                    pass
             
-            Ce lien expirera dans 24 heures.
+            compte.save()
             
-            Cordialement,
-            L'équipe de votre application''',
-            settings.DEFAULT_FROM_EMAIL,
-            all_emails,
-            fail_silently=False,
-        )
-        
-        return Response({
-            'success': True,
-            'message': f'Inscription réussie. Email(s) envoyé(s) à {len(all_emails)} adresse(s).',
-            'emails_sent_to': all_emails
-        }, status=201)
+            # 3. Génération du token d'activation
+            activation_token = user.generate_activation_token()
+            
+            # Liste de tous les emails à notifier
+            all_emails = [user.email] + valid_secondary_emails
+            
+            # Envoi des emails
+            activation_link = f"{settings.FRONTEND_URL}/activate/{activation_token}"
+            send_mail(
+                'Activation de compte',
+                f'''Bonjour,
+                
+                Un compte a été créé avec votre adresse email.
+                
+                Veuillez cliquer sur le lien suivant pour activer le compte :
+                {activation_link}
+                
+                Ce lien expirera dans 24 heures.
+                
+                Cordialement,
+                L'équipe de votre application''',
+                settings.DEFAULT_FROM_EMAIL,
+                all_emails,
+                fail_silently=False,
+            )
+            
+            return Response({
+                'success': True,
+                'message': f'Inscription réussie. Email(s) envoyé(s) à {len(all_emails)} adresse(s).',
+                'emails_sent_to': all_emails,
+                'compte_id': str(compte.id)  # Retourne l'ID du compte créé
+            }, status=201)
     
     except Exception as e:
         import traceback
@@ -1267,7 +1292,6 @@ def log_action(user, audit, type_action, description, details):
         import traceback
         traceback.print_exc()
         return False
-
 @csrf_exempt
 def AuditApi(request, id=None):
     print(f"Utilisateur connecté: {request.user}, authentifié: {request.user.is_authenticated if hasattr(request.user, 'is_authenticated') else 'N/A'}")
@@ -1283,7 +1307,7 @@ def AuditApi(request, id=None):
                     'date_debut': audit.date_debut.isoformat(),
                     'date_fin': audit.date_fin.isoformat(),
                     'statut': audit.statut,
-                    'priorite': audit.priorite,
+                    'priorite': audit.priorite,  # Inclure la priorité
                     'description': audit.description,
                     'observations': audit.observations
                 }
@@ -1300,7 +1324,8 @@ def AuditApi(request, id=None):
                 'type': audit.type,
                 'statut': audit.statut,
                 'date_debut': audit.date_debut.isoformat(),
-                'responsable': audit.responsable
+                'responsable': audit.responsable,
+                'priorite': audit.priorite  # Ajouter la priorité ici
             } for audit in audits]
             return JsonResponse({'audits': audits_list}, safe=False)
 
@@ -1313,8 +1338,8 @@ def AuditApi(request, id=None):
                     return JsonResponse({"error": f"Champ requis manquant: {field}"}, status=400)
 
             try:
-                date_debut = datetime.fromisoformat(data['date_debut'])
-                date_fin = datetime.fromisoformat(data['date_fin'])
+                date_debut = datetime.datetime.fromisoformat(data['date_debut'])
+                date_fin = datetime.datetime.fromisoformat(data['date_fin'])
             except (ValueError, TypeError):
                 return JsonResponse({"error": "Format de date invalide. Utilisez le format ISO (YYYY-MM-DDTHH:MM:SS)"}, status=400)
 
@@ -1339,7 +1364,7 @@ def AuditApi(request, id=None):
                 audit=audit,
                 type_action='ajout_audit',
                 description=f"Ajout de l'audit: {audit.nom}",
-                details=f"Audit de type {audit.type} créé le {datetime.now().strftime('%d/%m/%Y')}"
+                details=f"Audit de type {audit.type} créé le {datetime.datetime.now().strftime('%d/%m/%Y')}"
             )
 
             return JsonResponse({
@@ -1362,7 +1387,7 @@ def AuditApi(request, id=None):
 
             for field in ['nom', 'type', 'responsable', 'date_debut', 'date_fin', 'statut', 'priorite', 'description', 'observations']:
                 if field in data:
-                    setattr(audit, field, datetime.fromisoformat(data[field]) if 'date' in field else data[field])
+                    setattr(audit, field, datetime.datetime.fromisoformat(data[field]) if 'date' in field else data[field])
 
             audit.save()
 
@@ -1371,10 +1396,24 @@ def AuditApi(request, id=None):
                 audit=audit,
                 type_action='modification_audit',
                 description=f"Modification de l'audit: {audit.nom}",
-                details=f"Audit de type {audit.type} modifié le {datetime.now().strftime('%d/%m/%Y')}"
+                details=f"Audit de type {audit.type} modifié le {datetime.datetime.now().strftime('%d/%m/%Y')}"
             )
 
-            return JsonResponse({"status": "success", "message": "Audit mis à jour avec succès"})
+            return JsonResponse({
+                "status": "success",
+                "message": "Audit mis à jour avec succès",
+                "audit": {
+                    "id": str(audit.id),
+                    "nom": audit.nom,
+                    "type": audit.type,
+                    "responsable": audit.responsable,
+                    "date_debut": audit.date_debut.isoformat(),  # Formater en ISO
+                    "date_fin": audit.date_fin.isoformat(),      # Formater en ISO
+                    "priorite": audit.priorite,
+                    "statut": audit.statut,
+                    "description": audit.description
+                }
+            })
 
         except DoesNotExist:
             return JsonResponse({"error": "Audit non trouvé"}, status=404)
@@ -1396,7 +1435,7 @@ def AuditApi(request, id=None):
                 audit=audit,
                 type_action='suppression_audit',
                 description=f"Suppression de l'audit: {audit.nom}",
-                details=f"Audit de type {audit.type} supprimé le {datetime.now().strftime('%d/%m/%Y')}"
+                details=f"Audit de type {audit.type} supprimé le {datetime.datetime.now().strftime('%d/%m/%Y')}"
             )
 
             audit.delete()
@@ -2113,4 +2152,136 @@ def get_unread_count(request):
         return JsonResponse({
             'status': 'error',
             'message': str(e)
+        }, status=500)
+    
+@csrf_exempt
+def user_stats(request):
+    if request.method != 'GET':
+        return JsonResponse({'status': False, 'error': 'Méthode non autorisée'}, status=405)
+    
+    try:
+        # Comptages avec MongoEngine
+        total = CustomUser.objects.count()
+        admin = CustomUser.objects(role="admin").count()
+        comptable = CustomUser.objects(role="comptable").count()
+        directeur = CustomUser.objects(role="directeur").count()
+        active = CustomUser.objects(is_active=True).count()
+        inactive = total - active
+        
+        last_month = datetime.datetime.now() - timedelta(days=30)
+        new_users = CustomUser.objects(date_joined__gte=last_month).count()
+        
+        return JsonResponse({
+            'status': True,
+            'data': {
+                'stats': {
+                    'total': total,
+                    'admin': admin,
+                    'comptable': comptable, 
+                    'directeur': directeur,
+                    'active': active,
+                    'inactive': inactive,
+                    'newUsers': new_users
+                }
+            }
+        })
+    except Exception as e:
+        logger.error(f"Error in user_stats: {str(e)}")
+        return JsonResponse({'status': False, 'error': str(e)}, status=500) 
+
+@csrf_exempt
+def users_stats(request):
+    if request.method != 'GET':
+        return JsonResponse({'status': False, 'error': 'Méthode non autorisée'}, status=405)
+    
+    try:
+        # Total counts
+        facture_count = Facture.objects.count()
+        releve_count = Banque.objects.count()
+        
+        # New factures in last 30 days using created_at field
+        last_month = datetime.datetime.now() - datetime.timedelta(days=30)
+        new_factures = Facture.objects(created_at__gte=last_month).count()
+        
+        return JsonResponse({
+            'status': True,
+            'data': {
+                'stats': {
+                    'facture': facture_count,
+                    'releve': releve_count,
+                    'newFactures': new_factures
+                }
+            }
+        })
+    except Exception as e:
+        logger.error(f"Error in user_stats: {str(e)}")
+        return JsonResponse({'status': False, 'error': str(e)}, status=500)
+    
+
+from django.http import JsonResponse
+from django.db.models import Q
+from .models import CustomUser
+from django.core.paginator import Paginator
+from mongoengine.queryset.visitor import Q  # Le bon import pour MongoEngine
+
+def search_users(request):
+    try:
+        # Récupération des paramètres avec valeurs par défaut
+        query = request.GET.get('q', '').strip()
+        try:
+            page = int(request.GET.get('page', 1))
+            limit = int(request.GET.get('limit', 10))
+        except ValueError:
+            return JsonResponse({
+                'success': False,
+                'message': 'Paramètres page/limit invalides'
+            }, status=400)
+
+        # Validation minimale
+        if len(query) < 3:
+            return JsonResponse({
+                'success': True,
+                'results': [],
+                'total': 0
+            })
+
+        # Construction de la requête
+        search_query = (
+            Q(username__icontains=query) | 
+            Q(email__icontains=query) |
+            Q(role__icontains=query)
+        )
+
+        # Exécution avec gestion des erreurs
+        queryset = CustomUser.objects.filter(search_query)
+        paginator = Paginator(queryset, limit)
+        
+        try:
+            page_obj = paginator.page(page)
+        except EmptyPage:
+            page_obj = paginator.page(paginator.num_pages)
+
+        # Sérialisation
+        results = [{
+            'id': str(user.id),
+            'username': user.username,
+            'email': user.email,
+            'role': user.role,
+            'is_active': user.is_active
+        } for user in page_obj]
+
+        return JsonResponse({
+            'success': True,
+            'results': results,
+            'total': paginator.count,
+            'page': page_obj.number,
+            'total_pages': paginator.num_pages
+        })
+
+    except Exception as e:
+        logger.error(f"Erreur recherche: {str(e)}", exc_info=True)
+        return JsonResponse({
+            'success': False,
+            'message': 'Erreur serveur',
+            'error_details': str(e)
         }, status=500)
