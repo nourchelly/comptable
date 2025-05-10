@@ -15,12 +15,12 @@ const AdminActionsList = () => {
   // Configurations (à remplacer par un appel API si dynamique)
   const ACTION_TYPES = useMemo(() => [
     'Tous',
-    'Ajout Audit',
-    'Modification Audit',
-    'Suppression Audit',
-    'Consultation Audit',
-    'Connexion',
-    'Déconnexion'
+    'ajout',
+    'modification',
+    'suppression',
+    'consultation',
+    'connexion',
+    'deconnexion'
   ], []);
 
   const USER_ROLES = useMemo(() => [
@@ -28,7 +28,7 @@ const AdminActionsList = () => {
     'admin',
     'comptable',
     'directeur',
-    'auditeur'
+    
   ], []);
 
   // Classes de type d'action
@@ -52,6 +52,8 @@ const AdminActionsList = () => {
         }
       });
       setActions(response.data.actions);
+      console.log(actions.map(a => a.action_type));  // <== ici
+
       setLastRefresh(new Date());
     } catch (err) {
       console.error("Erreur de chargement:", err);
@@ -91,13 +93,18 @@ const AdminActionsList = () => {
   };
 
   // Statistiques calculées une seule fois
-  const stats = useMemo(() => ({
-    total: actions.length,
-    additions: actions.filter(a => a.action_type?.includes('Ajout')).length,
-    modifications: actions.filter(a => a.action_type?.includes('Modification')).length,
-    deletions: actions.filter(a => a.action_type?.includes('Suppression')).length,
-    logins: actions.filter(a => a.action_type?.includes('Connexion')).length
-  }), [actions]);
+  const stats = useMemo(() => {
+    const normalize = (str) => (str || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  
+    return {
+      total: actions.length,
+      additions: actions.filter(a => normalize(a.action_type).includes('ajout')).length,
+      modifications: actions.filter(a => normalize(a.action_type).includes('modification')).length,
+      deletions: actions.filter(a => normalize(a.action_type).includes('suppression')).length,
+      logins: actions.filter(a => normalize(a.action_type).includes('connexion')).length
+    };
+  }, [actions]);
+  
 
   if (loading && actions.length === 0) {
     return (

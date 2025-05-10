@@ -4,6 +4,7 @@ from bson.errors import InvalidId
 from decimal import Decimal,InvalidOperation
 from datetime import datetime as dt
 from django.http import Http404, HttpResponse, JsonResponse,FileResponse
+from django.core.paginator import Paginator, EmptyPage, PageNotAnInteger
 from mongoengine.errors import NotUniqueError, ValidationError
 from django.utils.timezone import now as timezone_now
 from rest_framework.decorators import permission_classes
@@ -31,8 +32,7 @@ from .permissions import IsComptable
 from bson import ObjectId
 from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import A4
-from reportlab.lib.utils import ImageReader
-from openpyxl import Workbook
+
 from django.http import HttpResponse
 import io
 import os
@@ -49,7 +49,6 @@ from allauth.socialaccount.providers.oauth2.client import OAuth2Client
 from dj_rest_auth.registration.views import SocialLoginView
 #from django.middleware.csrf import get_token
 from django.views.decorators.csrf import csrf_exempt
-from django.utils.decorators import method_decorator
 from django.views.decorators.http import require_GET
 from django.views.decorators.csrf import ensure_csrf_cookie
 
@@ -261,13 +260,41 @@ def login_view(request):
             
             try:
                 user = CustomUser.objects.get(email=email)
+                
+                # Vérifier d'abord le mot de passe
                 if not user.check_password(password):
+                    if user.role in ['comptable', 'directeur']:
+                        ActionLog(
+                            user=user,
+                            type_action='connexion',
+                            description=f"Tentative de connexion échouée (mot de passe incorrect) pour {email}",
+                            details=f"Rôle tenté: {role}",
+                            statut="Échoué"
+                        ).save()
                     return JsonResponse({'status': 'error', 'message': 'Mot de passe incorrect'}, status=401)
                 
+                # Vérifier ensuite le rôle
                 if user.role != role:
+                    if user.role in ['comptable', 'directeur']:
+                        ActionLog(
+                            user=user,
+                            type_action='connexion',
+                            description=f"Tentative de connexion échouée (rôle incorrect) pour {email}",
+                            details=f"Rôle tenté: {role}, Rôle réel: {user.role}",
+                            statut="Échoué"
+                        ).save()
                     return JsonResponse({'status': 'error', 'message': 'Rôle incorrect'}, status=403)
                 
-                # Ici vous devriez implémenter votre propre système de session
+                # Enregistrement seulement pour comptable et directeur
+                if user.role in ['comptable', 'directeur']:
+                    ActionLog(
+                        user=user,
+                        type_action='connexion',
+                        description=f"Connexion réussie pour {user.email}",
+                        details=f"Rôle: {user.role}",
+                        statut="Terminé"
+                    ).save()
+                
                 return JsonResponse({
                     'status': 'success',
                     'user': {
@@ -278,12 +305,21 @@ def login_view(request):
                     }
                 })
                 
-            except DoesNotExist:
+            except CustomUser.DoesNotExist:
+                # On ne logue pas les tentatives avec email inexistant pour tous les rôles
                 return JsonResponse({'status': 'error', 'message': 'Utilisateur non trouvé'}, status=404)
                 
         except json.JSONDecodeError:
             return JsonResponse({'status': 'error', 'message': 'Données JSON invalides'}, status=400)
         except Exception as e:
+            # On logue les erreurs serveur seulement pour comptable/directeur
+            if 'user' in locals() and user.role in ['comptable', 'directeur']:
+                ActionLog(
+                    type_action='connexion',
+                    description="Erreur lors de la tentative de connexion",
+                    details=str(e),
+                    statut="Échoué"
+                ).save()
             return JsonResponse({'status': 'error', 'message': str(e)}, status=500)
     
     return JsonResponse({'status': 'error', 'message': 'Méthode non autorisée'}, status=405)
@@ -291,6 +327,8 @@ from django.views.decorators.csrf import csrf_exempt
 import json
 from .models import CustomUser,Compte  # Importez directement CustomUser
 from django.http import JsonResponse
+from django.utils import timezone
+
 from django.db import IntegrityError
 @csrf_exempt
 def ProfilAdminApi(request, id=None):
@@ -448,22 +486,30 @@ def ProfilAdminApi(request, id=None):
         return JsonResponse({"error": "Méthode non autorisée"}, status=405)  
 @csrf_exempt
 def ProfilComptableApi(request, id=None):
+    # Fonction pour enregistrer les actions (uniquement pour les comptables)
+    def log_action(user, action_type, description, details, statut):
+        if user.role == 'comptable':  # Changement ici - seulement pour les comptables
+            ActionLog(
+                user=user,
+                type_action=action_type,
+                description=description,
+                details=details,
+                statut=statut
+            ).save()
+
     # Vérifier si l'id est fourni et non vide
     if request.method != 'POST' and (not id or id == 'undefined'):
         return JsonResponse({"error": "ID utilisateur requis"}, status=400)
         
     if request.method == 'GET':
         try:
-            # Récupérer d'abord l'utilisateur CustomUser
             user = CustomUser.objects.get(id=id)
             
-            # Puis récupérer le comptable associé à cet utilisateur
             try:
                 comptable = Comptable.objects.get(user=user)
                 
-                # Combiner les données des deux collections
                 user_data = {
-                    'id': str(user.id),  # ID de l'utilisateur pour les opérations d'authentification
+                    'id': str(user.id),
                     'email': user.email,
                     'username': user.username,
                     'role': user.role,
@@ -472,10 +518,25 @@ def ProfilComptableApi(request, id=None):
                     'matricule': comptable.matricule,
                     'departement': comptable.departement,
                 }
+                
+                log_action(
+                    user=user,
+                    action_type='consultation',
+                    description=f"Consultation de son profil comptable",
+                    details=f"Consultation des informations du compte {user.email}",
+                    statut="Terminé"
+                )
+                
                 return JsonResponse(user_data)
                 
             except DoesNotExist:
-                # L'utilisateur existe mais n'a pas de profil comptable associé
+                log_action(
+                    user=user,
+                    action_type='consultation',
+                    description=f"Tentative de consultation profil comptable inexistant",
+                    details=f"Profil comptable non trouvé pour {user.email}",
+                    statut="Échoué"
+                )
                 return JsonResponse({
                     'id': str(user.id),
                     'email': user.email,
@@ -486,23 +547,16 @@ def ProfilComptableApi(request, id=None):
                 
         except DoesNotExist:
             return JsonResponse({"error": "Utilisateur non trouvé"}, status=404)
+            
     elif request.method == 'POST':
         try:
-            # 1. Vérification des données JSON
             try:
                 data = json.loads(request.body)
             except json.JSONDecodeError:
-                return JsonResponse(
-                    {"error": "Données JSON invalides"}, 
-                    status=400
-                )
+                return JsonResponse({"error": "Données JSON invalides"}, status=400)
             
-            # 2. Validation des champs obligatoires
             required_fields = ['user_id', 'nom_complet', 'telephone','matricule','departement']
-            missing_fields = [
-                field for field in required_fields 
-                if field not in data
-            ]
+            missing_fields = [field for field in required_fields if field not in data]
             
             if missing_fields:
                 return JsonResponse({
@@ -510,28 +564,26 @@ def ProfilComptableApi(request, id=None):
                     "champs_manquants": missing_fields
                 }, status=400)
             
-            # 3. Vérification de l'existence de l'utilisateur
             try:
                 user = CustomUser.objects.get(id=data['user_id'])
-            except CustomUser.DoesNotExist:
-                return JsonResponse(
-                    {"error": "Utilisateur non trouvé"}, 
-                    status=404
-                )
-            except ValueError:
-                return JsonResponse(
-                    {"error": "user_id doit être un nombre valide"}, 
-                    status=400
-                )
-            
-            # 4. Vérification de l'existence du profil admin
-            if Comptable.objects(user=user).first():
-                return JsonResponse({
-                    "error": "Profil comptable existe déjà pour cet utilisateur"
-                }, status=400)
-            
-            # 5. Création du profil admin
-            try:
+                
+                if user.role != 'comptable':  # Vérification du rôle
+                    return JsonResponse({
+                        "error": "Seuls les comptables peuvent créer un profil comptable"
+                    }, status=403)
+                
+                if Comptable.objects(user=user).first():
+                    log_action(
+                        user=user,
+                        action_type='creation',
+                        description="Tentative de création de profil existant",
+                        details="Le profil comptable existe déjà",
+                        statut="Échoué"
+                    )
+                    return JsonResponse({
+                        "error": "Profil comptable existe déjà pour cet utilisateur"
+                    }, status=400)
+                
                 comptable = Comptable(
                     user=user,
                     nom_complet=data['nom_complet'],
@@ -541,6 +593,14 @@ def ProfilComptableApi(request, id=None):
                 )
                 comptable.save()
                 
+                log_action(
+                    user=user,
+                    action_type='creation',
+                    description=f"Création du profil comptable",
+                    details=f"Matricule: {data['matricule']} | Département: {data['departement']}",
+                    statut="Terminé"
+                )
+                
                 return JsonResponse({
                     "status": "success",
                     "message": "Profil comptable créé avec succès",
@@ -549,10 +609,25 @@ def ProfilComptableApi(request, id=None):
                 }, status=201)
             
             except NotUniqueError as e:
+                log_action(
+                    user=user,
+                    action_type='creation',
+                    description="Erreur: téléphone déjà utilisé",
+                    details=str(e),
+                    statut="Échoué"
+                )
                 return JsonResponse({
                     "error": "Ce numéro de téléphone est déjà utilisé"
                 }, status=400)
+                
             except ValidationError as e:
+                log_action(
+                    user=user,
+                    action_type='creation',
+                    description="Erreur de validation des données",
+                    details=str(e.to_dict()),
+                    statut="Échoué"
+                )
                 return JsonResponse({
                     "error": f"Erreur de validation: {str(e.to_dict())}"
                 }, status=400)
@@ -565,29 +640,28 @@ def ProfilComptableApi(request, id=None):
         
     elif request.method == 'PUT':
         try:
-            # Récupérer d'abord l'utilisateur
             user = CustomUser.objects.get(id=id)
             
-            # Puis récupérer le comptable associé
+            if user.role != 'comptable':  # Vérification du rôle
+                return JsonResponse({
+                    "error": "Seuls les comptables peuvent modifier un profil comptable"
+                }, status=403)
+            
             try:
                 comptable = Comptable.objects.get(user=user)
                 
-                # Analyser les données de la requête
                 try:
                     data = json.loads(request.body)
                     
-                    # Séparer les données pour CustomUser et Comptable
                     user_data = {}
                     comptable_data = {}
                     
-                    # Assigner les champs aux objets appropriés
                     for key, value in data.items():
                         if key in ['username', 'email', 'password']:
                             user_data[key] = value
                         elif key in ['nom_complet', 'telephone', 'matricule', 'departement']:
                             comptable_data[key] = value
                     
-                    # Mettre à jour CustomUser
                     if user_data:
                         for key, value in user_data.items():
                             if key == 'password':
@@ -596,11 +670,31 @@ def ProfilComptableApi(request, id=None):
                                 setattr(user, key, value)
                         user.save()
                     
-                    # Mettre à jour Comptable
                     if comptable_data:
+                        old_data = {
+                            'nom_complet': comptable.nom_complet,
+                            'telephone': comptable.telephone,
+                            'matricule': comptable.matricule,
+                            'departement': comptable.departement
+                        }
+                        
                         for key, value in comptable_data.items():
                             setattr(comptable, key, value)
                         comptable.save()
+                        
+                        changes = {
+                            k: f"{old_data[k]} → {v}" 
+                            for k, v in comptable_data.items() 
+                            if old_data[k] != v
+                        }
+                        
+                        log_action(
+                            user=user,
+                            action_type='modification',
+                            description="Modification du profil comptable",
+                            details=f"Changements: {changes}",
+                            statut="Terminé"
+                        )
                     
                     return JsonResponse({"status": "success", "message": "Profil mis à jour avec succès"})
                     
@@ -608,7 +702,13 @@ def ProfilComptableApi(request, id=None):
                     return JsonResponse({"error": "Données JSON invalides"}, status=400)
                     
             except DoesNotExist:
-                # L'utilisateur existe mais pas le profil comptable
+                log_action(
+                    user=user,
+                    action_type='modification',
+                    description="Tentative de modification profil inexistant",
+                    details="Profil comptable non trouvé",
+                    statut="Échoué"
+                )
                 return JsonResponse({"error": "Profil comptable non trouvé"}, status=404)
                 
         except DoesNotExist:
@@ -616,10 +716,22 @@ def ProfilComptableApi(request, id=None):
             
     elif request.method == 'DELETE':
         try:
-            # Récupérer l'utilisateur
             user = CustomUser.objects.get(id=id)
             
-            # Le document Comptable sera supprimé automatiquement grâce à CASCADE
+            if user.role != 'comptable':  # Vérification du rôle
+                return JsonResponse({
+                    "error": "Seuls les comptables peuvent supprimer un profil comptable"
+                }, status=403)
+            
+            comptable = Comptable.objects.get(user=user)
+            log_action(
+                user=user,
+                action_type='suppression',
+                description="Suppression du profil comptable",
+                details=f"Matricule: {comptable.matricule}",
+                statut="Terminé"
+            )
+            
             user.delete()
             return JsonResponse({"status": "success", "message": "Compte supprimé avec succès"})
             
@@ -631,22 +743,30 @@ def ProfilComptableApi(request, id=None):
     #Directeur profil
 @csrf_exempt
 def ProfilDirecteurApi(request, id=None):
+    # Fonction pour enregistrer les actions (uniquement pour les directeurs)
+    def log_action(user, action_type, description, details, statut):
+        if user.role == 'directeur':  # Seulement pour les directeurs
+            ActionLog(
+                user=user,
+                type_action=action_type,
+                description=description,
+                details=details,
+                statut=statut
+            ).save()
+
     # Vérifier si l'id est fourni et non vide
     if request.method != 'POST' and (not id or id == 'undefined'):
         return JsonResponse({"error": "ID utilisateur requis"}, status=400)
         
     if request.method == 'GET':
         try:
-            # Récupérer d'abord l'utilisateur CustomUser
             user = CustomUser.objects.get(id=id)
             
-            # Puis récupérer le comptable associé à cet utilisateur
             try:
                 directeur = DirecteurFinancier.objects.get(user=user)
                 
-                # Combiner les données des deux collections
                 user_data = {
-                    'id': str(user.id),  # ID de l'utilisateur pour les opérations d'authentification
+                    'id': str(user.id),
                     'email': user.email,
                     'username': user.username,
                     'role': user.role,
@@ -654,10 +774,25 @@ def ProfilDirecteurApi(request, id=None):
                     'departement': directeur.departement,
                     'specialite': directeur.specialite,
                 }
+                
+                log_action(
+                    user=user,
+                    action_type='consultation',
+                    description="Consultation du profil directeur",
+                    details=f"Consultation des informations du directeur {user.email}",
+                    statut="Terminé"
+                )
+                
                 return JsonResponse(user_data)
                 
             except DoesNotExist:
-                # L'utilisateur existe mais n'a pas de profil comptable associé
+                log_action(
+                    user=user,
+                    action_type='consultation',
+                    description="Tentative de consultation profil directeur inexistant",
+                    details=f"Profil directeur non trouvé pour {user.email}",
+                    statut="Échoué"
+                )
                 return JsonResponse({
                     'id': str(user.id),
                     'email': user.email,
@@ -668,23 +803,16 @@ def ProfilDirecteurApi(request, id=None):
                 
         except DoesNotExist:
             return JsonResponse({"error": "Utilisateur non trouvé"}, status=404)
+            
     elif request.method == 'POST':
         try:
-            # 1. Vérification des données JSON
             try:
                 data = json.loads(request.body)
             except json.JSONDecodeError:
-                return JsonResponse(
-                    {"error": "Données JSON invalides"}, 
-                    status=400
-                )
+                return JsonResponse({"error": "Données JSON invalides"}, status=400)
             
-            # 2. Validation des champs obligatoires
-            required_fields = ['user_id', 'telephone','departement','specialite']
-            missing_fields = [
-                field for field in required_fields 
-                if field not in data
-            ]
+            required_fields = ['user_id', 'telephone', 'departement', 'specialite']
+            missing_fields = [field for field in required_fields if field not in data]
             
             if missing_fields:
                 return JsonResponse({
@@ -692,28 +820,26 @@ def ProfilDirecteurApi(request, id=None):
                     "champs_manquants": missing_fields
                 }, status=400)
             
-            # 3. Vérification de l'existence de l'utilisateur
             try:
                 user = CustomUser.objects.get(id=data['user_id'])
-            except CustomUser.DoesNotExist:
-                return JsonResponse(
-                    {"error": "Utilisateur non trouvé"}, 
-                    status=404
-                )
-            except ValueError:
-                return JsonResponse(
-                    {"error": "user_id doit être un nombre valide"}, 
-                    status=400
-                )
-            
-            # 4. Vérification de l'existence du profil admin
-            if DirecteurFinancier.objects(user=user).first():
-                return JsonResponse({
-                    "error": "Profil directeur existe déjà pour cet utilisateur"
-                }, status=400)
-            
-            # 5. Création du profil directeur
-            try:
+                
+                if user.role != 'directeur':
+                    return JsonResponse({
+                        "error": "Seuls les directeurs peuvent créer un profil directeur"
+                    }, status=403)
+                
+                if DirecteurFinancier.objects(user=user).first():
+                    log_action(
+                        user=user,
+                        action_type='creation',
+                        description="Tentative de création de profil existant",
+                        details="Le profil directeur existe déjà",
+                        statut="Échoué"
+                    )
+                    return JsonResponse({
+                        "error": "Profil directeur existe déjà pour cet utilisateur"
+                    }, status=400)
+                
                 directeur = DirecteurFinancier(
                     user=user,
                     telephone=data['telephone'],
@@ -721,6 +847,14 @@ def ProfilDirecteurApi(request, id=None):
                     specialite=data['specialite']
                 )
                 directeur.save()
+                
+                log_action(
+                    user=user,
+                    action_type='creation',
+                    description="Création du profil directeur",
+                    details=f"Département: {data['departement']} | Spécialité: {data['specialite']}",
+                    statut="Terminé"
+                )
                 
                 return JsonResponse({
                     "status": "success",
@@ -730,10 +864,25 @@ def ProfilDirecteurApi(request, id=None):
                 }, status=201)
             
             except NotUniqueError as e:
+                log_action(
+                    user=user,
+                    action_type='creation',
+                    description="Erreur: téléphone déjà utilisé",
+                    details=str(e),
+                    statut="Échoué"
+                )
                 return JsonResponse({
                     "error": "Ce numéro de téléphone est déjà utilisé"
                 }, status=400)
+                
             except ValidationError as e:
+                log_action(
+                    user=user,
+                    action_type='creation',
+                    description="Erreur de validation des données",
+                    details=str(e.to_dict()),
+                    statut="Échoué"
+                )
                 return JsonResponse({
                     "error": f"Erreur de validation: {str(e.to_dict())}"
                 }, status=400)
@@ -743,32 +892,31 @@ def ProfilDirecteurApi(request, id=None):
                 {"error": f"Erreur serveur: {str(e)}"}, 
                 status=500
             )
-                
+        
     elif request.method == 'PUT':
         try:
-            # Récupérer d'abord l'utilisateur
             user = CustomUser.objects.get(id=id)
             
-            # Puis récupérer le comptable associé
+            if user.role != 'directeur':
+                return JsonResponse({
+                    "error": "Seuls les directeurs peuvent modifier un profil directeur"
+                }, status=403)
+            
             try:
                 directeur = DirecteurFinancier.objects.get(user=user)
                 
-                # Analyser les données de la requête
                 try:
                     data = json.loads(request.body)
                     
-                    # Séparer les données pour CustomUser et Comptable
                     user_data = {}
                     directeur_data = {}
                     
-                    # Assigner les champs aux objets appropriés
                     for key, value in data.items():
                         if key in ['username', 'email', 'password']:
                             user_data[key] = value
-                        elif key in [ 'telephone', 'departement', 'specialite',]:
+                        elif key in ['telephone', 'departement', 'specialite']:
                             directeur_data[key] = value
                     
-                    # Mettre à jour CustomUser
                     if user_data:
                         for key, value in user_data.items():
                             if key == 'password':
@@ -777,11 +925,30 @@ def ProfilDirecteurApi(request, id=None):
                                 setattr(user, key, value)
                         user.save()
                     
-                    # Mettre à jour directeur
                     if directeur_data:
+                        old_data = {
+                            'telephone': directeur.telephone,
+                            'departement': directeur.departement,
+                            'specialite': directeur.specialite
+                        }
+                        
                         for key, value in directeur_data.items():
                             setattr(directeur, key, value)
                         directeur.save()
+                        
+                        changes = {
+                            k: f"{old_data[k]} → {v}" 
+                            for k, v in directeur_data.items() 
+                            if old_data[k] != v
+                        }
+                        
+                        log_action(
+                            user=user,
+                            action_type='modification',
+                            description="Modification du profil directeur",
+                            details=f"Changements: {changes}",
+                            statut="Terminé"
+                        )
                     
                     return JsonResponse({"status": "success", "message": "Profil mis à jour avec succès"})
                     
@@ -789,18 +956,36 @@ def ProfilDirecteurApi(request, id=None):
                     return JsonResponse({"error": "Données JSON invalides"}, status=400)
                     
             except DoesNotExist:
-                # L'utilisateur existe mais pas le profil comptable
-                return JsonResponse({"error": "Profil comptable non trouvé"}, status=404)
+                log_action(
+                    user=user,
+                    action_type='modification',
+                    description="Tentative de modification profil inexistant",
+                    details="Profil directeur non trouvé",
+                    statut="Échoué"
+                )
+                return JsonResponse({"error": "Profil directeur non trouvé"}, status=404)
                 
         except DoesNotExist:
             return JsonResponse({"error": "Utilisateur non trouvé"}, status=404)
             
     elif request.method == 'DELETE':
         try:
-            # Récupérer l'utilisateur
             user = CustomUser.objects.get(id=id)
             
-            # Le document Comptable sera supprimé automatiquement grâce à CASCADE
+            if user.role != 'directeur':
+                return JsonResponse({
+                    "error": "Seuls les directeurs peuvent supprimer un profil directeur"
+                }, status=403)
+            
+            directeur = DirecteurFinancier.objects.get(user=user)
+            log_action(
+                user=user,
+                action_type='suppression',
+                description="Suppression du profil directeur",
+                details=f"Département: {directeur.departement} | Spécialité: {directeur.specialite}",
+                statut="Terminé"
+            )
+            
             user.delete()
             return JsonResponse({"status": "success", "message": "Compte supprimé avec succès"})
             
@@ -815,27 +1000,54 @@ import json
 
 class PasswordResetRequestView(APIView):
     permission_classes = [AllowAny]
-
+    
     def post(self, request):
-        serializer = PasswordResetRequestSerializer(data=request.data)
-        if serializer.is_valid():
-            user = serializer.validated_data['user']
-            user.reset_token = str(uuid.uuid4()) # Convert UUID to string
-            user.reset_token_expires = datetime.datetime.now() + timedelta(hours=24)
-            user.save()
-
-            reset_link = f"{settings.FRONTEND_URL}/reset-password/{user.reset_token}/"
-            send_mail(
-                f'Réinitialisation de votre mot de passe ({user.get_role_display()})',
-                f'Cliquez sur ce lien pour réinitialiser votre mot de passe: {reset_link}',
-                settings.DEFAULT_FROM_EMAIL,
-                [user.email],
-                fail_silently=False,
-            )
-
-            return Response({"message": "Un lien de réinitialisation a été envoyé à votre email."}, status=status.HTTP_200_OK)
-        else:
+        try:
+            serializer = PasswordResetRequestSerializer(data=request.data)
+            if serializer.is_valid():
+                user = serializer.validated_data['user']
+                
+                if not user.is_active:
+                    return Response(
+                        {"detail": "Ce compte est désactivé."},
+                        status=status.HTTP_403_FORBIDDEN
+                    )
+                
+                # Génération du token
+                user.reset_token = str(uuid.uuid4())
+                user.reset_token_expires = timezone.now() + timedelta(hours=24)
+                user.save()
+                
+                # Construction du lien
+                reset_link = f"{settings.FRONTEND_URL}/reset-password/{user.reset_token}/"
+                
+                # Envoi d'email
+                try:
+                    send_mail(
+                        f'Réinitialisation de mot de passe ({user.get_role_display()})',
+                        f'Cliquez sur ce lien pour réinitialiser votre mot de passe: {reset_link}',
+                        settings.DEFAULT_FROM_EMAIL,
+                        [user.email],
+                        fail_silently=False,
+                    )
+                    print(f"Email envoyé à {user.email}")
+                    return Response(
+                        {"detail": "Un lien de réinitialisation a été envoyé à votre email."},
+                        status=status.HTTP_200_OK
+                    )
+                except Exception as e:
+                    print(f"Erreur d'envoi d'email: {str(e)}")
+                    return Response(
+                        {"detail": "Erreur lors de l'envoi de l'email."},
+                        status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                    )
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+            print(f"Erreur serveur: {str(e)}")
+            return Response(
+                {"detail": "Une erreur serveur est survenue."},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 from django.utils.timezone import now  # Import correct pour le timezone aware datetime
 from django.utils.timezone import make_aware, get_current_timezone
 from django.utils.timezone import is_naive
@@ -927,16 +1139,16 @@ def google_auth(request):
 def google_auth_callback(request):
     code = request.data.get('code')
     print("Code reçu:", code)
-
+    
     if not code:
         return JsonResponse({"error": "Code non fourni"}, status=400)
-
+    
     # 1. Obtenir les tokens depuis Google
     token_url = "https://oauth2.googleapis.com/token"
     redirect_uri = "http://localhost:3000/auth/google/callback"
     client_id = "11479995049-09n7oceljn4sgmodv5til5uj7bd072jp.apps.googleusercontent.com"
     client_secret = "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"
-
+    
     token_data = {
         "code": code,
         "client_id": client_id,
@@ -944,45 +1156,62 @@ def google_auth_callback(request):
         "redirect_uri": redirect_uri,
         "grant_type": "authorization_code",
     }
-
+    
+    print("Envoi de la requête token avec les données:", token_data)
     token_response = requests.post(token_url, data=token_data)
+    print("Statut réponse token:", token_response.status_code)
+    print("Contenu réponse token:", token_response.text)
+    
     if token_response.status_code != 200:
-        return JsonResponse({"error": "Erreur token Google"}, status=400)
-
+        return JsonResponse({"error": f"Erreur token Google: {token_response.text}"}, status=400)
+    
     tokens = token_response.json()
     access_token = tokens.get("access_token")
-
+    
     # 2. Récupérer les infos utilisateur
+    print("Récupération des infos utilisateur avec token:", access_token[:10] + "...")
     user_info_response = requests.get(
         "https://www.googleapis.com/oauth2/v1/userinfo",
         params={"access_token": access_token}
     )
-
+    
+    print("Statut réponse userinfo:", user_info_response.status_code)
+    print("Contenu réponse userinfo:", user_info_response.text)
+    
     if user_info_response.status_code != 200:
-        return JsonResponse({"error": "Erreur récupération infos utilisateur"}, status=400)
-
+        return JsonResponse({"error": f"Erreur récupération infos utilisateur: {user_info_response.text}"}, status=400)
+    
     user_info = user_info_response.json()
-    print("Réponse Google Token:", user_info)
-
-    email = user_info.get("email")
-    username = user_info.get("name", email.split("@")[0])
-
+    email = user_info.get("email", "").lower().strip()
+    username = user_info.get("name", email.split("@")[0] if email else "")
+    
+    print(f"Email extrait: '{email}'")
+    print(f"Username extrait: '{username}'")
+    
     if not email:
         return JsonResponse({"error": "Email non récupéré"}, status=400)
-
+    
     # 3. Vérifier ou créer l'utilisateur dans MongoEngine
     try:
+        print(f"Recherche utilisateur avec email: {email}")
         user = CustomUser.objects.get(email=email)
+        print(f"Utilisateur trouvé: {user.id}, rôle: {user.role}")
     except CustomUser.DoesNotExist:
-        user = CustomUser.objects.create(
-            email=email,
-            username=username,
-            role="admin",  # Vous pourriez vouloir changer ce rôle par défaut
-            password="",  # Auth externe
-            is_active=True
-        )
-
-    # 4. Générer le JWT (version corrigée)
+        print(f"Utilisateur non trouvé, création d'un nouveau compte")
+        try:
+            user = CustomUser.objects.create(
+                email=email,
+                username=username,
+                role="comptable",
+                password="",
+                is_active=True
+            )
+            print(f"Utilisateur créé avec ID: {user.id}")
+        except Exception as e:
+            print(f"Erreur lors de la création de l'utilisateur: {str(e)}")
+            return JsonResponse({"error": f"Erreur création utilisateur: {str(e)}"}, status=400)
+    
+    # 4. Générer le JWT
     payload = {
         "user_id": str(user.id),
         "email": user.email,
@@ -990,9 +1219,10 @@ def google_auth_callback(request):
         "exp": datetime.datetime.utcnow() + datetime.timedelta(hours=24),
         "iat": datetime.datetime.utcnow()
     }
-
+    
+    print(f"Génération du JWT avec payload: {payload}")
     jwt_token = jwt.encode(payload, settings.SECRET_KEY, algorithm="HS256")
-
+    
     return JsonResponse({
         "token": jwt_token,
         "role": user.role,
@@ -1000,77 +1230,10 @@ def google_auth_callback(request):
         "email": user.email
     })
 
-#from rest_framework_simplejwt.tokens import UntypedToken
-#from rest_framework_simplejwt.exceptions import InvalidToken
-#from .serializers import ComptableSerializer
-
-class ComptableProfileView(APIView):
-    permission_classes = [IsAuthenticated]
-    authentication_classes = [JWTAuthentication]  # Force JWT
-
-    def get(self, request):
-        # Débogage : vérifier si l'utilisateur est authentifié
-        print(f"Utilisateur authentifié: {request.user.is_authenticated}")
-        user = request.user
-
-        # Vérification du rôle
-        if not hasattr(user, 'role') or user.role.lower() != 'comptable':
-            return Response(
-                {"error": "Accès réservé aux comptables"},
-                status=status.HTTP_403_FORBIDDEN
-            )
-
-        try:
-            # Recherche du profil comptable avec gestion des champs alternatifs
-            comptable = Comptable.objects.get(user=user.id)
-            
-            # Gestion du nom complet (champ potentiellement mal orthographié)
-            nom_complet = getattr(comptable, 'nom_complet', None) or getattr(comptable, 'non_complet', 'Non spécifié')
-            
-            # Construction de la réponse
-            response_data = {
-                "username": user.username,
-                "email": user.email,
-                "role": user.role,
-                "comptable": {
-                    "nom_complet": nom_complet,
-                    "telephone": comptable.telephone,
-                    "matricule": comptable.matricule,
-                    "departement": getattr(comptable, 'departement', None) or getattr(comptable, 'department', None),
-                    "id": str(comptable.id)
-                }
-            }
-            
-            return Response(response_data)
-
-        except Comptable.DoesNotExist:
-            return Response(
-                {"error": "Profil comptable non trouvé"},
-                status=status.HTTP_404_NOT_FOUND
-            )
-        except Exception as e:
-            return Response(
-                {"error": f"Erreur serveur: {str(e)}"},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
-        
-
-    #supprimerprofil
-class DeleteProfilView(APIView):
-    permission_classes = [IsAuthenticated]
-
-    def delete(self, request, user_id):
-        try:
-            user = CustomUser.objects.get(id=user_id)
-            user.delete()
-            return Response({"Status": True})
-        except CustomUser.DoesNotExist:
-            return Response({"Status": False, "Error": "Utilisateur non trouvé"}, status=404)
-
 
 #rapport 
 from .models import Rapport
-from rest_framework_simplejwt.authentication import JWTAuthentication
+
 @csrf_exempt
 def api_rapports(request, id=None):
     try:
@@ -1273,28 +1436,36 @@ class ProtectedExampleView(APIView):
 
 
 #Auditttttttttttttttttttttttttttttt
-def log_action(user, audit, type_action, description, details):
-    print(f"Tentative de log pour {user}, action: {type_action}")
-    
-    # Temporairement, ne pas vérifier l'authentification
-    try:
-        action = ActionLog.objects.create(
-            user=user,
-            audit=audit,
-            type_action=type_action,
-            description=description,
-            details=details
-        )
-        print(f"Log enregistré avec succès, ID: {action.id}")
-        return True
-    except Exception as e:
-        print(f"ERREUR DE LOG: {type(e).__name__}: {str(e)}")
-        import traceback
-        traceback.print_exc()
-        return False
+
 @csrf_exempt
 def AuditApi(request, id=None):
-    print(f"Utilisateur connecté: {request.user}, authentifié: {request.user.is_authenticated if hasattr(request.user, 'is_authenticated') else 'N/A'}")
+    """
+    API pour la gestion des audits financiers (CRUD)
+    """
+    # Fonction pour enregistrer les actions (uniquement pour les directeurs)
+    def log_action(user, action_type, description, details, statut="Terminé"):
+        """Enregistre une action dans le journal d'audit"""
+        if user and hasattr(user, 'role') and user.role == 'directeur':  # Vérifie que user existe et est directeur
+            try:
+                ActionLog(
+                    user=user,
+                    type_action=action_type,
+                    description=description,
+                    details=details,
+                    statut=statut
+                ).save()
+            except Exception as e:
+                print(f"Erreur lors de l'enregistrement du log: {str(e)}")
+        else:
+            # Pour le développement, enregistrez au moins dans la console ce qui aurait été journalisé
+            print(f"[LOG] Type: {action_type} | Description: {description} | Détails: {details} | Statut: {statut}")
+
+    # Pour les environnements de développement/test, on peut permettre les requêtes non authentifiées
+    # En production, cette vérification devrait être réactivée avec un système d'authentification approprié
+    user = request.user if request.user.is_authenticated else None
+    
+    # Si une action nécessite absolument un utilisateur, on vérifiera plus tard dans le code
+
     if request.method == 'GET':
         if id and id != 'undefined':
             try:
@@ -1307,12 +1478,30 @@ def AuditApi(request, id=None):
                     'date_debut': audit.date_debut.isoformat(),
                     'date_fin': audit.date_fin.isoformat(),
                     'statut': audit.statut,
-                    'priorite': audit.priorite,  # Inclure la priorité
+                    'priorite': audit.priorite,
                     'description': audit.description,
                     'observations': audit.observations
                 }
+                
+                # Log de consultation
+                log_action(
+                    user=user,
+                    action_type='consultation',
+                    description=f"Consultation de l'audit {audit.nom}",
+                    details=f"ID: {audit.id}",
+                    statut="Terminé"
+                )
+                
                 return JsonResponse(audit_data)
             except DoesNotExist:
+                # Log d'erreur
+                log_action(
+                    user=user,
+                    action_type='consultation',
+                    description="Tentative de consultation d'un audit inexistant",
+                    details=f"ID: {id}",
+                    statut="Échoué"
+                )
                 return JsonResponse({"error": "Audit non trouvé"}, status=404)
             except ValidationError:
                 return JsonResponse({"error": "ID d'audit invalide"}, status=400)
@@ -1325,26 +1514,38 @@ def AuditApi(request, id=None):
                 'statut': audit.statut,
                 'date_debut': audit.date_debut.isoformat(),
                 'responsable': audit.responsable,
-                'priorite': audit.priorite  # Ajouter la priorité ici
+                'priorite': audit.priorite
             } for audit in audits]
-            return JsonResponse({'audits': audits_list}, safe=False)
+            
+            # Log de consultation liste (si un utilisateur est connecté)
+            if user:
+                log_action(
+                    user=user,
+                    action_type='consultation',
+                    description="Consultation de la liste des audits",
+                    details=f"{len(audits_list)} audits trouvés",
+                    statut="Terminé"
+                )
+            
+            return JsonResponse({'audits': audits_list})
 
     elif request.method == 'POST':
         try:
             data = json.loads(request.body)
             required_fields = ['nom', 'type', 'responsable', 'date_debut', 'date_fin']
-            for field in required_fields:
-                if field not in data:
-                    return JsonResponse({"error": f"Champ requis manquant: {field}"}, status=400)
+            missing_fields = [field for field in required_fields if field not in data]
+            
+            if missing_fields:
+                return JsonResponse({"error": f"Champs requis manquants: {', '.join(missing_fields)}"}, status=400)
 
             try:
                 date_debut = datetime.datetime.fromisoformat(data['date_debut'])
                 date_fin = datetime.datetime.fromisoformat(data['date_fin'])
             except (ValueError, TypeError):
-                return JsonResponse({"error": "Format de date invalide. Utilisez le format ISO (YYYY-MM-DDTHH:MM:SS)"}, status=400)
+                return JsonResponse({"error": "Format de date invalide"}, status=400)
 
             if date_debut > date_fin:
-                return JsonResponse({"error": "La date de début doit être antérieure à la date de fin"}, status=400)
+                return JsonResponse({"error": "La date de début ne peut pas être postérieure à la date de fin"}, status=400)
 
             audit = AuditFinancier(
                 nom=data['nom'],
@@ -1355,16 +1556,18 @@ def AuditApi(request, id=None):
                 statut=data.get('statut', 'Planifié'),
                 priorite=data.get('priorite', 'Moyenne'),
                 description=data.get('description', ''),
-                observations=data.get('observations', [])
+                observations=data.get('observations', []),
+                user=user if user else None
             )
             audit.save()
 
+            # Log de création
             log_action(
-                user=request.user,
-                audit=audit,
-                type_action='ajout_audit',
-                description=f"Ajout de l'audit: {audit.nom}",
-                details=f"Audit de type {audit.type} créé le {datetime.datetime.now().strftime('%d/%m/%Y')}"
+                user=user,
+                action_type='creation',
+                description=f"Création d'un nouvel audit",
+                details=f"Nom: {audit.nom} | Type: {audit.type} | Statut: {audit.statut}",
+                statut="Terminé"
             )
 
             return JsonResponse({
@@ -1376,72 +1579,135 @@ def AuditApi(request, id=None):
         except json.JSONDecodeError:
             return JsonResponse({"error": "Données JSON invalides"}, status=400)
         except ValidationError as e:
+            # Log d'erreur
+            log_action(
+                user=user,
+                action_type='creation',
+                description="Erreur lors de la création d'un audit",
+                details=str(e),
+                statut="Échoué"
+            )
             return JsonResponse({"error": str(e)}, status=400)
 
     elif request.method == 'PUT':
         if not id or id == 'undefined':
             return JsonResponse({"error": "ID d'audit requis"}, status=400)
+            
         try:
             audit = AuditFinancier.objects.get(id=id)
-            data = json.loads(request.body)
-
-            for field in ['nom', 'type', 'responsable', 'date_debut', 'date_fin', 'statut', 'priorite', 'description', 'observations']:
-                if field in data:
-                    setattr(audit, field, datetime.datetime.fromisoformat(data[field]) if 'date' in field else data[field])
-
-            audit.save()
-
-            log_action(
-                user=request.user,
-                audit=audit,
-                type_action='modification_audit',
-                description=f"Modification de l'audit: {audit.nom}",
-                details=f"Audit de type {audit.type} modifié le {datetime.datetime.now().strftime('%d/%m/%Y')}"
-            )
-
-            return JsonResponse({
-                "status": "success",
-                "message": "Audit mis à jour avec succès",
-                "audit": {
-                    "id": str(audit.id),
-                    "nom": audit.nom,
-                    "type": audit.type,
-                    "responsable": audit.responsable,
-                    "date_debut": audit.date_debut.isoformat(),  # Formater en ISO
-                    "date_fin": audit.date_fin.isoformat(),      # Formater en ISO
-                    "priorite": audit.priorite,
-                    "statut": audit.statut,
-                    "description": audit.description
+            
+            try:
+                data = json.loads(request.body)
+                
+                # Sauvegarde des anciennes valeurs pour le log
+                old_data = {
+                    'nom': audit.nom,
+                    'type': audit.type,
+                    'responsable': audit.responsable,
+                    'statut': audit.statut,
+                    'priorite': audit.priorite
                 }
-            })
+                
+                # Mise à jour des champs
+                for field in ['nom', 'type', 'responsable', 'statut', 'priorite', 'description']:
+                    if field in data:
+                        setattr(audit, field, data[field])
+                
+                # Traitement spécial pour les dates
+                for date_field in ['date_debut', 'date_fin']:
+                    if date_field in data:
+                        try:
+                            setattr(audit, date_field, datetime.datetime.fromisoformat(data[date_field]))
+                        except ValueError:
+                            return JsonResponse({"error": f"Format de date invalide pour {date_field}"}, status=400)
+                
+                # Traitement spécial pour observations (liste)
+                if 'observations' in data:
+                    audit.observations = data['observations']
+                
+                # Vérification de cohérence des dates
+                if audit.date_debut > audit.date_fin:
+                    return JsonResponse({"error": "La date de début ne peut pas être postérieure à la date de fin"}, status=400)
+                
+                audit.save()
+                
+                # Identifier les changements pour le log
+                changes = {
+                    k: f"{old_data[k]} → {getattr(audit, k)}" 
+                    for k in old_data 
+                    if old_data[k] != getattr(audit, k)
+                }
+                
+                # Log de modification
+                log_action(
+                    user=user,
+                    action_type='modification',
+                    description=f"Modification de l'audit {audit.nom}",
+                    details=f"Changements: {changes}",
+                    statut="Terminé"
+                )
+                
+                return JsonResponse({
+                    "status": "success",
+                    "message": "Audit mis à jour avec succès",
+                    "audit": {
+                        "id": str(audit.id),
+                        "nom": audit.nom,
+                        "type": audit.type,
+                        "responsable": audit.responsable,
+                        "date_debut": audit.date_debut.isoformat(),
+                        "date_fin": audit.date_fin.isoformat(),
+                        "priorite": audit.priorite,
+                        "statut": audit.statut,
+                        "description": audit.description
+                    }
+                })
+                
+            except json.JSONDecodeError:
+                return JsonResponse({"error": "Données JSON invalides"}, status=400)
 
         except DoesNotExist:
+            # Log d'erreur
+            log_action(
+                user=user,
+                action_type='modification',
+                description="Tentative de modification d'un audit inexistant",
+                details=f"ID: {id}",
+                statut="Échoué"
+            )
             return JsonResponse({"error": "Audit non trouvé"}, status=404)
-        except json.JSONDecodeError:
-            return JsonResponse({"error": "Données JSON invalides"}, status=400)
         except ValidationError as e:
             return JsonResponse({"error": str(e)}, status=400)
-        except ValueError:
-            return JsonResponse({"error": "Format de date invalide"}, status=400)
 
     elif request.method == 'DELETE':
         if not id or id == 'undefined':
             return JsonResponse({"error": "ID d'audit requis"}, status=400)
+            
         try:
             audit = AuditFinancier.objects.get(id=id)
-
+            audit_name = audit.nom  # Sauvegarde du nom avant suppression
+            
+            # Log de suppression avant de supprimer l'audit
             log_action(
-                user=request.user,
-                audit=audit,
-                type_action='suppression_audit',
-                description=f"Suppression de l'audit: {audit.nom}",
-                details=f"Audit de type {audit.type} supprimé le {datetime.datetime.now().strftime('%d/%m/%Y')}"
+                user=user,
+                action_type='suppression',
+                description=f"Suppression de l'audit",
+                details=f"Nom: {audit_name} | ID: {id}",
+                statut="Terminé"
             )
 
             audit.delete()
             return JsonResponse({"status": "success", "message": "Audit supprimé avec succès"})
 
         except DoesNotExist:
+            # Log d'erreur
+            log_action(
+                user=user,
+                action_type='suppression',
+                description="Tentative de suppression d'un audit inexistant",
+                details=f"ID: {id}",
+                statut="Échoué"
+            )
             return JsonResponse({"error": "Audit non trouvé"}, status=404)
 
     return JsonResponse({"error": "Méthode non autorisée"}, status=405)
@@ -1480,7 +1746,7 @@ logger = logging.getLogger(__name__)
 def CompteApi(request, id=None):
     if request.method != 'POST' and (not id or id == 'undefined'):
         return JsonResponse({"error": "ID utilisateur requis"}, status=400)
-
+    
     if request.method == 'GET':
         try:
             user = CustomUser.objects.get(id=id)
@@ -1504,17 +1770,27 @@ def CompteApi(request, id=None):
                 })
         except CustomUser.DoesNotExist:
             return JsonResponse({"error": "Utilisateur non trouvé"}, status=404)
-
+    
     elif request.method == 'DELETE':
         try:
             user = CustomUser.objects.get(id=id)
             # Journalisation
             logger.info(f"Suppression du compte utilisateur {user.username}")
+            
+            # Suppression du compte associé à l'utilisateur s'il existe
+            try:
+                compte = Compte.objects.get(user=user)
+                compte.delete()
+                logger.info(f"Compte associé supprimé pour {user.username}")
+            except Compte.DoesNotExist:
+                logger.info(f"Pas de compte associé trouvé pour {user.username}")
+            
+            # Suppression de l'utilisateur
             user.delete()
             return JsonResponse({"status": "success", "message": "Compte supprimé avec succès"})
         except CustomUser.DoesNotExist:
             return JsonResponse({"error": "Utilisateur non trouvé"}, status=404)
-
+    
     elif request.method == 'PATCH':
         try:
             user = CustomUser.objects.get(id=id)
@@ -1528,37 +1804,50 @@ def CompteApi(request, id=None):
             return JsonResponse({"error": "Utilisateur non trouvé"}, status=404)
         except Compte.DoesNotExist:
             return JsonResponse({"error": "Compte non trouvé pour cet utilisateur"}, status=404)
-
+    
     else:
         return JsonResponse({"error": "Méthode non autorisée"}, status=405)
-    
+
 @csrf_exempt
 def ListeComptes(request):
     if request.method == 'GET':
         try:
-            # Récupération directe des utilisateurs avec rôle filtré
-            users = CustomUser.objects.filter(
-                role__in=['comptable', 'directeur']
-            )
+            logger.info("Exécution de ListeComptes")
             
+            # Solution 1: Inclure tous les utilisateurs comptables et directeurs, même sans compte
+            users = CustomUser.objects.filter(role__in=['comptable', 'directeur'])
             users_data = []
-            for user in users:
-                try:
-                    compte = Compte.objects.get(user=user)
-                    users_data.append({
-                        'id': str(user.id),
-                        'nom': user.username,
-                        'email': user.email,
-                        'role': user.role,
-                        'statut': compte.statut
-                    })
-                except Compte.DoesNotExist:
-                    continue
             
-            return JsonResponse({'users': users_data})
+            for user in users:
+                user_data = {
+                    'id': str(user.id),
+                    'nom': str(user.username),
+                    'email': str(user.email),
+                    'role': str(user.role),
+                }
+                
+                try:
+                    # Tenter de récupérer le compte associé
+                    compte = Compte.objects.get(user=user)
+                    user_data['statut'] = str(compte.statut)
+                except Compte.DoesNotExist:
+                    # Si aucun compte n'existe, indiquer cela plutôt que d'ignorer l'utilisateur
+                    user_data['statut'] = "Actif"
+                
+                users_data.append(user_data)
+            
+            logger.info(f"ListeComptes - données récupérées: {len(users_data)} utilisateurs")
+            return JsonResponse({'users': users_data}, status=200)
+        
         except Exception as e:
-            logger.error(f"Erreur: {str(e)}")
-            return JsonResponse({"error": str(e)}, status=500)
+            logger.error(f"Erreur dans ListeComptes: {str(e)}")
+            import traceback
+            logger.error(f"Détails de l'erreur: {traceback.format_exc()}")
+            return JsonResponse({"error": "Une erreur s'est produite lors de la récupération des comptes."}, status=500)
+    
+    else:
+        return JsonResponse({"error": "Méthode non autorisée"}, status=405)
+
 logger = logging.getLogger(__name__)
 
 @csrf_exempt
@@ -1571,17 +1860,35 @@ def SignalerCompte(request):
             user_id = data.get('user_id')
             motif = data.get('motif')
             description = data.get('description')
-
+            
             if not all([user_id, motif, description]):
                 return JsonResponse({
                     "status": "error",
                     "message": "Tous les champs (user_id, motif, description) sont requis"
                 }, status=400)
-
-            # Récupération des objets avec MongoEngine
-            user = CustomUser.objects.get(id=user_id)
-            compte = Compte.objects.get(user=user)
-
+            
+            # Récupération de l'utilisateur
+            try:
+                user = CustomUser.objects.get(id=user_id)
+            except CustomUser.DoesNotExist:
+                return JsonResponse({
+                    "status": "error",
+                    "message": "Utilisateur non trouvé"
+                }, status=404)
+            
+            # Récupération ou création du compte si nécessaire
+            try:
+                compte = Compte.objects.get(user=user)
+            except Compte.DoesNotExist:
+                # Création automatique d'un compte si l'utilisateur n'en a pas
+                logger.info(f"Création d'un compte pour l'utilisateur {user.username} (id: {user_id})")
+                compte = Compte(
+                    user=user,
+                    statut="Actif",
+                    date_creation=datetime.datetime.now()
+                )
+                compte.save()
+            
             # Mise à jour du compte
             compte.update(
                 statut="Inactif",
@@ -1589,7 +1896,7 @@ def SignalerCompte(request):
                 description_signalement=description,
                 date_signalement=datetime.datetime.now()
             )
-
+            
             # Vérification et traitement de l'expéditeur
             expediteur = None
             if hasattr(request, 'user') and not request.user.is_anonymous:
@@ -1597,47 +1904,34 @@ def SignalerCompte(request):
                     expediteur = CustomUser.objects.get(id=request.user.id)
                 except CustomUser.DoesNotExist:
                     logger.warning(f"Utilisateur expéditeur {request.user.id} non trouvé")
-
+            
             # Création de la notification
             notification = Notification(
                 destinataire=user,
-                expediteur=expediteur,  # Soit None soit un CustomUser valide
+                expediteur=expediteur,
                 titre="Signalement de votre compte",
                 message=f"Votre compte a été signalé. Motif: {motif}",
                 type_notification='signalement'
             )
             notification.save()
-
-            logger.info(f"Notification créée: {notification.id} pour {user.username}")
-
+            
             return JsonResponse({
                 "status": "success",
                 "message": "Compte signalé et notification créée",
                 "notification_id": str(notification.id)
             })
-
-        except CustomUser.DoesNotExist:
-            return JsonResponse({
-                "status": "error",
-                "message": "Utilisateur non trouvé"
-            }, status=404)
-        except Compte.DoesNotExist:
-            return JsonResponse({
-                "status": "error",
-                "message": "Compte non trouvé"
-            }, status=404)
+        
         except Exception as e:
             logger.error(f"Erreur lors du signalement: {str(e)}", exc_info=True)
             return JsonResponse({
                 "status": "error",
                 "message": "Erreur interne du serveur"
             }, status=500)
-
+    
     return JsonResponse({
         "status": "error",
         "message": "Méthode non autorisée"
     }, status=405)
-
 from datetime import datetime
 
 
@@ -1647,79 +1941,12 @@ from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from .models import ActionLog, CustomUser, DirecteurFinancier, Comptable
 
-@csrf_exempt
-def AdminActionsApi(request):
-    if request.method == 'GET':
-        try:
-            filter_type = request.GET.get('filter_type', None)
-            # Récupérer toutes les actions sans filtrer par utilisateur spécifique
-            actions = ActionLog.objects.all()
-             # Filtrer si demandé
-            if filter_type and filter_type != 'Tous':
-                # Convertir la valeur d'affichage en valeur stockée
-                stored_value = next((key for key, value in ActionLog.TYPES_ACTION if value == filter_type), None)
-                if stored_value:
-                    actions = actions.filter(type_action=stored_value)
-            
-            actions = actions.order_by('-date_action')
-            
-            # Sérialiser les données
-            actions_list = []
-            for action in actions:
-                print(f"Action brute: {action.type_action}, affichée: {action.get_type_action_display()}")
-                actions_list.append({
-                    'id': str(action.id),
-                    'username': action.user.username,
-                    'email': action.user.email,
-                    'role': action.user.role,
-                    'action_type': action.get_type_action_display(),
-                    'description': action.description,
-                    'audit': action.audit.nom if action.audit else 'N/A',
-                    'timestamp': action.date_action.strftime('%d/%m/%Y %H:%M'),
-                    'details': action.details
-                })
-                
-            return JsonResponse({'actions': actions_list}, safe=False)
-            
-        except Exception as e:
-            return JsonResponse({'error': str(e)}, status=500)
-    
-    return JsonResponse({'error': 'Méthode non autorisée'}, status=405)
 
-@csrf_exempt
-def MesActionsApi(request):
-    if request.method == 'GET':
-        try:
-            # Récupérer l'utilisateur actuel
-            user_id = request.GET.get('user_id')  # Vous devrez adapter cette partie selon votre système d'authentification
-            user = CustomUser.objects.get(id=user_id)
-            
-            # Récupérer les actions de cet utilisateur
-            actions = ActionLog.objects.filter(user=user).order_by('-date_action')
-            
-            # Sérialiser les données
-            actions_list = []
-            for action in actions:
-                actions_list.append({
-                    'id': str(action.id),
-                    'username': action.user.username,
-                    'email': action.user.email,
-                    'role': action.user.role,
-                    'action_type': action.get_type_action_display(),
-                    'description': action.description,
-                    'audit': action.audit.nom if action.audit else 'N/A',
-                    'timestamp': action.date_action.strftime('%d/%m/%Y %H:%M'),
-                    'details': action.details
-                })
-                
-            return JsonResponse({'actions': actions_list}, safe=False)
-            
-        except Exception as e:
-            return JsonResponse({'error': str(e)}, status=500)
-    
-    return JsonResponse({'error': 'Méthode non autorisée'}, status=405)
-#importer facture
+
+
+# Configurer le logger
 logger = logging.getLogger(__name__)
+
 @csrf_exempt
 def facture_api(request, id=None):
     try:
@@ -1729,6 +1956,7 @@ def facture_api(request, id=None):
                 return JsonResponse({
                     'id': str(facture.id),
                     'numero': facture.numero,
+                    'metadata': facture.metadata,
                     'fichier_url': request.build_absolute_uri(f'/api/factures/{facture.id}/download/'),
                     'filename': facture.fichier.filename if facture.fichier else None
                 })
@@ -1737,6 +1965,7 @@ def facture_api(request, id=None):
                 return JsonResponse([{
                     'id': str(f.id),
                     'numero': f.numero,
+                    'metadata': f.metadata,
                     'fichier_url': request.build_absolute_uri(f'/api/factures/{f.id}/download/') if f.fichier else None,
                     'filename': f.fichier.filename if f.fichier else None
                 } for f in factures], safe=False)
@@ -1744,29 +1973,54 @@ def facture_api(request, id=None):
         elif request.method == 'POST':
             if 'fichier' not in request.FILES:
                 return JsonResponse({'error': 'Aucun fichier fourni'}, status=400)
-            
+
             fichier = request.FILES['fichier']
+            
             if not fichier.name.lower().endswith('.pdf'):
                 return JsonResponse({'error': 'Seuls les fichiers PDF sont acceptés'}, status=400)
+    
+            # 1. Extraction des données via Flask
+            metadata = json.loads(request.POST.get('metadata', '{}'))
+            try:
+                fichier.seek(0)  # Reset file pointer
+                response = requests.post(
+                    'http://localhost:5000/api/extract-document',
+                    files={'file': (fichier.name, fichier, 'application/pdf')},
+                    data={'type': 'invoice'},  # Force le type facture
+                    timeout=30
+                )
+                
+                if response.status_code == 200:
+                    extracted_data = response.json().get('data', {})
+                    metadata.update(extracted_data)  # Fusion des métadonnées
+            except Exception as e:
+                logger.warning(f"Échec extraction Flask: {str(e)}")
+
+            # 2. Création unique dans MongoDB
+            numero_facture = metadata.get('numero_facture', f"AUTO-{uuid.uuid4().hex[:8].upper()}")
             
-            numero = request.POST.get('numero')
-            if not numero:
-                return JsonResponse({'error': 'Le numéro de facture est requis'}, status=400)
+            facture = Facture(
+                numero=numero_facture,
+                montant_total=float(metadata.get('montant_total', 0)) if metadata.get('montant_total') else None,
+                date_emission=datetime.strptime(metadata['date_emission'], "%Y-%m-%d") if metadata.get('date_emission') else None,
+                emetteur=metadata.get('emetteur'),
+                destinataire=metadata.get('destinataire'),
+                ligne_details=metadata.get('ligne_details', []),
+                metadata=metadata
+            )
             
-            if Facture.objects.filter(numero=numero).count() > 0:
-                return JsonResponse({'error': 'Ce numéro de facture existe déjà'}, status=400)
-            
-            facture = Facture(numero=numero)
+            fichier.seek(0)  # Reset pour sauvegarde
             facture.fichier.put(fichier, content_type='application/pdf', filename=fichier.name)
             facture.save()
             
             return JsonResponse({
                 'id': str(facture.id),
                 'numero': facture.numero,
+                'metadata': facture.metadata,
                 'fichier_url': request.build_absolute_uri(f'/api/factures/{facture.id}/download/'),
                 'filename': fichier.name
             }, status=201)
-            
+
         elif request.method == 'DELETE':
             if not id:
                 return JsonResponse({'error': 'ID requis'}, status=400)
@@ -1775,7 +2029,7 @@ def facture_api(request, id=None):
             facture.delete()
             return JsonResponse({'message': 'Facture supprimée'})
             
-    except (DoesNotExist, InvalidId):
+    except Facture.DoesNotExist:
         return JsonResponse({'error': 'Facture non trouvée'}, status=404)
     except Exception as e:
         logger.error(f"Erreur: {str(e)}", exc_info=True)
@@ -1791,11 +2045,10 @@ def download_facture(request, id):
         if not facture.fichier:
             return JsonResponse({'error': 'Aucun fichier associé à cette facture'}, status=404)
         
-        # Utilisation directe de GridFS
         data = facture.fichier.read()
         response = HttpResponse(data, content_type='application/pdf')
         
-        filename = facture.fichier.filename or f'facture-{facture.numero}.pdf'
+        filename = facture.fichier.filename or f'facture-{facture.numero if facture.numero else "sans-numero"}.pdf'
         response['Content-Disposition'] = f'inline; filename="{filename}"'
         return response
             
@@ -1890,6 +2143,7 @@ def facebook_auth_callback(request):
 
 #reeeeeeeleveeeeeee bancaireeeeee
 logger = logging.getLogger(__name__)
+
 @csrf_exempt
 def releve_api(request, id=None):
     try:
@@ -1899,6 +2153,7 @@ def releve_api(request, id=None):
                 return JsonResponse({
                     'id': str(releve.id),
                     'numero': releve.numero,
+                    'metadata': releve.metadata,
                     'fichier_url': request.build_absolute_uri(f'/api/banques/{releve.id}/download/'),
                     'filename': releve.fichier.filename if releve.fichier else None
                 })
@@ -1907,6 +2162,7 @@ def releve_api(request, id=None):
                 return JsonResponse([{
                     'id': str(f.id),
                     'numero': f.numero,
+                    'metadata': f.metadata,
                     'fichier_url': request.build_absolute_uri(f'/api/banques/{f.id}/download/') if f.fichier else None,
                     'filename': f.fichier.filename if f.fichier else None
                 } for f in releves], safe=False)
@@ -1916,25 +2172,47 @@ def releve_api(request, id=None):
                 return JsonResponse({'error': 'Aucun fichier fourni'}, status=400)
             
             fichier = request.FILES['fichier']
+            
+            # Vérification PDF
             if not fichier.name.lower().endswith('.pdf'):
                 return JsonResponse({'error': 'Seuls les fichiers PDF sont acceptés'}, status=400)
             
-            numero = request.POST.get('numero')
-            if not numero:
-                return JsonResponse({'error': 'Le numéro de releve est requis'}, status=400)
+            # 1. Extraction des données via Flask
+            try:
+                fichier.seek(0)  # Reset file pointer
+                response = requests.post(
+                    'http://localhost:5000/api/extract-document',
+                    files={'file': (fichier.name, fichier, 'application/pdf')},
+                    timeout=30
+                )
+                
+                if response.status_code != 200:
+                    raise ValueError("Échec de l'extraction")
+                    
+                result = response.json()
+                metadata = json.loads(request.POST.get('metadata', '{}'))
+                metadata.update(result['data'])  # Fusion des métadonnées
+                
+            except Exception as e:
+                logger.error(f"Erreur extraction: {str(e)}")
+                metadata = json.loads(request.POST.get('metadata', '{}'))
             
-            if Banque.objects.filter(numero=numero).count() > 0:
-                return JsonResponse({'error': 'Ce numéro de releve existe déjà'}, status=400)
-            
-            releve = Banque(numero=numero)
+            # 2. Création unique dans MongoDB
+            fichier.seek(0)  # Reset pour sauvegarde
+            releve = Banque(
+                numero=metadata.get('numero_releve', f"AUTO-{uuid.uuid4().hex[:8].upper()}"),
+                montant=float(metadata.get('montant', 0)) if metadata.get('montant') else None,
+                date_transaction=datetime.strptime(metadata['date_transaction'], "%Y-%m-%d") if metadata.get('date_transaction') else None,
+                metadata=metadata
+            )
             releve.fichier.put(fichier, content_type='application/pdf', filename=fichier.name)
             releve.save()
             
             return JsonResponse({
                 'id': str(releve.id),
                 'numero': releve.numero,
-                'fichier_url': request.build_absolute_uri(f'/api/banques/{releve.id}/download/'),
-                'filename': fichier.name
+                'metadata': releve.metadata,
+                'fichier_url': request.build_absolute_uri(f'/api/banques/{releve.id}/download/')
             }, status=201)
             
         elif request.method == 'DELETE':
@@ -1943,10 +2221,14 @@ def releve_api(request, id=None):
                 
             releve = Banque.objects.get(id=ObjectId(id))
             releve.delete()
-            return JsonResponse({'message': 'Relevé supprimée'})
+            return JsonResponse({'message': 'Relevé supprimé'})
             
-    except (DoesNotExist, InvalidId):
-        return JsonResponse({'error': 'Relevé non trouvée'}, status=404)
+    except Banque.DoesNotExist:
+        return JsonResponse({'error': 'Relevé non trouvé'}, status=404)
+    except ValidationError as e:
+        return JsonResponse({'error': f'Données invalides: {str(e)}'}, status=400)
+    except ValueError as e:
+        return JsonResponse({'error': f'Format de données incorrect: {str(e)}'}, status=400)
     except Exception as e:
         logger.error(f"Erreur: {str(e)}", exc_info=True)
         return JsonResponse({'error': str(e)}, status=500)
@@ -2285,3 +2567,92 @@ def search_users(request):
             'message': 'Erreur serveur',
             'error_details': str(e)
         }, status=500)
+
+
+
+
+
+from flask import Blueprint, request, jsonify
+from .utils.ocr_utils import extract_text_with_ocr
+from .utils.invoice_parser import extract_invoice_data
+from .utils.bank import extract_bank_statement_data
+from .utils.verifi import verify_payment
+import google.generativeai as genai
+import json
+
+api_blueprint = Blueprint('api', __name__)
+
+
+@csrf_exempt
+@api_blueprint.route('/extract-document', methods=['POST'])
+def extract_document():
+    """Endpoint pour extraire les données d'un seul document"""
+    if 'file' not in request.files:
+        return jsonify(error="Fichier PDF requis"), 400
+    
+    try:
+        file = request.files['file']
+        doc_type = request.form.get('type', 'auto').lower()
+        
+        text = extract_text_with_ocr(file)
+        
+        if doc_type == 'auto':
+            invoice_keywords = ['facture', 'invoice', 'total ttc', 'montant ht', 'tva']
+            bank_keywords = ['relevé', 'statement', 'solde', 'balance', 'transaction']
+            
+            invoice_score = sum(1 for kw in invoice_keywords if kw.lower() in text.lower())
+            bank_score = sum(1 for kw in bank_keywords if kw.lower() in text.lower())
+            
+            doc_type = 'invoice' if invoice_score > bank_score else 'bank'
+        
+        if doc_type == 'invoice':
+            data = extract_invoice_data(text)
+            result_type = "facture"
+        else:
+            data = extract_bank_statement_data(text)
+            result_type = "releve_bancaire"
+        
+        return jsonify({
+            "type": result_type,
+            "text": text[:2000],
+            "data": data
+        })
+    
+    except Exception as e:
+        return jsonify(error=str(e)), 500
+
+@api_blueprint.route('/compare-documents', methods=['POST'])
+def compare_documents():
+    """Endpoint pour comparer une facture et un relevé bancaire"""
+    if not all(k in request.files for k in ('invoice', 'statement')):
+        return jsonify(error="Deux fichiers PDF requis (facture et relevé)"), 400
+    
+    try:
+        invoice_file = request.files['invoice']
+        statement_file = request.files['statement']
+        
+        invoice_text = extract_text_with_ocr(invoice_file)
+        statement_text = extract_text_with_ocr(statement_file)
+        
+        invoice_data = extract_invoice_data(invoice_text)
+        statement_data = extract_bank_statement_data(statement_text)
+        
+        verification = verify_payment(invoice_data, statement_data)
+        
+        analysis = analyze_with_ai(invoice_text, statement_text, invoice_data, statement_data, verification)
+        
+        return jsonify({
+            "invoice": {
+                "text_extract": invoice_text[:1000],
+                "data": invoice_data
+            },
+            "statement": {
+                "text_extract": statement_text[:1000],
+                "data": statement_data
+            },
+            "verification": verification,
+            "analysis": analysis
+        })
+    
+    except Exception as e:
+        return jsonify(error=str(e)), 500

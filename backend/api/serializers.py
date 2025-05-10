@@ -108,18 +108,24 @@ class LoginSerializer(serializers.Serializer):
 class PasswordResetRequestSerializer(serializers.Serializer):
     email = serializers.EmailField()
     role = serializers.ChoiceField(choices=CustomUser.ROLE_CHOICES)
-
+    
     def validate(self, data):
-        email = data['email']
-        role = data['role']
+        email = data.get('email').strip().lower()  # Normalisation
+        role = data.get('role').strip().lower()    # Normalisation
+        
+        print(f"Validation attempt - Email: {email}, Role: {role}")  # Debug
 
         try:
-            user = CustomUser.objects.get(email=email, role=role)
+            user = CustomUser.objects.get(email__iexact=email, role__iexact=role)
+            print(f"User found: {user.email}, Role: {user.role}")  # Debug
+            data['user'] = user
+            return data
         except CustomUser.DoesNotExist:
-            raise serializers.ValidationError("Aucun utilisateur avec cet email et ce rôle.")
-
-        data['user'] = user
-        return data
+            print("No user found with these credentials.")  # Debug
+            raise serializers.ValidationError(
+                {"detail": "Aucun utilisateur trouvé avec cet email et ce rôle."},
+                code='invalid'
+            )
 
 class PasswordResetSerializer(serializers.Serializer):
     token = serializers.CharField()

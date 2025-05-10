@@ -38,9 +38,11 @@ import Calendar from './Components/Calender';
 import FactureDetail from './Components/FactureDetail';
 //import { BrowserRouter, useNavigate, useLocation } from 'react-router-dom';
 import { GoogleOAuthProvider } from '@react-oauth/google';
+
 import { UserProvider } from './Components/UserContext';
 import Banque from './Components/Banque';
 import Rapprochement from './Components/Rapprochement';
+import FacebookCallback from './Components/FacebookCallback';
 // Composant pour vérifier l'authentification globale
 /*function AuthCheck() {
   const navigate = useNavigate();
@@ -70,6 +72,7 @@ function App() {
             <Route path="/forgot-password" element={<ForgotPassword />} />
             <Route path="/reset-password/:token" element={<ResetPassword />} />
             <Route path="/auth/google/callback" element={<Callback />} />
+            <Route path="/auth/facebook/callback" element={<FacebookCallback />} />
             <Route path="/activate/:token" element={<Activatecompte />} />
 
             {/* Routes Dashboard (admin ou général) */}

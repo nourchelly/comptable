@@ -77,7 +77,7 @@ const Dashboard = () => {
       case "/dashboard": return "Tableau de bord";
       case "/dashboard/comptes": return "Gestion des comptes";
       case "/dashboard/profile": return "Profil administrateur";
-      case "/dashboard/validation": return "Validation des demandes";
+      case "/dashboard/validation": return "Supervision des actions";
       case "/dashboard/audit": return "Journal d'audit";
       default: return "";
     }

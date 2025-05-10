@@ -9,68 +9,76 @@ const Callback = () => {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-
+  
   useEffect(() => {
     const authenticateWithGoogle = async () => {
       try {
         const urlParams = new URLSearchParams(window.location.search);
         const code = urlParams.get('code');
         const state = urlParams.get('state');
-
+        
         if (!code) {
           throw new Error("Code d'autorisation manquant");
         }
-
+        
         // Vérification CSRF basique
         const storedState = localStorage.getItem('oauth_state');
         if (state !== storedState) {
           throw new Error("Erreur de sécurité: état invalide");
         }
-
+        
         const response = await axios.post(
-          'http://127.0.0.1:8000/api/auth/google/callback/', 
+          'http://127.0.0.1:8000/api/auth/google/callback/',
           { code, state },
           {
             headers: {
               'Content-Type': 'application/json',
-              //'X-CSRFToken': localStorage.getItem('csrftoken') || ''
             },
             withCredentials: true
           }
         );
-
-        const { token, role, user_id } = response.data;
-
+        
+        const { token, role, user_id, email } = response.data;
         
         // Stockage sécurisé des tokens
         localStorage.setItem("token", token);
-
-        //localStorage.setItem("refresh_token", refresh_token);
         localStorage.setItem("userRole", role);
         localStorage.setItem("userId", user_id);
-
-        // Redirection basée sur le rôle
-        const redirectPaths = {
-          admin: '/dashboard',
-          comptable: '/dashboardcomptable',
-          directeur: '/dashboarddirecteur'
-        };
-
-        navigate(redirectPaths[role] || '/');
+        localStorage.setItem("userEmail", email);
         
+        console.log("Rôle reçu:", role); // Pour débogage
+        
+        // Redirection basée sur le rôle
+        switch(role.toLowerCase()) {
+          case 'admin':
+            navigate('/dashboard');
+            break;
+          case 'comptable':
+            navigate('/dashboardcomptable');
+            break;
+          case 'directeur':
+            navigate('/dashboarddirecteur');
+            break;
+          default:
+            console.log("Rôle non reconnu:", role);
+            navigate('/'); // Redirection par défaut
+            break;
+        }
+        
+        toast.success(`Connexion réussie en tant que ${role}`);
       } catch (err) {
         console.error("Erreur d'authentification Google:", err);
-        setError(err.response?.data?.message || err.message);
+        setError(err.response?.data?.error || err.message);
         toast.error("Échec de la connexion avec Google");
         navigate('/connexion');
       } finally {
         setLoading(false);
       }
     };
-
+    
     authenticateWithGoogle();
   }, [navigate]);
-
+  
   if (loading) {
     return (
       <div className="flex flex-col items-center justify-center min-h-screen">
@@ -79,7 +87,7 @@ const Callback = () => {
       </div>
     );
   }
-
+  
   if (error) {
     return (
       <div className="flex flex-col items-center justify-center min-h-screen">
@@ -95,7 +103,7 @@ const Callback = () => {
       </div>
     );
   }
-
+  
   return null;
 };
 

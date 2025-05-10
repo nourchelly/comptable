@@ -28,7 +28,8 @@ const ForgotPassword = () => {
         try {
             const response = await axios.post(
                 'http://127.0.0.1:8000/api/forgot-password/',
-                { email, role },
+                {   email: email.toLowerCase().trim(),
+                    role: role.toLowerCase().trim()  },
                 { headers: { 'Content-Type': 'application/json' }}
             );
             setMessage(response.data.detail || 'Lien envoyé avec succès');
@@ -115,9 +116,9 @@ const ForgotPassword = () => {
                                     className="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
                                 >
                                     <option value="">Sélectionner un rôle</option>
-                                    <option value="admin">ADMIN</option>
-                                    <option value="directeur">DIRECTEUR</option>
-                                    <option value="comptable">COMPTABLE</option>
+                                    <option value="admin">Administrateur</option>
+                                    <option value="comptable">Comptable</option>
+                                    <option value="directeur">Directeur Financier</option>
                                 </select>
                             </div>
 

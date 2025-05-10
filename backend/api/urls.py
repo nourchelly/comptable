@@ -4,6 +4,9 @@ from django.conf import settings
 #from .views import CustomTokenObtainPairView
 #from rest_framework_simplejwt.views import TokenRefreshView
 from .views import (
+    api_blueprint,
+    extract_document,
+    compare_documents,
     search_users,
     user_stats,
     users_stats,
@@ -18,8 +21,7 @@ from .views import (
     download_releve,
     SignalerCompte,
     activate_account,
-    AdminActionsApi,
-     MesActionsApi,facture_api, download_facture,#serve_facture_file, 
+    facture_api, download_facture,#serve_facture_file, 
     login_view,
     GoogleLogin,
     register_user,
@@ -30,8 +32,7 @@ from .views import (
     google_auth_callback,
     get_csrf,
      # Si tu veux garder cette vue spécifique
-    ComptableProfileView,
-    DeleteProfilView,
+ 
    api_rapports,
    mes_notifications,
    get_unread_count,
@@ -57,9 +58,6 @@ urlpatterns = [
     path("get-csrf/", get_csrf, name="get-csrf"),
     path('auth/facebook/callback/', facebook_auth_callback, name='google_callback'),
     # Gestion des profils et rapports
-    path('profil/', ComptableProfileView.as_view(), name='profilcomptable'),
-    path('profil/delete/<str:user_id>', DeleteProfilView.as_view(), name='deletecomptable'),
-    path('rapports/', api_rapports, name='rapport-list'),
     path('rapports/<str:id>/', api_rapports, name='rapport-detail'),  # ✏️ Modifier un rapport
    
     
@@ -82,8 +80,7 @@ urlpatterns = [
     path('compte/<str:id>/', CompteApi, name='compte_api'),
     path('comptes/', ListeComptes, name='liste_comptes'),
     path('signaler-compte/', SignalerCompte, name='signaler_compte'),
-    path('actions/', AdminActionsApi, name='directeur_actions'),
-    path('mes-actions/', MesActionsApi, name='mes_actions'),
+   
     
     #factures 
     path('factures/', facture_api, name='facture-api'),
@@ -102,7 +99,23 @@ urlpatterns = [
     path('user-stats/', user_stats, name='user_stats'),
      path('users-stats/', users_stats, name='users_stats'),
     path('search/', search_users, name='search_users'),
+    
    # path('media/<path:file_path>', serve_facture_file, name='serve_facture_file'),
 ] + static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
    
-
+def register_routes(blueprint):
+    """Enregistre toutes les routes de l'API"""
+    
+    # Route pour l'extraction d'un seul document
+    blueprint.add_url_rule(
+        '/extract-document',
+        view_func=extract_document,
+        methods=['POST']
+    )
+    
+    # Route pour la comparaison de documents
+    blueprint.add_url_rule(
+        '/compare-documents',
+        view_func=compare_documents,
+        methods=['POST']
+    )

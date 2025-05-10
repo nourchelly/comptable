@@ -301,7 +301,8 @@ EMAIL_HOST = 'smtp.gmail.com'  # Ou votre serveur SMTP
 EMAIL_PORT = 587
 EMAIL_USE_TLS = True
 EMAIL_HOST_USER = 'nourchelly11@gmail.com'
-EMAIL_HOST_PASSWORD = 'lpnu gdil gzzp ddvx'  # Mot de passe d'application pour Gmail
+EMAIL_HOST_PASSWORD = 'lpnu gdil gzzp ddvx' 
+DEFAULT_FROM_EMAIL = 'nourchelly11@gmail.com' # Mot de passe d'application pour Gmail
 
 # Configuration pour la réinitialisation
 PASSWORD_RESET_TIMEOUT = 3600  # 1 heure en secondes
@@ -332,3 +333,7 @@ FILE_UPLOAD_MAX_MEMORY_SIZE = 20971520
 # Configuration GridFS
 DEFAULT_FILE_STORAGE = 'mongoengine.storage.GridFSStorage'
 GRIDFS_DATABASE = 'mydb' 
+# Google OAuth Configuration
+GOOGLE_OAUTH_CLIENT_ID = "11479995049-09n7oceljn4sgmodv5til5uj7bd072jp.apps.googleusercontent.com"  # Votre ID client
+GOOGLE_OAUTH_CLIENT_SECRET = "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"  # Votre secret client
+GOOGLE_OAUTH_REDIRECT_URI = "http://localhost:3000/auth/google/callback"  # Doit correspondre à votre config Google Cloud

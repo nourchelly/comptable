@@ -36,6 +36,10 @@ class CustomUser(Document):
     secondary_emails = ListField(EmailField())  # Pour stocker les emails secondaires
     USERNAME_FIELD = 'email'  # pour l’authentification via email
     EMAIL_FIELD = 'email'  
+    def clean(self):
+        """Normalisation avant sauvegarde"""
+        self.email = self.email.lower().strip()
+        self.role = self.role.lower().strip()
     meta = {
         'collection': 'users',
         'indexes': [
@@ -318,39 +322,17 @@ class DirecteurFinancier(Document):
         return directeur
     
 class Rapport(Document):
-    TYPE_CHOICES = [
-        ('Financier', 'Financier'),
-        ('Bilan', 'Bilan'),
-        ('Trésorerie', 'Trésorerie'),
-        ('Fiscal', 'Fiscal')
-    ]
-    
-    STATUT_CHOICES = [
-        ('En attente', 'En attente'),
-        ('Validé', 'Validé'),
-        ('Rejeté', 'Rejeté'),
-        ('Brouillon', 'Brouillon')
-    ]
-
-    nom = fields.StringField(required=True)
-    type = fields.StringField(choices=TYPE_CHOICES)
-    date = fields.DateTimeField(default=datetime.datetime.now)
-    statut = fields.StringField(choices=STATUT_CHOICES, default='Brouillon')
-    contenu = fields.StringField(required=True)
+    facture_id = fields.StringField(required=True)
     created_at = fields.DateTimeField(default=datetime.datetime.now)
-    updated_at = fields.DateTimeField()
-    validated_at = fields.DateTimeField()
-    facture_id = fields.StringField()  # Référence à la facture associée
-
+    success = fields.BooleanField(default=False)
+    raw_text = fields.StringField(required=True)
+    report = fields.DictField()
+    error = fields.StringField()
+    ai_response = fields.StringField()
+    
     meta = {
-        'collection': 'rapports',
-        'indexes': [
-            'type',
-            'statut',
-            'date',
-            'facture_id',
-            {'fields': ['created_at'], 'expireAfterSeconds': 3600*24*365*2}
-        ]
+        'collection': 'rapport',
+        'indexes': ['facture_id']
     }
 
     def clean(self):
@@ -384,6 +366,7 @@ class AuditFinancier(Document):
     ]
     
     nom = fields.StringField(required=True, max_length=100)
+    user = fields.ReferenceField(CustomUser , required=False, sparse=True)
     type = fields.StringField(choices=TYPE_CHOICES, required=True)
     responsable = fields.StringField(required=True, max_length=100)
     date_debut = fields.DateTimeField(required=True)
@@ -394,16 +377,24 @@ class AuditFinancier(Document):
     observations = fields.ListField(fields.StringField())
 
     meta = {
-        'collection': 'audit_financiers',
-        'indexes': [
-            'nom',
-            'type',
-            'statut',
-            'priorite',
-            {'fields': ['date_debut', 'date_fin'], 'name': 'date_range_idx'}
-        ]
-    }
-
+    'collection': 'audit_financiers',
+    'indexes': [
+        'nom',
+        'type',
+        'statut',
+        'priorite',
+        {'fields': ['date_debut', 'date_fin'], 'name': 'date_range_idx'},
+        {'fields': ['user'], 'name': 'user_idx', 'sparse': True}
+    ]
+}
+    def clean(self):
+        """Validation personnalisée"""
+        # Met à jour le champ derniere_modification à chaque sauvegarde
+        self.derniere_modification = timezone.now()
+        
+        # Vérification de la cohérence des dates
+        if self.date_debut and self.date_fin and self.date_debut > self.date_fin:
+            raise ValidationError("La date de début ne peut pas être postérieure à la date de fin")
     def __str__(self):
         return f"{self.nom} ({self.type}) - {self.statut}"
     
@@ -417,7 +408,7 @@ class Compte(Document):
     comptable = fields.ReferenceField(Comptable, reverse_delete_rule=CASCADE)
     directeur = fields.ReferenceField(DirecteurFinancier, reverse_delete_rule=CASCADE)
     statut = fields.StringField(choices=STATUT_CHOICES, default='Actif')
-    
+    date_creation = fields.DateTimeField(default=datetime.datetime.now)
     # Champs supplémentaires pour le signalement
     motif_signalement = fields.StringField(max_length=200, null=True, blank=True)
     description_signalement = fields.StringField(max_length=1000, null=True, blank=True)
@@ -436,12 +427,19 @@ class Compte(Document):
  
 class ActionLog(Document):
     TYPES_ACTION = [
-        ('ajout_audit', 'Ajout Audit'),
+        ('ajout', 'Ajouter'),
+        ('modification', 'Modifier'),
+        ('suppression', 'Supprimer'),
+        ('consultation', 'Consulter'),
+        ('connexion', 'Connexion'),
+        ('deconnexion', 'Déconnexion'),
+        ('creation', 'Création '),  
+        ('creation_audit', 'Création Audit'),
         ('modification_audit', 'Modification Audit'),
         ('suppression_audit', 'Suppression Audit'),
         ('consultation_audit', 'Consultation Audit'),
-        ('connexion', 'Connexion'),
-        ('deconnexion', 'Déconnexion')
+        ('consultation_liste_audits', 'Consultation Liste Audits')       # Ajouté
+
     ]
     STATUT_CHOICES = ("Terminé", "Échoué")
 
@@ -456,7 +454,7 @@ class ActionLog(Document):
     
     meta = {
         'ordering': ['-date_action'],  # Sort by newest first
-        'collection': 'action_logs'
+        'collection': 'actions'
     }
     def get_type_action_display(self):
         return dict(self.TYPES_ACTION).get(self.type_action, self.type_action)
@@ -469,13 +467,24 @@ def facture_upload_path(instance, filename):
     return os.path.join('factures', filename)
 
 class Facture(Document):
-    numero = fields.StringField(required=True, unique=True)
+    user = ReferenceField('CustomUser', required=False, sparse=True)
+    numero = fields.StringField(required=False)  # Changé à required=False
+    montant_total = fields.FloatField()
+    date_emission = fields.DateTimeField()
+    emetteur = fields.StringField()
+    destinataire = fields.StringField()
+    ligne_details = ListField(fields.DictField())
     fichier = fields.FileField()
+    metadata = fields.DictField()  # Nouveau champ pour les données brutes
     created_at = fields.DateTimeField(default=datetime.datetime.now)
+    rapport_id = fields.StringField()
     
     meta = {
         'collection': 'factures',
-        'indexes': ['numero']
+        'indexes': [
+            {'fields': ['numero'], 'unique': True, 'sparse': True},  # sparse=True permet plusieurs null
+            {'fields': ['user'], 'name': 'user_idx', 'sparse': True}
+        ]
     }
 
     @property
@@ -489,13 +498,23 @@ class Facture(Document):
         return None
 
 class Banque(Document):
-    numero = fields.StringField(required=True, unique=True)
+    numero = fields.StringField(required=False)  # Numéro de transaction
+    montant = fields.FloatField()  # Montant de la transaction
+    date_transaction = fields.DateTimeField()  # Date de la transaction
+    description = fields.StringField()  # Description de la transaction
+    solde = fields.FloatField()  # Solde bancaire après la transaction
     fichier = fields.FileField()
+    metadata = fields.DictField()   # Fichier PDF du relevé bancaire
     created_at = fields.DateTimeField(default=datetime.datetime.now)
-    
     meta = {
         'collection': 'banques',
-        'indexes': ['numero']
+        'indexes': [
+            {
+                'fields': ['numero'],
+                'unique': False,  # Explicitement non unique
+                'name': 'numero_index'  # Nom personnalisé
+            }
+        ]
     }
 
     @property
