@@ -1,516 +1,650 @@
-import React, { useState, useEffect } from 'react';
-import { 
-  FaFileAlt, FaSyncAlt, FaFilter, FaDownload, 
-  FaRobot, FaChartBar, FaExclamationTriangle,
-  FaSpinner, FaCheckCircle, FaTimesCircle
+import React, { useState, useEffect, useCallback } from 'react';
+import {
+  FaFileAlt, FaSyncAlt, FaSpinner,
+  FaRobot, FaExclamationTriangle,
+  FaFileInvoice, FaLandmark, FaCheckCircle,
+  FaEdit, FaSave, FaTimes, FaSearch
 } from 'react-icons/fa';
 import axios from 'axios';
 import { toast } from "react-toastify";
+import DataDisplay from './DataDisplay'; 
+import AnomalyCorrection from './AnomalyCorrection';
 
-const Rapprochements = () => {
-  // États
-  const [reports, setReports] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [filters, setFilters] = useState({
-    dateRange: 'last30days',
-    status: 'all',
-    type: 'all'
-  });
-  const [aiInsights, setAiInsights] = useState(null);
-  const [files, setFiles] = useState({
-    invoice: null,
-    statement: null
-  });
-  const [comparisonResult, setComparisonResult] = useState(null);
-  const [isComparing, setIsComparing] = useState(false);
-  const [error, setError] = useState(null);
+// ... (Vos composants DataDisplay et AnomalyCorrection restent inchangés)
 
-  // Charger les rapports
+// Composant ReconciliationEditModal (inchangé)
+const ReconciliationEditModal = ({
+  reconciliation,
+  onSave,
+  onCancel,
+  isLoading
+}) => {
+  const [corrections, setCorrections] = useState([]);
+  const [comments, setComments] = useState('');
+
+  const anomalies = reconciliation?.anomalies || [];
+
   useEffect(() => {
-    fetchReports();
-  }, [filters]);
+    const initialCorrections = anomalies.map((anomaly, index) => ({
+      anomalyId: anomaly.id || `temp-${index}`,
+      type: anomaly.type || 'inconnu',
+      field: anomaly.field || 'champ_inconnu',
+      value: anomaly.expectedValue || '',
+      originalValue: anomaly.originalValue || 'N/A',
+      expectedValue: anomaly.expectedValue || 'N/A',
+      message: anomaly.message || 'Anomalie non spécifiée'
+    }));
 
-  const fetchReports = async () => {
-    setLoading(true);
+    setCorrections(initialCorrections);
+    setComments(reconciliation?.report?.metadata?.commentaires || '');
+  }, [reconciliation, anomalies]);
+
+  const handleCorrectionChange = useCallback((index, correction) => {
+    setCorrections(prev => {
+      const newCorrections = [...prev];
+      newCorrections[index] = correction;
+      return newCorrections;
+    });
+  }, []);
+
+  const handleSubmit = useCallback(() => {
+    onSave({
+      corrections: corrections.filter(c => c && c.value),
+      comments
+    });
+  }, [corrections, comments, onSave]);
+
+  return (
+    <div className="fixed inset-0 bg-gray-500 bg-opacity-75 flex items-center justify-center p-4 z-50">
+      <div className="bg-white rounded-lg shadow-xl p-6 w-full max-w-4xl max-h-[90vh] overflow-y-auto">
+        <div className="flex justify-between items-center mb-4">
+          <h2 className="text-xl font-semibold text-gray-800 flex items-center">
+            <FaEdit className="mr-2 text-yellow-500" />
+            Ajuster le Rapprochement #{reconciliation.id}
+          </h2>
+          <button
+            onClick={onCancel}
+            className="text-gray-500 hover:text-gray-700"
+          >
+            <FaTimes />
+          </button>
+        </div>
+
+        <div className="mb-6">
+          <h3 className="text-lg font-medium text-gray-700 mb-3">
+            Anomalies à corriger ({anomalies.length})
+          </h3>
+
+          {anomalies.length > 0 ? (
+            anomalies.map((anomaly, index) => (
+              <AnomalyCorrection
+                key={anomaly.id || `anomaly-${index}`}
+                anomaly={anomaly}
+                index={index}
+                corrections={corrections}
+                onCorrectionChange={handleCorrectionChange}
+              />
+            ))
+          ) : (
+            <div className="p-4 bg-yellow-50 border border-yellow-200 rounded">
+              <p className="text-yellow-800 flex items-center">
+                <FaExclamationTriangle className="mr-2" />
+                Aucune anomalie trouvée dans ce rapprochement
+              </p>
+            </div>
+          )}
+        </div>
+
+        <div className="mb-6">
+          <label htmlFor="correctionComments" className="block text-sm font-medium text-gray-700 mb-2">
+            Commentaires sur les corrections
+          </label>
+          <textarea
+            id="correctionComments"
+            rows={3}
+            className="w-full rounded-md border border-gray-300 py-2 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            value={comments}
+            onChange={(e) => setComments(e.target.value)}
+            placeholder="Ajoutez des commentaires sur les corrections apportées..."
+          />
+        </div>
+
+        <div className="flex justify-end gap-2">
+          <button
+            onClick={onCancel}
+            className="px-4 py-2 bg-gray-200 hover:bg-gray-300 text-gray-800 rounded-md"
+          >
+            Annuler
+          </button>
+          <button
+            onClick={handleSubmit}
+            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md flex items-center"
+            disabled={isLoading}
+          >
+            {isLoading ? (
+              <FaSpinner className="animate-spin mr-2" />
+            ) : (
+              <FaSave className="mr-2" />
+            )}
+            Sauvegarder les corrections
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// Composant principal Rapprochements
+const Rapprochements = () => {
+  // États pour les données
+  const [facturesImportees, setFacturesImportees] = useState([]);
+  const [relevesImportees, setRelevesImportees] = useState([]);
+  const [reconciliations, setReconciliations] = useState([]);
+  const [selectedReconciliation, setSelectedReconciliation] = useState(null);
+  const [editingReconciliation, setEditingReconciliation] = useState(null);
+
+  // États pour la sélection et le chargement
+  const [selectedFactureId, setSelectedFactureId] = useState(null);
+  const [selectedReleveId, setSelectedReleveId] = useState(null);
+  const [loading, setLoading] = useState({
+    factures: true,
+    releves: true,
+    reconciliations: true,
+    comparing: false,
+    saving: false // Ajout d'un état de chargement pour la sauvegarde des corrections
+  });
+
+  // Charger les factures et relevés
+  useEffect(() => {
+    const fetchInitialData = async () => {
+      try {
+        const [facturesResponse, relevesResponse] = await Promise.all([
+          axios.get('http://localhost:8000/api/factures/', { withCredentials: true }),
+          axios.get('http://localhost:8000/api/banques/', { withCredentials: true })
+        ]);
+
+        setFacturesImportees(facturesResponse.data || []);
+        setRelevesImportees(relevesResponse.data || []);
+      } catch (error) {
+        toast.error("Erreur lors du chargement des fichiers");
+      } finally {
+        setLoading(prev => ({ ...prev, factures: false, releves: false }));
+      }
+    };
+
+    fetchInitialData();
+  }, []);
+
+  // Charger les reconciliations
+  const fetchReconciliations = useCallback(async () => {
+    setLoading(prev => ({ ...prev, reconciliations: true }));
     try {
-      const response = await axios.get('/api/reconciliation-reports', {
-        params: filters,
+      const response = await axios.get('http://localhost:5000/api/reconciliations', {
         withCredentials: true
       });
-      setReports(response.data);
-      analyzeWithAI(response.data);
-    } catch (error) {
-      console.error("Erreur:", error);
+
+      const dataWithLoadingState = (response.data.data || []).map(rec => ({
+        ...rec,
+        loadingValidation: false,
+        loadingAdjustment: false
+      }));
+
+      setReconciliations(dataWithLoadingState);
+    } catch (err) {
+      toast.error('Erreur lors du chargement des rapprochements');
     } finally {
-      setLoading(false);
+      setLoading(prev => ({ ...prev, reconciliations: false }));
     }
-  };
+  }, []);
 
-  const analyzeWithAI = async (data) => {
-    try {
-      const response = await axios.post('/api/ai/analyze-reconciliation', {
-        transactions: data
-      });
-      setAiInsights(response.data.insights);
-    } catch (error) {
-      console.error("Erreur AI:", error);
-    }
-  };
+  useEffect(() => {
+    fetchReconciliations();
+  }, [fetchReconciliations]);
 
-  const generateReport = async () => {
-    setLoading(true);
-    try {
-      await axios.post('/api/generate-reconciliation');
-      fetchReports();
-    } catch (error) {
-      console.error("Erreur génération:", error);
-    }
-  };
-
-  const handleCompareDocuments = async () => {
-    if (!files.invoice || !files.statement) {
-      setError('Veuillez sélectionner les deux fichiers');
+  // Effectuer un rapprochement
+const handleCompareDocuments = useCallback(async () => {
+    if (!selectedFactureId || !selectedReleveId) {
+      toast.error("Veuillez sélectionner une facture et un relevé");
       return;
     }
-  
-    setError(null);
-    setIsComparing(true);
-    
-    const formData = new FormData();
-    formData.append('invoice', files.invoice);
-    formData.append('statement', files.statement);
-    
-    // Afficher les informations des fichiers pour le débogage
-    console.log("Fichiers à comparer:", {
-      invoice: {
-        name: files.invoice.name,
-        type: files.invoice.type,
-        size: files.invoice.size
-      },
-      statement: {
-        name: files.statement.name,
-        type: files.statement.type,
-        size: files.statement.size
-      }
-    });
-  
-    try {
-      toast.info("Comparaison en cours...", { autoClose: false, toastId: "comparison" });
-      
-      // IMPORTANT: Supprimé withCredentials: true et gardé la même configuration que pour l'extraction
-      const response = await axios.post('http://localhost:5000/api/compare-documents', formData, {
-        headers: {
-          'Content-Type': 'multipart/form-data'
-        }
-      });
-      
-      toast.dismiss("comparison");
-      toast.success("Comparaison effectuée avec succès!");
-      
-      console.log("Résultat de la comparaison:", response.data);
-      setComparisonResult(response.data);
-    } catch (err) {
-      toast.dismiss("comparison");
-      toast.error("Erreur lors de la comparaison des documents");
-      
-      console.error("Erreur détaillée:", {
-        message: err.message,
-        status: err.response?.status,
-        statusText: err.response?.statusText,
-        data: err.response?.data,
-      });
-      
-      setError(err.response?.data?.error || 'Une erreur est survenue lors de la comparaison');
-    } finally {
-      setIsComparing(false);
-    }
-  };
 
-  const clearComparison = () => {
-    setFiles({ invoice: null, statement: null });
-    setComparisonResult(null);
-    setError(null);
+    setLoading(prev => ({ ...prev, comparing: true }));
+    const toastId = toast.loading("Rapprochement en cours...");
+
+    try {
+      const selectedFacture = facturesImportees.find(f => f.id == selectedFactureId);
+      const selectedReleve = relevesImportees.find(r => r.id == selectedReleveId);
+
+      const formData = new FormData();
+      formData.append('invoice', await fetchFile(selectedFacture.fichier_url, selectedFacture.filename));
+      formData.append('statement', await fetchFile(selectedReleve.fichier_url, selectedReleve.filename));
+      formData.append('facture_id', selectedFactureId);
+      formData.append('banque_id', selectedReleveId);
+
+      console.log('Début de la requête de rapprochement...'); // Ajout de ce log
+
+      const response = await axios.post('http://localhost:5000/api/compare-documents', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+        withCredentials: true
+      });
+
+      console.log('Réponse reçue:', response); // Ajout de ce log
+
+      if (response.status === 200) {
+        console.log('Statut 200 détecté'); // Ajout de ce log
+        toast.success("Rapprochement effectué avec succès!", { id: toastId });
+        fetchReconciliations();
+      } else {
+        console.log('Statut non 200:', response.status); // Ajout de ce log
+        toast.error("Le rapprochement a rencontré une erreur.", { id: toastId });
+      }
+    } catch (error) {
+      console.error('Erreur lors du rapprochement:', error); // Log de l'erreur complète
+      toast.error(error.response?.data?.message || "Erreur lors du rapprochement", { id: toastId });
+    } finally {
+      setLoading(prev => ({ ...prev, comparing: false }));
+      toast.dismiss(toastId); // S'assurer que le toast de chargement disparaît toujours
+    }
+  }, [selectedFactureId, selectedReleveId, facturesImportees, relevesImportees, fetchReconciliations]);
+
+  // Valider un rapprochement
+  const handleValidateReconciliation = useCallback(async (reconciliationId) => {
+    setReconciliations(prev => prev.map(rec =>
+      rec.id === reconciliationId
+        ? { ...rec, loadingValidation: true }
+        : rec
+    ));
+    const toastId = toast.loading("Validation en cours...");
+
+    try {
+      const response = await axios.patch(
+        `http://localhost:5000/api/reconciliations/${reconciliationId}`,
+        { report: { metadata: { statut: 'Validé', date_validation: new Date().toISOString() } } },
+        { withCredentials: true }
+      );
+
+      if (response.status === 200) {
+        toast.success(`Le rapprochement #${reconciliationId} a été validé.`, { id: toastId });
+        setReconciliations(prev => prev.map(rec =>
+          rec.id === reconciliationId
+            ? {
+                ...rec,
+                report: {
+                  ...rec.report,
+                  metadata: {
+                    ...rec.report?.metadata,
+                    statut: 'Validé',
+                    date_validation: new Date().toISOString()
+                  }
+                },
+                loadingValidation: false
+              }
+            : rec
+        ));
+      } else {
+        toast.error(`Erreur lors de la validation du rapprochement #${reconciliationId}.`, { id: toastId });
+        setReconciliations(prev => prev.map(rec =>
+          rec.id === reconciliationId
+            ? { ...rec, loadingValidation: false }
+            : rec
+        ));
+      }
+    } catch (error) {
+      toast.error(error.response?.data?.message || "Erreur lors de la validation.", { id: toastId });
+      setReconciliations(prev => prev.map(rec =>
+        rec.id === reconciliationId
+          ? { ...rec, loadingValidation: false }
+          : rec
+      ));
+    } finally {
+      toast.dismiss(toastId);
+    }
+  }, []);
+
+  // Sauvegarder les corrections
+  const handleSaveCorrections =useCallback(async ({ corrections, comments }) => {
+    if (!editingReconciliation) return;
+
+    const reconciliationId = editingReconciliation.id;
+    setLoading(prev => ({ ...prev, saving: true })); // Activer l'état de chargement de la sauvegarde
+    const toastId = toast.loading("Sauvegarde des corrections en cours...");
+
+    try {
+      const response = await axios.post(
+        `http://localhost:5000/api/reconciliations/${reconciliationId}/correct`,
+        {
+          corrections,
+          metadata: {
+            statut: 'Ajusté',
+            commentaires: comments,
+            date_ajustement: new Date().toISOString(),
+            corrections_appliquees: true
+          }
+        },
+        { withCredentials: true }
+      );
+
+      if (response.status === 200) {
+        toast.success(`Le rapprochement #${reconciliationId} a été ajusté avec succès.`, { id: toastId });
+        setReconciliations(prev => prev.map(rec =>
+          rec.id === reconciliationId
+            ? {
+                ...rec,
+                report: {
+                  ...rec.report,
+                  metadata: {
+                    ...rec.report?.metadata,
+                    statut: 'Ajusté',
+                    commentaires: comments,
+                    date_ajustement: new Date().toISOString(),
+                    corrections_appliquees: true
+                  }
+                },
+                loadingAdjustment: false
+              }
+            : rec
+        ));
+        setEditingReconciliation(null);
+      } else {
+        toast.error(`Erreur lors de la sauvegarde des corrections pour le rapprochement #${reconciliationId}.`, { id: toastId });
+        setReconciliations(prev => prev.map(rec =>
+          rec.id === reconciliationId
+            ? { ...rec, loadingAdjustment: false }
+            : rec
+        ));
+      }
+    } catch (error) {
+      toast.error(error.response?.data?.message || "Erreur lors de la sauvegarde des corrections.", { id: toastId });
+      setReconciliations(prev => prev.map(rec =>
+        rec.id === reconciliationId
+          ? { ...rec, loadingAdjustment: false }
+          : rec
+      ));
+    } finally {
+      setLoading(prev => ({ ...prev, saving: false })); // Désactiver l'état de chargement de la sauvegarde
+      toast.dismiss(toastId);
+    }
+  }, [editingReconciliation]);
+
+  // Fonction utilitaire pour récupérer les fichiers
+  const fetchFile = async (url, filename) => {
+    const response = await fetch(url);
+    if (!response.ok) throw new Error("Échec du téléchargement");
+    const blob = await response.blob();
+    return new File([blob], filename);
   };
 
   return (
-    <div className="container mx-auto p-6">
+    <div className="container mx-auto p-4 md:p-6">
       <header className="mb-8">
-        <h1 className="text-3xl font-bold flex items-center">
+        <h1 className="text-2xl md:text-3xl font-bold flex items-center">
           <FaFileAlt className="mr-3 text-blue-600" />
           Rapprochements Bancaires
         </h1>
-        <p className="text-gray-600">Rapports générés par intelligence artificielle</p>
+        <p className="text-gray-600">Comparez les factures et relevés bancaires</p>
       </header>
 
-      {/* Section de comparaison manuelle */}
-      <div className="bg-white rounded-lg shadow-md p-6 mb-6 border border-gray-200">
-        <h2 className="text-xl font-semibold flex items-center mb-4 text-gray-800">
-          <FaFileAlt className="mr-2 text-blue-600" />
-          Comparaison Manuelle
-        </h2>
+      <div className="space-y-8">
+        {/* Section de rapprochement */}
+        <section className="bg-white rounded-xl shadow-md p-6 md:p-8">
+          <div className="mb-6">
+            <h2 className="text-xl font-semibold text-gray-800 mb-2 flex items-center">
+              <FaRobot className="mr-2 text-purple-500" />
+              Nouveau Rapprochement
+            </h2>
+            <p className="text-gray-600 text-sm">
+              Sélectionnez une facture et un relevé bancaire pour effectuer un rapprochement
+            </p>
+          </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Facture (PDF)
-              {files.invoice && (
-                <span className="ml-2 text-green-600 text-sm font-normal">
-                  ✓ {files.invoice.name}
-                </span>
-              )}
-            </label>
-            <input
-              type="file"
-              accept=".pdf"
-              onChange={(e) => setFiles({...files, invoice: e.target.files[0]})}
-              className="block w-full text-sm text-gray-500
-                file:mr-4 file:py-2 file:px-4
-                file:rounded-md file:border-0
-                file:text-sm file:font-semibold
-                file:bg-blue-50 file:text-blue-700
-                hover:file:bg-blue-100"
+          <div className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center">
+                  <FaFileInvoice className="mr-2 text-blue-500" />
+                  Facture
+                </label>
+                <select
+                  value={selectedFactureId || ''}
+                  onChange={(e) => setSelectedFactureId(e.target.value || null)}
+                  className="w-full rounded-md border border-gray-300 py-2 px-3 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  disabled={loading.factures}
+                >
+                  <option value="">-- Sélectionner --</option>
+                  {loading.factures && <option disabled>Chargement...</option>}
+                  {facturesImportees.map(facture => (
+                    <option key={facture.id} value={facture.id}>
+                      {facture.filename}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center">
+                  <FaLandmark className="mr-2 text-green-500" />
+                  Relevé bancaire
+                </label>
+                <select
+                  value={selectedReleveId || ''}
+                  onChange={(e) => setSelectedReleveId(e.target.value || null)}
+                  className="w-full rounded-md border border-gray-300 py-2 px-3 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  disabled={loading.releves}
+                >
+                  <option value="">-- Sélectionner --</option>
+                  {loading.releves && <option disabled>Chargement...</option>}
+                  {relevesImportees.map(releve => (
+                    <option key={releve.id} value={releve.id}>
+                      {releve.filename}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap gap-3 pt-2">
+              <button
+                onClick={handleCompareDocuments}
+                disabled={!selectedFactureId || !selectedReleveId || loading.comparing}
+                className={`px-4 py-2 rounded-md flex items-center ${
+                  !selectedFactureId || !selectedReleveId || loading.comparing
+                    ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                    : 'bg-blue-600 hover:bg-blue-700 text-white'
+                }`}
+              >
+                {loading.comparing ? (
+                  <>
+                    <FaSpinner className="animate-spin mr-2" />
+                    Traitement...
+                  </>
+                ) : (
+                  <>
+                    <FaSyncAlt className="mr-2" />
+                    Lancer le rapprochement
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </section>
+
+        {/* Liste des Rapprochements */}
+        <section className="bg-white shadow-md rounded-lg overflow-hidden">
+          <h2 className="px-6 py-3 bg-gray-50 text-left text-lg font-semibold text-gray-700">
+            Liste des Rapprochements
+          </h2>
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-gray-200">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Facture
+                  </th>
+                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Banque
+                  </th>
+                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Date
+                  </th>
+                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Statut
+                  </th>
+                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Anomalies
+                  </th>
+                  <th scope="col" className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Actions
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
+                {loading.reconciliations ? (
+                  <tr>
+                    <td colSpan={6} className="px-6 py-4 text-center">
+                      <div className="flex justify-center items-center">
+                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
+                      </div>
+                    </td>
+                  </tr>
+                ) : reconciliations.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="px-6 py-4 text-center text-gray-500">
+                      Aucun rapprochement trouvé
+                    </td>
+                  </tr>
+                ) : (
+                  reconciliations.map(reconciliation => (
+                    <tr key={reconciliation.id}>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                        {reconciliation.facture?.numero || 'N/A'}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        {reconciliation.banque?.nom || 'N/A'}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        {new Date(reconciliation.date).toLocaleDateString()}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        <span className={`px-2 py-1 rounded ${
+                          reconciliation.report?.metadata?.statut === 'Validé'
+                            ? 'bg-green-100 text-green-800'
+                            : reconciliation.report?.metadata?.statut === 'Ajusté'
+                              ? 'bg-yellow-100 text-yellow-800'
+                              : 'bg-gray-100 text-gray-800'
+                        }`}>
+                          {reconciliation.report?.metadata?.statut || 'En attente'}
+                        </span>
+                        {reconciliation.report?.metadata?.statut === 'Validé' && (
+                          <FaCheckCircle className="inline-block ml-1 text-green-500" />
+                        )}
+                      </td>
+                      <td className="px-6 py-4 text-sm text-gray-500">
+                        {reconciliation.anomalies && reconciliation.anomalies.length > 0 ? (
+                          <span className="px-2 inline-flex ... bg-red-100 ...">
+                            {reconciliation.anomalies.length} anomalie(s)
+                          </span>
+                        ) : (
+                          <span className="px-2 inline-flex ... bg-green-100 ...">
+                            Aucune
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                        <button
+                          onClick={() => setSelectedReconciliation(reconciliation)}
+                          className="text-indigo-600 hover:text-indigo-900 mr-2"
+                        >
+                          <FaSearch className="inline-block mr-1" />
+                          Détails
+                        </button>
+
+                        {(() => {
+                          const statut = reconciliation.report?.metadata?.statut || 'En attente';
+
+                          if (statut === 'Validé') {
+                            return null;
+                          }
+
+                          if (reconciliation.anomalies && reconciliation.anomalies.length > 0) {
+                            return (
+                              <button
+                                onClick={() => setEditingReconciliation(reconciliation)}
+                                className="text-yellow-600 hover:text-yellow-900 mr-2 px-3 py-1 bg-yellow-50 border border-yellow-200 rounded-md"
+                              >
+                                <FaEdit className="inline-block mr-1" />
+                                Ajuster
+                              </button>
+                            );
+                          }
+
+                          return (
+                            <button
+                              onClick={() => handleValidateReconciliation(reconciliation.id)}
+                              className="text-green-600 hover:text-green-900 px-3 py-1 bg-green-50 border border-green-200 rounded-md"
+                              disabled={reconciliation.loadingValidation}
+                            >
+                              {reconciliation.loadingValidation ? (
+                                <FaSpinner className="animate-spin inline-block mr-1" />
+                              ) : (
+                                <FaCheckCircle className="inline-block mr-1" />
+                              )}
+                              Valider
+                            </button>
+                          );
+                        })()}
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        {/* Détails de la réconciliation sélectionnée */}
+        {selectedReconciliation && (
+          <section className="bg-white rounded-xl shadow-md p-6 md:p-8">
+            <h2 className="text-xl font-semibold text-gray-800 mb-4 flex items-center">
+              <FaFileAlt className="mr-2 text-indigo-500" />
+              Détails du Rapprochement #{selectedReconciliation.id}
+            </h2>
+            <DataDisplay
+              title={`Facture: ${selectedReconciliation.facture?.numero || 'N/A'}`}
+              data={selectedReconciliation.facture}
+              type="invoice"
+              anomalies={selectedReconciliation.anomalies?.filter(a => a.type === 'facture')}
             />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Relevé Bancaire (PDF)
-              {files.statement && (
-                <span className="ml-2 text-green-600 text-sm font-normal">
-                  ✓ {files.statement.name}
-                </span>
-              )}
-            </label>
-            <input
-              type="file"
-              accept=".pdf"
-              onChange={(e) => setFiles({...files, statement: e.target.files[0]})}
-              className="block w-full text-sm text-gray-500
-                file:mr-4 file:py-2 file:px-4
-                file:rounded-md file:border-0
-                file:text-sm file:font-semibold
-                file:bg-blue-50 file:text-blue-700
-                hover:file:bg-blue-100"
+            <div className="my-4" />
+            <DataDisplay
+              title={`Relevé Bancaire: ${selectedReconciliation.banque?.nom || 'N/A'}`}
+              data={selectedReconciliation.banque}
+              type="statement"
+              anomalies={selectedReconciliation.anomalies?.filter(a => a.type === 'releve')}
             />
-          </div>
-        </div>
-
-        {error && (
-          <div className="mb-4 p-3 bg-red-50 text-red-700 rounded-md flex items-center">
-            <FaTimesCircle className="mr-2" />
-            {error}
-          </div>
+            <div className="my-4" />
+            <DataDisplay
+              title="Rapport Complet"
+              data={selectedReconciliation.report}
+              anomalies={selectedReconciliation.anomalies}
+            />
+            <button
+              onClick={() => setSelectedReconciliation(null)}
+              className="mt-4 px-4 py-2 bg-gray-200 hover:bg-gray-300 text-gray-800 rounded-md"
+            >
+              Fermer les détails
+            </button>
+          </section>
         )}
 
-        <div className="flex gap-3">
-          <button
-            onClick={handleCompareDocuments}
-            disabled={isComparing || !files.invoice || !files.statement}
-            className={`px-4 py-2 rounded-lg flex items-center ${
-              isComparing || !files.invoice || !files.statement
-                ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                : 'bg-blue-600 hover:bg-blue-700 text-white'
-            }`}
-          >
-            {isComparing ? (
-              <>
-                <FaSpinner className="animate-spin mr-2" />
-                Comparaison en cours...
-              </>
-            ) : (
-              <>
-                <FaSyncAlt className="mr-2" />
-                Comparer les documents
-              </>
-            )}
-          </button>
-
-          {comparisonResult && (
-            <button
-              onClick={clearComparison}
-              className="px-4 py-2 bg-gray-200 hover:bg-gray-300 text-gray-800 rounded-lg flex items-center"
-            >
-              Effacer
-            </button>
-          )}
-        </div>
-      </div>
-
-      {/* Affichage des résultats */}
-      {comparisonResult && (
-        <div className="bg-white rounded-lg shadow-md p-6 mb-6 border border-gray-200">
-          <h2 className="text-xl font-semibold mb-4 text-gray-800">Résultats de la comparaison</h2>
-          
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-            {/* Données de la facture */}
-            <div className="border border-gray-200 rounded-lg p-4">
-              <h3 className="font-medium text-lg mb-3 flex items-center text-blue-700">
-                <FaFileAlt className="mr-2" />
-                Données de la facture
-              </h3>
-              {comparisonResult.invoice_anomalies?.length > 0 && (
-                <div className="mb-3">
-                  <h4 className="font-medium text-red-600 flex items-center">
-                    <FaExclamationTriangle className="mr-1" />
-                    Anomalies détectées:
-                  </h4>
-                  <ul className="list-disc pl-5 text-sm text-red-600">
-                    {comparisonResult.invoice_anomalies.map((anomaly, index) => (
-                      <li key={index}>{anomaly}</li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-              <div className="bg-gray-50 p-3 rounded overflow-auto max-h-80">
-                <pre className="text-xs md:text-sm">
-                  {JSON.stringify(comparisonResult.invoice_data || {}, null, 2)}
-                </pre>
-              </div>
-            </div>
-
-            {/* Données du relevé */}
-            <div className="border border-gray-200 rounded-lg p-4">
-              <h3 className="font-medium text-lg mb-3 flex items-center text-green-700">
-                <FaFileAlt className="mr-2" />
-                Données du relevé
-              </h3>
-              {comparisonResult.statement_anomalies?.length > 0 && (
-                <div className="mb-3">
-                  <h4 className="font-medium text-red-600 flex items-center">
-                    <FaExclamationTriangle className="mr-1" />
-                    Anomalies détectées:
-                  </h4>
-                  <ul className="list-disc pl-5 text-sm text-red-600">
-                    {comparisonResult.statement_anomalies.map((anomaly, index) => (
-                      <li key={index}>{anomaly}</li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-              <div className="bg-gray-50 p-3 rounded overflow-auto max-h-80">
-                <pre className="text-xs md:text-sm">
-                  {JSON.stringify(comparisonResult.statement_data || {}, null, 2)}
-                </pre>
-              </div>
-            </div>
-          </div>
-
-          {/* Résultats du rapprochement */}
-          <div className="border border-gray-200 rounded-lg p-4 mb-6">
-            <h3 className="font-medium text-lg mb-3 flex items-center text-purple-700">
-              <FaChartBar className="mr-2" />
-              Résultats du rapprochement
-            </h3>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-              <div className={`p-3 rounded-lg ${
-                comparisonResult.verification?.paiement_trouve 
-                  ? 'bg-green-100 text-green-800' 
-                  : 'bg-red-100 text-red-800'
-              }`}>
-                <p className="font-medium">Paiement trouvé:</p>
-                <p>{comparisonResult.verification?.paiement_trouve ? 'Oui' : 'Non'}</p>
-              </div>
-              <div className={`p-3 rounded-lg ${
-                comparisonResult.verification?.montant_correspond 
-                  ? 'bg-green-100 text-green-800' 
-                  : 'bg-red-100 text-red-800'
-              }`}>
-                <p className="font-medium">Montant correspond:</p>
-                <p>{comparisonResult.verification?.montant_correspond ? 'Oui' : 'Non'}</p>
-              </div>
-              <div className={`p-3 rounded-lg ${
-                comparisonResult.verification?.date_correspond 
-                  ? 'bg-green-100 text-green-800' 
-                  : 'bg-red-100 text-red-800'
-              }`}>
-                <p className="font-medium">Date correspond:</p>
-                <p>{comparisonResult.verification?.date_correspond ? 'Oui' : 'Non'}</p>
-              </div>
-            </div>
-            
-            {comparisonResult.verification?.anomalies?.length > 0 ? (
-              <div className="bg-yellow-50 p-3 rounded">
-                <h4 className="font-medium text-yellow-800 flex items-center">
-                  <FaExclamationTriangle className="mr-2" />
-                  Anomalies détectées:
-                </h4>
-                <ul className="list-disc pl-5 text-sm text-yellow-800">
-                  {comparisonResult.verification.anomalies.map((anomaly, index) => (
-                    <li key={index}>{anomaly}</li>
-                  ))}
-                </ul>
-              </div>
-            ) : (
-              <div className="bg-green-50 p-3 rounded text-green-800">
-                Aucune anomalie détectée dans le rapprochement
-              </div>
-            )}
-          </div>
-
-          {/* Analyse IA */}
-          <div className="bg-blue-50 rounded-lg p-4 border border-blue-200">
-            <h3 className="font-medium text-lg mb-3 flex items-center text-blue-800">
-              <FaRobot className="mr-2" />
-              Analyse Intelligente
-            </h3>
-            <div className="whitespace-pre-line text-sm bg-white p-3 rounded border border-blue-100">
-              {comparisonResult.analysis || "Aucune analyse disponible"}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Contrôles principaux */}
-      <div className="bg-white rounded-lg shadow-md p-6 mb-6">
-        <div className="flex flex-wrap justify-between items-center gap-4">
-          <button 
-            onClick={generateReport}
-            className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg flex items-center"
-            disabled={loading}
-          >
-            <FaSyncAlt className={`mr-2 ${loading ? 'animate-spin' : ''}`} />
-            {loading ? 'Génération...' : 'Nouveau Rapprochement'}
-          </button>
-          
-          <div className="flex gap-3">
-            <select 
-              value={filters.dateRange}
-              onChange={(e) => setFilters({...filters, dateRange: e.target.value})}
-              className="border rounded-lg px-3 py-2"
-            >
-              <option value="last7days">7 derniers jours</option>
-              <option value="last30days">30 derniers jours</option>
-              <option value="last90days">90 derniers jours</option>
-              <option value="custom">Période personnalisée</option>
-            </select>
-            
-            <button className="border rounded-lg px-4 py-2 flex items-center">
-              <FaFilter className="mr-2" /> Filtres
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* Insights AI */}
-      {aiInsights && (
-        <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg shadow-md p-6 mb-6">
-          <h2 className="text-xl font-semibold flex items-center mb-4">
-            <FaRobot className="mr-2 text-indigo-600" />
-            Analyse Intelligente
-          </h2>
-          
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {/* Carte Statistiques */}
-            <div className="bg-white p-4 rounded-lg shadow-sm">
-              <h3 className="font-medium flex items-center">
-                <FaChartBar className="mr-2 text-blue-500" />
-                Statistiques
-              </h3>
-              <ul className="mt-2 space-y-1">
-                <li>• {aiInsights.matched || 0} opérations concordantes</li>
-                <li>• {aiInsights.unmatched || 0} écarts détectés</li>
-                <li>• {aiInsights.accuracy || 0}% de précision</li>
-              </ul>
-            </div>
-            
-            {/* Carte Alertes */}
-            <div className="bg-white p-4 rounded-lg shadow-sm">
-              <h3 className="font-medium flex items-center">
-                <FaExclamationTriangle className="mr-2 text-yellow-500" />
-                Alertes
-              </h3>
-              <ul className="mt-2 space-y-1">
-                {(aiInsights.alerts || []).slice(0, 3).map((alert, index) => (
-                  <li key={index}>• {alert.message || alert}</li>
-                ))}
-              </ul>
-            </div>
-            
-            {/* Carte Recommandations */}
-            <div className="bg-white p-4 rounded-lg shadow-sm">
-              <h3 className="font-medium flex items-center">
-                <FaCheckCircle className="mr-2 text-green-500" />
-                Recommandations
-              </h3>
-              <ul className="mt-2 space-y-1">
-                {(aiInsights.recommendations || []).slice(0, 3).map((rec, index) => (
-                  <li key={index}>• {rec}</li>
-                ))}
-              </ul>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Liste des rapports */}
-      <div className="bg-white rounded-lg shadow-md overflow-hidden">
-        <table className="min-w-full divide-y divide-gray-200">
-          <thead className="bg-gray-50">
-            <tr>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Période</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Statut</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Correspondance</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
-            </tr>
-          </thead>
-          <tbody className="bg-white divide-y divide-gray-200">
-            {loading ? (
-              <tr>
-                <td colSpan="5" className="px-6 py-4 text-center">
-                  <FaSpinner className="animate-spin mx-auto text-blue-600" />
-                </td>
-              </tr>
-            ) : reports.length > 0 ? (
-              reports.map((report) => (
-                <tr key={report.id} className="hover:bg-gray-50">
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    {new Date(report.date).toLocaleDateString()}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    {report.periodStart} au {report.periodEnd}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <span className={`px-2 py-1 rounded-full text-xs ${
-                      report.status === 'completed' 
-                        ? 'bg-green-100 text-green-800' 
-                        : report.status === 'pending'
-                        ? 'bg-yellow-100 text-yellow-800'
-                        : 'bg-red-100 text-red-800'
-                    }`}>
-                      {report.status}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="flex items-center">
-                      <div className="w-24 bg-gray-200 rounded-full h-2.5 mr-2">
-                        <div 
-                          className="bg-blue-600 h-2.5 rounded-full" 
-                          style={{ width: `${report.matchRate}%` }}
-                        ></div>
-                      </div>
-                      <span>{report.matchRate}%</span>
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <button className="text-blue-600 hover:text-blue-800 mr-3">
-                      <FaDownload />
-                    </button>
-                    <button className="text-gray-600 hover:text-gray-800">
-                      Voir détails
-                    </button>
-                  </td>
-                </tr>
-              ))
-            ) : (
-              <tr>
-                <td colSpan="5" className="px-6 py-4 text-center text-gray-500">
-                  Aucun rapport disponible
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
+        {/* Modal d'édition des corrections */}
+        {editingReconciliation && (
+          <ReconciliationEditModal
+            reconciliation={editingReconciliation}
+            onSave={handleSaveCorrections}
+            onCancel={() => setEditingReconciliation(null)}
+            isLoading={loading.saving}
+          />
+        )}
       </div>
     </div>
   );

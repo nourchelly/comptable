@@ -1,10 +1,7 @@
 import axios from "axios";
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { FaHome, FaEnvelope, FaTools, FaSignInAlt, FaUserPlus, FaChartLine, FaLightbulb, FaComments, FaStar, FaCheck, FaHandshake } from "react-icons/fa";
-import 'bootstrap/dist/css/bootstrap.min.css';
-import "bootstrap/dist/js/bootstrap.bundle.min";
-import 'animate.css';
+import { FaHome, FaEnvelope, FaTools, FaSignInAlt, FaQrcode, FaUserPlus, FaChartLine, FaLightbulb, FaComments, FaStar, FaCheck, FaHandshake } from "react-icons/fa";
 
 const Home = () => {
   const navigate = useNavigate();
@@ -27,298 +24,239 @@ const Home = () => {
   }, []);
 
   return (
-    <div className="d-flex flex-column min-vh-100 bg-light" style={{ paddingTop: "56px" }}>
-      {/* Navbar simplifiée */}
-      <nav className="navbar navbar-light bg-white shadow-sm fixed-top">
-        <div className="container-fluid d-flex justify-content-between align-items-center">
-          <a className="navbar-brand" href="/">
-            <span className="fs-4 fw-bold" style={{ fontFamily: "'Poppins', sans-serif", color: "#04629D" }}>
-              C<span style={{ color: "#000" }}>ompta</span>B<span style={{ color: "#000" }}>OT</span>
+    <div className="min-h-screen bg-gray-50 flex flex-col">
+      {/* Navigation */}
+      <nav className="bg-white shadow-md fixed w-full z-10">
+        <div className="container mx-auto px-4 py-3 flex justify-between items-center">
+          <div className="flex items-center space-x-2">
+            <FaQrcode className="text-3xl text-indigo-600" />
+            <span className="text-2xl font-bold">
+              <span className="text-gray-800">Compta</span>
+              <span className="text-indigo-600">BoT</span>
             </span>
-          </a>
+          </div>
           
-          <div className="d-flex gap-3 align-items-center">
+          <div className="hidden md:flex items-center space-x-6">
             <button 
-              className="btn btn-link text-dark d-flex align-items-center p-2" 
+              className="flex items-center text-gray-700 hover:text-indigo-600 transition-colors"
               onClick={() => navigate('/home')}
-              style={{ border: "none", background: "transparent", textDecoration: "none" }}
             >
-              <FaHome className="me-2" /> Accueil
+              <FaHome className="mr-2" /> Accueil
             </button>
             
             <button 
-              className="btn btn-link text-dark d-flex align-items-center p-2" 
+              className="flex items-center text-gray-700 hover:text-indigo-600 transition-colors"
               onClick={() => navigate('/contact')}
-              style={{ border: "none", background: "transparent", textDecoration: "none" }}
             >
-              <FaEnvelope className="me-2" /> Contact
+              <FaEnvelope className="mr-2" /> Contact
             </button>
             
             <button 
-              className="btn btn-link text-dark d-flex align-items-center p-2" 
+              className="flex items-center text-gray-700 hover:text-indigo-600 transition-colors"
               onClick={() => navigate('/services')}
-              style={{ border: "none", background: "transparent", textDecoration: "none" }}
             >
-              <FaTools className="me-2" /> Services
+              <FaTools className="mr-2" /> Services
             </button>
             
             <button 
-              className="btn px-4 py-2 d-flex align-items-center" 
+              className="flex items-center px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors"
               onClick={() => navigate('/connexion')}
-              style={{ 
-                backgroundColor: "#04629D", 
-                borderColor: "#04629D",
-                color: "white"
-              }}
             >
-              <FaSignInAlt className="me-2" /> Connexion
+              <FaSignInAlt className="mr-2" /> Connexion
             </button>
           </div>
         </div>
       </nav>
 
-      {/* Le reste du code reste inchangé */}
-      {/* Section Hero */}
-      <div className="container d-flex align-items-center" style={{ minHeight: "80vh", paddingTop: "3rem", paddingBottom: "3rem" }}>
-        <div className="row w-100 align-items-center">
-          <div className="col-md-6 text-center">
-            <h2 
-              className="fw-bold text-dark animate__animated animate__fadeInUp" 
-              style={{ 
-                fontFamily: "'Montserrat', sans-serif", 
-                fontSize: "2.5rem", 
-                textAlign: 'center',
-                lineHeight: "1.3",
-                marginBottom: "1.5rem"
-              }}
-            >
-              "Simplifiez votre <br /> comptabilité, <br /> maximisez votre <br /> succès !"
-            </h2>
-            <p 
-              className="animate__animated animate__fadeInUp" 
-              style={{ 
-                fontFamily: "'Roboto', sans-serif", 
-                fontSize: "1.1rem", 
-                textAlign: 'center',
-                color: "#04629D",
-                marginBottom: "1rem"
-              }}
-            >
-              Découvrez une nouvelle ère de comptabilité avec <br /> l'Intelligence Artificielle !
+      {/* Hero Section */}
+      <section className="pt-32 pb-20 px-4">
+        <div className="container mx-auto flex flex-col md:flex-row items-center">
+          <div className="md:w-1/2 mb-12 md:mb-0 text-center md:text-left">
+            <h1 className="text-4xl md:text-5xl font-bold text-gray-800 leading-tight mb-6 animate-fade-in-up">
+              Simplifiez votre comptabilité, <br className="hidden md:block" />
+              maximisez votre succès !
+            </h1>
+            <p className="text-xl text-indigo-600 mb-6 animate-fade-in-up">
+              Découvrez une nouvelle ère de comptabilité avec l'Intelligence Artificielle !
             </p>
-            <p 
-              className="text-dark animate__animated animate__fadeInUp" 
-              style={{ 
-                fontFamily: "'Open Sans', sans-serif", 
-                fontSize: "1rem", 
-                textAlign: 'center',
-                marginBottom: "2rem"
-              }}
-            >
-              Automatisez vos tâches, analysez vos finances en <br /> temps réel et recevez des recommandations pour <br /> optimiser votre entreprise !
+            <p className="text-gray-600 mb-8 text-lg animate-fade-in-up">
+              Automatisez vos tâches, analysez vos finances en temps réel et recevez des recommandations pour optimiser votre entreprise !
             </p>
-            <div className="d-flex justify-content-center mt-4">
-              <button 
-                className="btn px-4 py-2 text-white animate__animated animate__fadeInUp d-flex align-items-center"
-                style={{
-                  backgroundColor: "#04629D",
-                  borderColor: "#04629D",
-                  boxShadow: "0px 4px 6px rgba(0, 0, 0, 0.1)"
-                }}
-                onClick={() => navigate('/signup')}
-              >
-                <FaUserPlus className="me-2" /> Inscription
-              </button>
-            </div>
+            <button 
+              className="bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-3 rounded-lg shadow-md transition-colors flex items-center mx-auto md:mx-0 animate-fade-in-up"
+              onClick={() => navigate('/signup')}
+            >
+              <FaUserPlus className="mr-2" /> Inscription
+            </button>
           </div>
-
-          <div className="col-md-6 text-center animate__animated animate__zoomIn">
-            <div 
-              style={{
-                backgroundColor: "#f8f9fa",
-                borderRadius: "15px",
-                padding: "1rem",
-                display: "inline-block"
-              }}
-            >
+          
+          <div className="md:w-1/2 animate-zoom-in">
+            <div className="bg-gradient-to-br from-indigo-50 to-blue-50 rounded-2xl p-6 inline-block">
               <img 
                 src="images/accueil1.png" 
                 alt="Illustration comptabilité" 
-                className="img-fluid" 
-                style={{
-                  maxWidth: "100%",
-                  height: "auto"
-                }} 
+                className="w-full max-w-md mx-auto" 
               />
             </div>
           </div>
         </div>
-      </div>
+      </section>
 
-      {/* Section Fonctionnalités */}
-      <div className="container py-5 my-5">
-        <h2 
-          className="text-center fw-bold mb-5" 
-          style={{ 
-            fontFamily: "'Poppins', sans-serif", 
-            fontSize: "2rem",
-            color: "#212529"
-          }}
-        >
-          Nos Fonctionnalités
-        </h2>
-        <div className="row">
-          {[
-            { icon: <FaChartLine size={50} />, title: "Analyse en temps réel", text: "Visualisez vos données financières en temps réel." },
-            { icon: <FaLightbulb size={50} />, title: "Recommandations intelligentes", text: "Recevez des conseils pour optimiser vos finances." },
-            { icon: <FaComments size={50} />, title: "Support 24/7", text: "Notre équipe est disponible pour vous aider." }
-          ].map((feature, index) => (
-            <div className="col-md-4 text-center mb-4" key={index}>
+      {/* Features Section */}
+      <section className="py-16 bg-white">
+        <div className="container mx-auto px-4">
+          <h2 className="text-3xl font-bold text-center text-gray-800 mb-12">
+            Nos Fonctionnalités
+          </h2>
+          
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+            {[
+              { icon: <FaChartLine size={40} />, title: "Analyse en temps réel", text: "Visualisez vos données financières en temps réel." },
+              { icon: <FaLightbulb size={40} />, title: "Recommandations intelligentes", text: "Recevez des conseils pour optimiser vos finances." },
+              { icon: <FaComments size={40} />, title: "Support 24/7", text: "Notre équipe est disponible pour vous aider." }
+            ].map((feature, index) => (
               <div 
-                className="p-4 bg-white rounded shadow-sm animate__animated animate__fadeInUp" 
-                style={{ height: "100%" }}
+                key={index}
+                className="bg-gray-50 rounded-xl p-8 shadow-sm hover:shadow-md transition-shadow text-center"
               >
-                <div className="mb-3" style={{ color: "#04629D" }}>{feature.icon}</div>
-                <h5 style={{ fontFamily: "'Montserrat', sans-serif" }}>{feature.title}</h5>
-                <p style={{ fontFamily: "'Roboto', sans-serif" }}>{feature.text}</p>
+                <div className="text-indigo-600 mb-4 flex justify-center">{feature.icon}</div>
+                <h3 className="text-xl font-semibold text-gray-800 mb-3">{feature.title}</h3>
+                <p className="text-gray-600">{feature.text}</p>
               </div>
-            </div>
-          ))}
+            ))}
+          </div>
         </div>
-      </div>
+      </section>
 
-      {/* Section Pourquoi nous choisir ? */}
-      <div className="container py-5 my-5 bg-white">
-        <h2 
-          className="text-center fw-bold mb-5" 
-          style={{ 
-            fontFamily: "'Poppins', sans-serif", 
-            fontSize: "2rem",
-            color: "#212529"
-          }}
-        >
-          Pourquoi nous choisir ?
-        </h2>
-        <div className="row">
-          {[
-            { icon: <FaCheck size={50} />, title: "Simplicité", text: "Une interface intuitive pour une prise en main facile." },
-            { icon: <FaStar size={50} />, title: "Fiabilité", text: "Des solutions éprouvées par des milliers d'entreprises." },
-            { icon: <FaHandshake size={50} />, title: "Engagement", text: "Nous nous engageons à vos côtés pour votre réussite." }
-          ].map((reason, index) => (
-            <div className="col-md-4 text-center mb-4" key={index}>
+      {/* Why Choose Us Section */}
+      <section className="py-16 bg-indigo-50">
+        <div className="container mx-auto px-4">
+          <h2 className="text-3xl font-bold text-center text-gray-800 mb-12">
+            Pourquoi nous choisir ?
+          </h2>
+          
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+            {[
+              { icon: <FaCheck size={40} />, title: "Simplicité", text: "Une interface intuitive pour une prise en main facile." },
+              { icon: <FaStar size={40} />, title: "Fiabilité", text: "Des solutions éprouvées par des milliers d'entreprises." },
+              { icon: <FaHandshake size={40} />, title: "Engagement", text: "Nous nous engageons à vos côtés pour votre réussite." }
+            ].map((reason, index) => (
               <div 
-                className="p-4 bg-light rounded shadow-sm animate__animated animate__fadeInUp" 
-                style={{ height: "100%" }}
+                key={index}
+                className="bg-white rounded-xl p-8 shadow-sm hover:shadow-md transition-shadow text-center"
               >
-                <div className="mb-3" style={{ color: "#04629D" }}>{reason.icon}</div>
-                <h5 style={{ fontFamily: "'Montserrat', sans-serif" }}>{reason.title}</h5>
-                <p style={{ fontFamily: "'Roboto', sans-serif" }}>{reason.text}</p>
+                <div className="text-indigo-600 mb-4 flex justify-center">{reason.icon}</div>
+                <h3 className="text-xl font-semibold text-gray-800 mb-3">{reason.title}</h3>
+                <p className="text-gray-600">{reason.text}</p>
               </div>
-            </div>
-          ))}
+            ))}
+          </div>
         </div>
-      </div>
+      </section>
 
-      {/* Section Témoignages */}
-      <div className="container py-5 my-5">
-        <h2 
-          className="text-center fw-bold mb-5" 
-          style={{ 
-            fontFamily: "'Poppins', sans-serif", 
-            fontSize: "2rem",
-            color: "#212529"
-          }}
-        >
-          Ce que disent nos clients
-        </h2>
-        <div className="row">
-          {[
-            { text: `"Une solution révolutionnaire qui a transformé notre gestion financière."`, author: "Jean Dupont" },
-            { text: `"Un outil indispensable pour toute entreprise moderne."`, author: "Marie Curie" },
-            { text: `"Le support est réactif et les fonctionnalités sont top !"`, author: "Paul Martin" }
-          ].map((testimonial, index) => (
-            <div className="col-md-4 text-center mb-4" key={index}>
+      {/* Testimonials Section */}
+      <section className="py-16 bg-white">
+        <div className="container mx-auto px-4">
+          <h2 className="text-3xl font-bold text-center text-gray-800 mb-12">
+            Ce que disent nos clients
+          </h2>
+          
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+            {[
+              { text: `"Une solution révolutionnaire qui a transformé notre gestion financière."`, author: "Jean Dupont" },
+              { text: `"Un outil indispensable pour toute entreprise moderne."`, author: "Marie Curie" },
+              { text: `"Le support est réactif et les fonctionnalités sont top !"`, author: "Paul Martin" }
+            ].map((testimonial, index) => (
               <div 
-                className="p-4 bg-white rounded shadow-sm animate__animated animate__fadeInUp" 
-                style={{ height: "100%" }}
+                key={index}
+                className="bg-gray-50 rounded-xl p-8 shadow-sm hover:shadow-md transition-shadow"
               >
-                <p style={{ fontFamily: "'Roboto', sans-serif" }}>{testimonial.text}</p>
-                <p className="fw-bold" style={{ color: "#04629D" }}>- {testimonial.author}</p>
+                <p className="text-gray-700 italic mb-4">"{testimonial.text}"</p>
+                <p className="font-semibold text-indigo-600">- {testimonial.author}</p>
               </div>
-            </div>
-          ))}
+            ))}
+          </div>
         </div>
-      </div>
+      </section>
 
-      {/* Pied de page */}
-      <footer className="bg-dark text-white mt-auto py-4">
-        <div className="container text-center">
-          <p style={{ fontFamily: "'Roboto', sans-serif", marginBottom: "1rem" }}>
-            © {new Date().getFullYear()} ComptaBOT. Tous droits réservés.
-          </p>
-          <div className="d-flex justify-content-center gap-3">
-            <a href="/contact" className="text-white text-decoration-underline">Contact</a>
-            <a href="/services" className="text-white text-decoration-underline">Services</a>
-            <a href="/privacy" className="text-white text-decoration-underline">Politique de confidentialité</a>
+      {/* CTA Section */}
+      <section className="py-16 bg-indigo-600 text-white">
+        <div className="container mx-auto px-4 text-center">
+          <h2 className="text-3xl font-bold mb-6">Prêt à révolutionner votre comptabilité ?</h2>
+          <p className="text-xl mb-8 max-w-2xl mx-auto">Rejoignez des milliers d'entreprises qui font confiance à notre solution.</p>
+          <button 
+            className="bg-white text-indigo-600 hover:bg-gray-100 px-8 py-3 rounded-lg shadow-md font-semibold transition-colors"
+            onClick={() => navigate('/signup')}
+          >
+            Commencer maintenant
+          </button>
+        </div>
+      </section>
+
+      {/* Footer */}
+      <footer className="bg-gray-800 text-white py-8 mt-auto">
+        <div className="container mx-auto px-4">
+          <div className="flex flex-col md:flex-row justify-between items-center">
+            <div className="flex items-center space-x-2 mb-4 md:mb-0">
+              <FaQrcode className="text-2xl text-indigo-400" />
+              <span className="text-xl font-bold">
+                <span>Compta</span>
+                <span className="text-indigo-400">BoT</span>
+              </span>
+            </div>
+            
+            <div className="flex flex-wrap justify-center gap-4 md:gap-6">
+              <a href="/contact" className="hover:text-indigo-300 transition-colors">Contact</a>
+              <a href="/services" className="hover:text-indigo-300 transition-colors">Services</a>
+              <a href="/privacy" className="hover:text-indigo-300 transition-colors">Politique de confidentialité</a>
+            </div>
+          </div>
+          
+          <div className="border-t border-gray-700 mt-6 pt-6 text-center text-gray-400">
+            <p>© {new Date().getFullYear()} ComptaBOT. Tous droits réservés.</p>
           </div>
         </div>
       </footer>
 
       {/* Modal */}
       {showModal && (
-        <div 
-          className="modal-backdrop fade show"
-          style={{ zIndex: 1050 }}
-        ></div>
-      )}
-      <div 
-        className={`modal fade ${showModal ? 'show d-block' : ''}`} 
-        tabIndex="-1" 
-        style={{ zIndex: 1060, display: showModal ? 'block' : 'none' }}
-      >
-        <div className="modal-dialog modal-dialog-centered">
-          <div className="modal-content rounded-4 shadow-lg">
-            <div className="modal-header" style={{ backgroundColor: '#04629D', color: '#fff' }}>
-              <h5 className="modal-title">Données récupérées</h5>
+        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl">
+            <div className="bg-indigo-600 text-white rounded-t-xl px-6 py-4 flex justify-between items-center">
+              <h3 className="text-xl font-semibold">Données récupérées</h3>
               <button 
-                type="button" 
-                className="btn-close" 
-                onClick={() => setShowModal(false)} 
-                aria-label="Close"
-                style={{ filter: "invert(1)" }}
-              ></button>
+                onClick={() => setShowModal(false)}
+                className="text-white hover:text-gray-200"
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
             </div>
-            <div className="modal-body" style={{ backgroundColor: '#f4f6f9' }}>
+            
+            <div className="p-6 max-h-96 overflow-y-auto">
               {error ? (
-                <div className="alert alert-danger">{error}</div>
+                <div className="bg-red-100 border-l-4 border-red-500 text-red-700 p-4">
+                  {error}
+                </div>
               ) : (
-                <pre style={{ 
-                  whiteSpace: 'pre-wrap', 
-                  wordWrap: 'break-word', 
-                  fontSize: '1rem', 
-                  color: '#333',
-                  margin: 0
-                }}>
+                <pre className="bg-gray-50 p-4 rounded-lg overflow-x-auto text-sm">
                   {JSON.stringify(homeData, null, 2)}
                 </pre>
               )}
             </div>
-            <div className="modal-footer">
+            
+            <div className="px-6 py-4 bg-gray-50 rounded-b-xl flex justify-end">
               <button 
-                type="button" 
-                className="btn text-white" 
-                onClick={() => setShowModal(false)} 
-                style={{ 
-                  backgroundColor: "#04629D", 
-                  borderColor: "#04629D" 
-                }}
+                onClick={() => setShowModal(false)}
+                className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg transition-colors"
               >
                 Fermer
               </button>
             </div>
           </div>
         </div>
-      </div>
+      )}
     </div>
   );
 };

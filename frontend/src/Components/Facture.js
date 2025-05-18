@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useUser } from './UserContext';
+import { useNavigate } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import { 
   FaFileInvoice, 
@@ -11,10 +12,12 @@ import {
   FaTrashAlt,
   FaFileAlt,
   FaRobot,
-  FaFileSignature
+  FaFileSignature,
+  FaCheckCircle
 } from 'react-icons/fa';
 
 export default function FactureList() {
+  const navigate = useNavigate();
   const { user } = useUser();
   const [factures, setFactures] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -28,6 +31,7 @@ export default function FactureList() {
   const [isFileHovering, setIsFileHovering] = useState(false);
   const [extractedData, setExtractedData] = useState(null);
   const [isExtracting, setIsExtracting] = useState(false);
+  const [extractionStatus, setExtractionStatus] = useState(null);
 
   useEffect(() => {
     const fetchFactures = async () => {
@@ -74,12 +78,14 @@ export default function FactureList() {
 
     setSelectedFile(file);
     setUploadStatus(null);
+    setExtractionStatus(null);
     await extractDataFromPdf(file);
   };
 
   const extractDataFromPdf = async (file) => {
     setIsExtracting(true);
     setExtractedData(null);
+    setExtractionStatus(null);
     
     try {
       const formData = new FormData();
@@ -90,11 +96,14 @@ export default function FactureList() {
       
       if (data.success) {
         setExtractedData(data.data);
-        toast.success("Données extraites!");
+        setExtractionStatus('success');
+        toast.success("Extraction réussie !");
       } else {
+        setExtractionStatus('error');
         throw new Error(data.error || "Erreur d'extraction");
       }
     } catch (err) {
+      setExtractionStatus('error');
       toast.error("Échec extraction: " + err.message);
     } finally {
       setIsExtracting(false);
@@ -126,6 +135,7 @@ export default function FactureList() {
       
       toast.success('Import réussi!');
       closeModal();
+      navigate(`/dashboardcomptable/rapprochement`);
     } catch (err) {
       setUploadStatus('error');
       toast.error(err.response?.data?.error || "Erreur d'import");
@@ -150,20 +160,6 @@ export default function FactureList() {
     }
   };
 
-  const generateReport = async (factureId) => {
-    try {
-      toast.info("Génération en cours...", { autoClose: 2000 });
-      const response = await axios.post(
-        `http://localhost:8000/api/factures/${factureId}/analyze`,
-        {},
-        { withCredentials: true }
-      );
-      window.open(`/rapports/${response.data.reportId}`, '_blank');
-    } catch (err) {
-      toast.error(`Erreur: ${err.response?.data?.error || err.message}`);
-    }
-  };
-
   const openPdfPreview = (url) => setPdfPreview({ visible: true, url });
   const closePdfPreview = () => setPdfPreview({ visible: false, url: null });
 
@@ -173,6 +169,30 @@ export default function FactureList() {
     setUploadProgress(0);
     setUploadStatus(null);
     setExtractedData(null);
+    setExtractionStatus(null);
+  };
+
+  // Fonction pour rendre les données extraites
+  const renderExtractedData = (data) => {
+    if (!data) return null;
+    
+    // Crée un tableau avec toutes les propriétés qui ne sont pas null ou undefined
+    const fields = Object.entries(data).filter(([_, value]) => value !== null && value !== undefined);
+    
+    return (
+      <div className="space-y-2 text-sm">
+        {fields.map(([key, value]) => (
+          <div key={key} className="flex justify-between">
+            <span className="text-gray-600">
+              {key.split('_').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ')}:
+            </span>
+            <span className="font-medium">
+              {typeof value === 'number' && key.includes('montant') ? `${value} €` : value}
+            </span>
+          </div>
+        ))}
+      </div>
+    );
   };
 
   return (
@@ -238,9 +258,9 @@ export default function FactureList() {
             <table className="w-full">
               <thead className="bg-gray-50">
                 <tr>
-                <th className="px-6 py-4 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
-<th className="px-6 py-4 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Détails</th>
-<th className="px-6 py-4 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                  <th className="px-6 py-4 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
+                  <th className="px-6 py-4 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Détails</th>
+                  <th className="px-6 py-4 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Action</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200">
@@ -267,47 +287,40 @@ export default function FactureList() {
                       <td className="px-6 py-4 text-sm text-gray-500">
                         {facture.metadata && (
                           <div className="flex flex-col">
-                            {facture.metadata.numero_facture && (
-                              <span>N°: {facture.metadata.numero_facture}</span>
+                            {facture.metadata.numero && (
+                              <span>N°: {facture.metadata.numero}</span>
+                            )}
+                            {facture.metadata.date && (
+                              <span>Date: {facture.metadata.date}</span>
+                            )}
+                            {facture.metadata.client && (
+                              <span>Client: {facture.metadata.client}</span>
                             )}
                             {facture.metadata.montant_total && (
                               <span>Montant: {facture.metadata.montant_total} €</span>
+                            )}
+                            {facture.metadata.montant_ht && (
+                              <span>Montant HT: {facture.metadata.montant_ht} €</span>
                             )}
                           </div>
                         )}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
-  <div className="flex justify-center space-x-2">
-    {facture.downloadUrl && (
-      <button
-        onClick={() => openPdfPreview(facture.previewUrl)}
-        className="flex items-center justify-center h-9 w-9 rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-100 transition-all duration-200 shadow-sm"
-        title="Prévisualiser"
-      >
-        <FaEye className="text-sm" />
-      </button>
-    )}
-    <button
-      onClick={() => generateReport(facture.id)}
-      className="flex items-center justify-center h-9 w-9 rounded-lg bg-purple-50 text-purple-600 hover:bg-purple-100 transition-all duration-200 shadow-sm"
-      title="Générer rapport"
-    >
-      <FaFileAlt className="text-sm" />
-    </button>
-    <button
-      onClick={() => handleDelete(facture.id)}
-      disabled={isDeleting}
-      className="flex items-center justify-center h-9 w-9 rounded-lg bg-red-50 text-red-600 hover:bg-red-100 transition-all duration-200 shadow-sm disabled:opacity-50"
-      title="Supprimer"
-    >
-      {isDeleting ? (
-        <div className="animate-spin rounded-full h-4 w-4 border-t-2 border-b-2 border-red-600"></div>
-      ) : (
-        <FaTrashAlt className="text-sm" />
-      )}
-    </button>
-  </div>
-</td>
+                        <div className="flex justify-center space-x-2">
+                          <button
+                            onClick={() => handleDelete(facture.id)}
+                            disabled={isDeleting}
+                            className="flex items-center justify-center h-9 w-9 rounded-lg bg-red-50 text-red-600 hover:bg-red-100 transition-all duration-200 shadow-sm disabled:opacity-50"
+                            title="Supprimer"
+                          >
+                            {isDeleting ? (
+                              <div className="animate-spin rounded-full h-4 w-4 border-t-2 border-b-2 border-red-600"></div>
+                            ) : (
+                              <FaTrashAlt className="text-sm" />
+                            )}
+                          </button>
+                        </div>
+                      </td>
                     </tr>
                   ))
                 )}
@@ -400,26 +413,23 @@ export default function FactureList() {
                   )}
                 </div>
                 
+                {/* Message de succès d'extraction */}
+                {extractionStatus === 'success' && (
+                  <div className="mt-3 p-4 bg-green-50 border border-green-100 rounded-lg animate-fadeIn">
+                    <div className="flex items-center">
+                      <FaCheckCircle className="text-green-600 mr-2" />
+                      <h4 className="text-sm font-medium text-green-800">Extraction réussie!</h4>
+                    </div>
+                  </div>
+                )}
+                
                 {extractedData && (
                   <div className="mt-3 p-4 bg-green-50 border border-green-100 rounded-lg">
                     <div className="flex items-center mb-2">
                       <FaFileSignature className="text-green-600 mr-2" />
                       <h4 className="text-sm font-medium text-green-800">Données extraites</h4>
                     </div>
-                    <div className="space-y-2 text-sm">
-                      {extractedData.numero_facture && (
-                        <div className="flex justify-between">
-                          <span className="text-gray-600">Numéro:</span>
-                          <span className="font-medium">{extractedData.numero_facture}</span>
-                        </div>
-                      )}
-                      {extractedData.date_facture && (
-                        <div className="flex justify-between">
-                          <span className="text-gray-600">Date:</span>
-                          <span className="font-medium">{extractedData.date_facture}</span>
-                        </div>
-                      )}
-                    </div>
+                    {renderExtractedData(extractedData)}
                   </div>
                 )}
                 
@@ -427,6 +437,13 @@ export default function FactureList() {
                   <div className="mt-3 p-4 bg-blue-50 border border-blue-100 rounded-lg flex items-center">
                     <div className="animate-spin rounded-full h-5 w-5 border-t-2 border-b-2 border-blue-600 mr-3"></div>
                     <p className="text-sm text-blue-700">Extraction en cours...</p>
+                  </div>
+                )}
+                
+                {extractionStatus === 'error' && (
+                  <div className="mt-3 p-4 bg-red-50 border border-red-100 rounded-lg flex items-center">
+                    <FaTimesCircle className="text-red-600 mr-2" />
+                    <p className="text-sm text-red-700">Échec de l'extraction. Veuillez réessayer.</p>
                   </div>
                 )}
               </div>

@@ -2200,6 +2200,7 @@ def releve_api(request, id=None):
             # 2. Création unique dans MongoDB
             fichier.seek(0)  # Reset pour sauvegarde
             releve = Banque(
+                
                 numero=metadata.get('numero_releve', f"AUTO-{uuid.uuid4().hex[:8].upper()}"),
                 montant=float(metadata.get('montant', 0)) if metadata.get('montant') else None,
                 date_transaction=datetime.strptime(metadata['date_transaction'], "%Y-%m-%d") if metadata.get('date_transaction') else None,
@@ -2477,13 +2478,15 @@ def users_stats(request):
         return JsonResponse({'status': False, 'error': 'Méthode non autorisée'}, status=405)
     
     try:
-        # Total counts
-        facture_count = Facture.objects.count()
-        releve_count = Banque.objects.count()
+        # Total counts - Notez les parenthèses après count
+        facture_count = Facture.objects().count()
+        releve_count = Banque.objects().count()
+        rapport_count = Rapport.objects().count()
         
         # New factures in last 30 days using created_at field
         last_month = datetime.datetime.now() - datetime.timedelta(days=30)
         new_factures = Facture.objects(created_at__gte=last_month).count()
+        new_rapports = Rapport.objects(created_at__gte=last_month).count()
         
         return JsonResponse({
             'status': True,
@@ -2491,14 +2494,15 @@ def users_stats(request):
                 'stats': {
                     'facture': facture_count,
                     'releve': releve_count,
-                    'newFactures': new_factures
+                    'newFactures': new_factures,
+                    'rapport': rapport_count,
+                    'newRapports': new_rapports
                 }
             }
         })
     except Exception as e:
         logger.error(f"Error in user_stats: {str(e)}")
         return JsonResponse({'status': False, 'error': str(e)}, status=500)
-    
 
 from django.http import JsonResponse
 from django.db.models import Q
@@ -2656,3 +2660,23 @@ def compare_documents():
     
     except Exception as e:
         return jsonify(error=str(e)), 500
+@csrf_exempt
+def admin_actions_list(request):
+    if request.method == 'GET':
+        actions = ActionLog.objects.all().order_by('-date_action')  # Utilise date_action pour le tri
+        data = {
+            'actions': [{
+                'id': str(action.id),
+                'username': action.user.username if action.user else 'Système',
+                'email': action.user.email if action.user else '',
+                'role': action.user.role if action.user else '',
+                'action_type': action.type_action,
+                'description': action.description,
+                'timestamp': action.date_action.isoformat(), # Utilise date_action ici
+                'details': action.details,
+                'audit': str(action.audit.id) if action.audit else None # Convertit l'ID de l'audit en string
+            } for action in actions]
+        }
+        return JsonResponse(data)
+    else:
+        return JsonResponse({'error': 'Méthode non autorisée'}, status=405)

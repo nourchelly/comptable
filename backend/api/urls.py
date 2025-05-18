@@ -32,7 +32,7 @@ from .views import (
     google_auth_callback,
     get_csrf,
      # Si tu veux garder cette vue spécifique
- 
+    admin_actions_list,
    api_rapports,
    mes_notifications,
    get_unread_count,
@@ -72,7 +72,7 @@ urlpatterns = [
     path('profilcomptable/<str:id>/', ProfilComptableApi, name='profilcomptable-detail'),
     path('profildirecteur/', ProfilDirecteurApi, name='profildirecteur-list'),
     path('profildirecteur/<str:id>/', ProfilDirecteurApi, name='profildirecteur-detail'),
-   
+    path('actions/', admin_actions_list, name='actions-api'),
    #path audit
     path('audit/', AuditApi, name='audit-list'),
     path('audit/<str:id>/', AuditApi, name='audit-detail'),

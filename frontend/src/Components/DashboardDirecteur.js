@@ -1,74 +1,53 @@
-import React, { useState, useEffect } from "react";
-import { Link, Outlet, useLocation, useNavigate } from "react-router-dom";
-import axios from "axios";
-import { toast } from "react-toastify";
+import React, { useState, useEffect } from 'react';
 import { 
-  FaHome, FaChartPie, FaFileAlt, FaClipboardCheck, 
-  FaUserCircle, FaSignOutAlt, FaSearch, FaBell,
-  FaCalendarAlt, FaChartLine,
-  FaMoneyBillWave, FaPercentage, FaBalanceScale, FaDatabase, FaQrcode,
-  FaEdit, FaTrash, FaPlus
-} from "react-icons/fa";
-import { AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+  AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell,
+  XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer 
+} from 'recharts';
+import { 
+  Link, useLocation, useNavigate, Outlet 
+} from 'react-router-dom';
+import { 
+  FaChartLine, FaMoneyBillWave, FaPercentage, FaTachometerAlt,
+  FaChevronRight, FaUserTie, FaFileInvoice, FaBalanceScale, 
+  FaCalendarAlt, FaSearch, FaHome, FaFileAlt, FaClipboardCheck, 
+  FaUserCircle, FaSignOutAlt, FaBell, FaQrcode, FaFilter,
+  FaRegClock, FaChartPie, FaRegChartBar, FaRegListAlt
+} from 'react-icons/fa';
+import { 
+  FiTrendingUp, FiAlertTriangle, FiActivity, FiDollarSign,
+  FiCheckCircle, FiAlertCircle, FiClock, FiPieChart,FiRefreshCw
+} from 'react-icons/fi';
+import axios from 'axios';
+import { toast } from 'react-toastify';
 
-const DashboardDirecteurFinancier = () => {
+const COLORS = ['#6366F1', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6'];
+
+const DashboardDirecteur = () => {
   const navigate = useNavigate();
-  const [audits, setAudits] = useState([]);
   const location = useLocation();
-  const [isLoading, setIsLoading] = useState(true);
-  const [User, setUser] = useState();
-  const [showLogoutModal, setShowLogoutModal] = useState(false);
-    const [sidebarOpen, setSidebarOpen] = useState(true);
-    const [showConfirm, setShowConfirm] = useState(false);
-  const [auditsData, setAuditsData] = useState([]);
-  const [rapportsData, setRapportsData] = useState([]);
-  const [formData, setFormData] = useState({
-    nom: "",
-    type: "Financier",
-    responsable: "",
-    dateDebut: "",
-    dateFin: "",
-    priorite: "Moyenne"
-  });
-  const [showForm, setShowForm] = useState(false);
-  const [searchTerm, setSearchTerm] = useState("");
-  const [filterStatus, setFilterStatus] = useState("Tous");
+  const [dashboardData, setDashboardData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [dateRange, setDateRange] = useState('last30days');
+  const [bankFilter, setBankFilter] = useState('all');
+  const [showConfirm, setShowConfirm] = useState(false);
 
-  // Données pour les graphiques
-  const performanceData = [
-    { name: 'Jan', revenus: 4000, depenses: 2400 },
-    { name: 'Fév', revenus: 3000, depenses: 1800 },
-    { name: 'Mar', revenus: 5000, depenses: 2800 },
-    { name: 'Avr', revenus: 3780, depenses: 2908 },
-    { name: 'Mai', revenus: 5890, depenses: 4800 },
-    { name: 'Jun', revenus: 6390, depenses: 3800 },
-  ];
+  const isActive = (path) => location.pathname.includes(path);
 
-  const budgetData = [
-    { name: 'Marketing', budget: 4000, utilisé: 3200 },
-    { name: 'R&D', budget: 3000, utilisé: 1898 },
-    { name: 'Production', budget: 6000, utilisé: 4800 },
-  ];
+  const getPageTitle = () => {
+    if (isActive('/profildirecteur')) return 'Profil Directeur';
+    if (isActive('/rapports')) return 'Rapports Financiers';
+    if (isActive('/audits')) return 'Audits Financiers';
+    if (isActive('/calendar')) return 'Calendrier';
+    return 'Tableau de Bord';
+  };
 
-  useEffect(() => {
-    const fetchData = async () => {
-      try {
-        const [auditsResponse, rapportsResponse] = await Promise.all([
-          axios.get('http://127.0.0.1:8000/audit'),
-          axios.get('http://votre-api.com/rapports')
-        ]);
-        setAuditsData(auditsResponse.data);
-        setRapportsData(rapportsResponse.data);
-      } catch (error) {
-        toast.error("Erreur de chargement des données");
-        console.error(error);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    fetchData();
-  }, []);
+  const getPageIcon = () => {
+    if (isActive('/profildirecteur')) return <FaUserTie className="text-indigo-500 mr-3" />;
+    if (isActive('/rapports')) return <FiTrendingUp className="text-emerald-500 mr-3" />;
+    if (isActive('/audits')) return <FiAlertTriangle className="text-amber-500 mr-3" />;
+    if (isActive('/calendar')) return <FaCalendarAlt className="text-purple-500 mr-3" />;
+    return <FaTachometerAlt className="text-indigo-500 mr-3" />;
+  };
 
   const handleLogout = () => {
     axios.get("http://127.0.0.1:8000/api/logout/")
@@ -81,522 +60,576 @@ const DashboardDirecteurFinancier = () => {
       .catch(err => console.error(err));
   };
 
-  const cancelLogout = () => {
-    setShowLogoutModal(false);
-  };
-
-  const saveAudit = async (auditData) => {
-    try {
-      const response = await axios.post('http://votre-api.com/audits', auditData, {
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`,
-          'Content-Type': 'application/json'
-        }
-      });
-      return response.data;
-    } catch (error) {
-      console.error("Erreur API:", error.response?.data || error.message);
-      throw error;
-    }
-  };
-
-  const handleSubmitAudit = async (e) => {
-    e.preventDefault();
-    try {
-      const newAudit = await saveAudit(formData);
-      setAuditsData([...auditsData, newAudit]);
-      setFormData({
-        nom: "",
-        type: "Financier",
-        responsable: "",
-        dateDebut: "",
-        dateFin: "",
-        priorite: "Moyenne"
-      });
-      setShowForm(false);
-      toast.success("Audit créé avec succès !");
-    } catch (error) {
-      toast.error("Échec de la création de l'audit");
-    }
-  };
-
-  const handleDelete = async (id) => {
-    if (window.confirm("Êtes-vous sûr de vouloir supprimer cet audit ?")) {
+  useEffect(() => {
+    const fetchDashboardData = async () => {
       try {
-        await axios.delete(`http://127.0.0.1:8000/api/audit/${id}/`, {
-          withCredentials: true
+        setLoading(true);
+        const response = await axios.get('http://localhost:5000/api/dashboard/finance', {
+          params: {
+            dateRange,
+            banque_id: bankFilter === 'all' ? null : bankFilter
+          },
+          withCredentials: true,
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json'
+          }
         });
-        setAudits(audits.filter(audit => audit.id !== id));
-        toast.success("Audit supprimé avec succès");
+        setDashboardData(response.data);
       } catch (error) {
-        toast.error(error.response?.data?.error || "Erreur lors de la suppression");
-        console.error("Erreur:", error.response?.data || error.message);
+        toast.error('Erreur lors du chargement des données');
+        console.error(error);
+      } finally {
+        setLoading(false);
       }
-    }
-  };
+    };
 
-  const filteredAudits = auditsData.filter(audit => {
-    const matchesSearch = audit.nom.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesStatus = filterStatus === "Tous" || audit.statut === filterStatus;
-    return matchesSearch && matchesStatus;
-  });
+    if (isActive('/dashboarddirecteur') && !isActive('/dashboarddirecteur/')) {
+      fetchDashboardData();
+    }
+  }, [dateRange, bankFilter, location.pathname]);
 
   const Sidebar = () => (
-    <div className="w-64 bg-gradient-to-b from-indigo-900 to-indigo-800 text-white flex flex-col h-full shadow-xl">
-      <div className="p-6 flex items-center justify-center border-b border-indigo-700">
-        <FaQrcode className="text-3xl text-white mr-3" />
-        <span className="text-2xl font-bold">Compta<span className="text-blue-300">BoT</span></span>
+    <div className="w-64 bg-gradient-to-b from-indigo-700 to-indigo-800 text-white flex flex-col h-full shadow-xl transition-all duration-300">
+      <div className="p-6 flex items-center justify-center border-b border-indigo-600">
+        <div className="bg-white p-2 rounded-lg mr-3">
+          <FaQrcode className="text-3xl text-indigo-600" />
+        </div>
+        <span className="text-2xl font-bold text-white">Compta<span className="text-indigo-200">Bot</span></span>
       </div>
 
       <nav className="flex-1 px-4 py-6 space-y-2">
         <Link 
           to="/dashboarddirecteur" 
-          className={`flex items-center p-4 rounded-lg transition-all duration-200 ${
-            location.pathname === "/dashboarddirecteur" 
-              ? 'bg-white text-indigo-800 shadow-md font-semibold' 
-              : 'text-indigo-100 hover:bg-indigo-700 hover:text-white'
+          className={`flex items-center p-3 mx-2 rounded-lg transition-all ${
+            isActive('/dashboarddirecteur') && !isActive('/dashboarddirecteur/') 
+              ? 'bg-white text-indigo-700 shadow-md font-semibold' 
+              : 'text-indigo-100 hover:bg-indigo-600 hover:text-white'
           }`}
         >
-          <FaHome className={`mr-3 text-lg ${
-            location.pathname === "/dashboarddirecteur" ? 'text-indigo-600' : 'text-blue-300'
-          }`} />
+          <div className={`p-2 rounded-lg mr-3 ${
+            isActive('/dashboarddirecteur') && !isActive('/dashboarddirecteur/') 
+              ? 'bg-indigo-100 text-indigo-600' 
+              : 'bg-indigo-500 text-white'
+          }`}>
+            <FaTachometerAlt className="text-lg" />
+          </div>
           <span>Tableau de bord</span>
+          {isActive('/dashboarddirecteur') && !isActive('/dashboarddirecteur/') && 
+            <FaChevronRight className="ml-auto text-indigo-500 text-sm" />}
         </Link>
 
         <Link 
           to="/dashboarddirecteur/rapports" 
-          className={`flex items-center p-4 rounded-lg transition-all duration-200 ${
-            location.pathname === "/dashboarddirecteur/rapports" 
-              ? 'bg-white text-indigo-800 shadow-md font-semibold' 
-              : 'text-indigo-100 hover:bg-indigo-700 hover:text-white'
+          className={`flex items-center p-3 mx-2 rounded-lg transition-all ${
+            isActive('/rapports') 
+              ? 'bg-white text-indigo-700 shadow-md font-semibold' 
+              : 'text-indigo-100 hover:bg-indigo-600 hover:text-white'
           }`}
         >
-          <FaFileAlt className={`mr-3 text-lg ${
-            location.pathname === "/dashboarddirecteur/rapports" ? 'text-indigo-600' : 'text-blue-300'
-          }`} />
+          <div className={`p-2 rounded-lg mr-3 ${
+            isActive('/rapports') 
+              ? 'bg-emerald-100 text-emerald-600' 
+              : 'bg-emerald-500 text-white'
+          }`}>
+            <FiTrendingUp className="text-lg" />
+          </div>
           <span>Rapports Financiers</span>
+          {isActive('/rapports') && <FaChevronRight className="ml-auto text-indigo-500 text-sm" />}
         </Link>
 
         <Link 
           to="/dashboarddirecteur/audits" 
-          className={`flex items-center p-4 rounded-lg transition-all duration-200 ${
-            location.pathname === "/dashboarddirecteur/audits" 
-              ? 'bg-white text-indigo-800 shadow-md font-semibold' 
-              : 'text-indigo-100 hover:bg-indigo-700 hover:text-white'
+          className={`flex items-center p-3 mx-2 rounded-lg transition-all ${
+            isActive('/audits') 
+              ? 'bg-white text-indigo-700 shadow-md font-semibold' 
+              : 'text-indigo-100 hover:bg-indigo-600 hover:text-white'
           }`}
         >
-          <FaClipboardCheck className={`mr-3 text-lg ${
-            location.pathname === "/dashboarddirecteur/audits" ? 'text-indigo-600' : 'text-blue-300'
-          }`} />
+          <div className={`p-2 rounded-lg mr-3 ${
+            isActive('/audits') 
+              ? 'bg-amber-100 text-amber-600' 
+              : 'bg-amber-500 text-white'
+          }`}>
+            <FiAlertTriangle className="text-lg" />
+          </div>
           <span>Audits Financiers</span>
+          {isActive('/audits') && <FaChevronRight className="ml-auto text-indigo-500 text-sm" />}
         </Link>
 
         <Link 
           to="/dashboarddirecteur/profildirecteur" 
-          className={`flex items-center p-4 rounded-lg transition-all duration-200 ${
-            location.pathname === "/dashboarddirecteur/profildirecteur" 
-              ? 'bg-white text-indigo-800 shadow-md font-semibold' 
-              : 'text-indigo-100 hover:bg-indigo-700 hover:text-white'
+          className={`flex items-center p-3 mx-2 rounded-lg transition-all ${
+            isActive('/profildirecteur') 
+              ? 'bg-white text-indigo-700 shadow-md font-semibold' 
+              : 'text-indigo-100 hover:bg-indigo-600 hover:text-white'
           }`}
         >
-          <FaUserCircle className={`mr-3 text-lg ${
-            location.pathname === "/dashboarddirecteur/profildirecteur" ? 'text-indigo-600' : 'text-blue-300'
-          }`} />
-          <span>Mon Profil</span>
+          <div className={`p-2 rounded-lg mr-3 ${
+            isActive('/profildirecteur') 
+              ? 'bg-purple-100 text-purple-600' 
+              : 'bg-purple-500 text-white'
+          }`}>
+            <FaUserCircle className="text-lg" />
+          </div>
+          <span>Profil Directeur</span>
+          {isActive('/profildirecteur') && <FaChevronRight className="ml-auto text-indigo-500 text-sm" />}
         </Link>
       </nav>
 
-    <div className="p-4 border-t border-indigo-700">
-              <button 
-                onClick={() => setShowConfirm(true)}
-                className="flex items-center w-full p-3 text-indigo-100 hover:bg-indigo-700 rounded-lg transition-colors"
-              >
-                <FaSignOutAlt className={`text-xl ${sidebarOpen ? 'mr-3' : 'mx-auto'}`} />
-                {sidebarOpen && <span className="font-medium">Déconnexion</span>}
-              </button>
-            </div>
+      <div className="p-4 border-t border-indigo-600">
+        <button 
+          onClick={() => setShowConfirm(true)}
+          className="flex items-center w-full p-3 text-indigo-100 hover:bg-indigo-600 rounded-lg transition-colors group"
+        >
+          <div className="p-2 rounded-lg mr-3 bg-rose-500 text-white group-hover:bg-rose-600">
+            <FaSignOutAlt className="text-lg" />
           </div>
- 
+          <span className="font-medium">Déconnexion</span>
+        </button>
+      </div>
+    </div>
   );
 
-  if (isLoading) {
-    return (
-      <div className="flex justify-center items-center h-screen">
-        <div className="animate-spin rounded-full h-32 w-32 border-t-2 border-b-2 border-blue-500"></div>
-      </div>
-    );
-  }
+  const DashboardContent = () => {
+    if (loading) {
+      return (
+        <div className="flex justify-center items-center h-full">
+          <div className="flex flex-col items-center">
+            <div className="animate-spin rounded-full h-16 w-16 border-t-4 border-b-4 border-indigo-600 mb-4"></div>
+            <p className="text-gray-600">Chargement des données...</p>
+          </div>
+        </div>
+      );
+    }
 
-  return (
-    <div className="flex h-screen bg-gray-50 font-sans">
-      {/* Confirmation Modal */}
-        {showConfirm && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 backdrop-blur-sm">
-            <div className="bg-white rounded-xl p-8 w-full max-w-md">
-              <div className="flex flex-col items-center text-center space-y-4">
-                <div className="p-3 bg-red-100 rounded-full">
-                  <FaSignOutAlt className="text-red-500 text-2xl" />
+    if (!dashboardData) {
+      return (
+        <div className="text-center py-10">
+          <div className="mx-auto w-24 h-24 bg-indigo-100 rounded-full flex items-center justify-center mb-4">
+            <FiAlertCircle className="text-indigo-500 text-3xl" />
+          </div>
+          <h3 className="text-lg font-medium text-gray-900 mb-2">Aucune donnée disponible</h3>
+          <p className="text-gray-600 mb-6">Nous n'avons pas pu charger les données du tableau de bord</p>
+          <button 
+            onClick={() => window.location.reload()}
+            className="px-6 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors shadow-md flex items-center mx-auto"
+          >
+            <FiRefreshCw className="mr-2" />
+            Recharger
+          </button>
+        </div>
+      );
+    }
+
+    return (
+      <div className="space-y-6">
+        {/* Header with filters */}
+        <div className="bg-white p-5 rounded-xl shadow-sm border border-gray-100">
+          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+            <div>
+              <h1 className="text-2xl font-bold text-gray-800 flex items-center">
+                <FaTachometerAlt className="text-indigo-500 mr-3" />
+                Tableau de Bord Financier
+              </h1>
+              <p className="text-gray-600 mt-1">
+                {dateRange === 'last7days' ? '7 derniers jours' : 
+                 dateRange === 'last30days' ? '30 derniers jours' : 
+                 dateRange === 'last90days' ? '90 derniers jours' : 
+                 'Toutes périodes'}
+              </p>
+            </div>
+            
+            <div className="flex flex-wrap gap-3">
+              <div className="relative flex-1 min-w-[200px]">
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                  <FaCalendarAlt className="text-gray-400" />
                 </div>
-                <h3 className="text-2xl font-bold text-gray-900">Déconnexion</h3>
-                <p className="text-gray-600">Êtes-vous sûr de vouloir vous déconnecter ?</p>
-                <div className="flex space-x-4 w-full mt-4">
-                  <button 
-                    onClick={handleLogout}
-                    className="flex-1 bg-red-600 hover:bg-red-700 text-white py-3 px-6 rounded-lg font-medium transition-colors flex items-center justify-center"
-                  >
-                    <FaSignOutAlt className="mr-2" />
-                    Déconnexion
-                  </button>
-                  <button 
-                    onClick={() => setShowConfirm(false)}
-                    className="flex-1 bg-gray-200 hover:bg-gray-300 text-gray-800 py-3 px-6 rounded-lg font-medium transition-colors"
-                  >
-                    Annuler
-                  </button>
+                <select 
+                  value={dateRange}
+                  onChange={(e) => setDateRange(e.target.value)}
+                  className="pl-10 pr-4 py-2.5 w-full border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent appearance-none bg-white shadow-sm"
+                >
+                  <option value="last7days">7 derniers jours</option>
+                  <option value="last30days">30 derniers jours</option>
+                  <option value="last90days">90 derniers jours</option>
+                  <option value="all">Toutes périodes</option>
+                </select>
+              </div>
+              
+             
+            </div>
+          </div>
+        </div>
+
+        {/* KPI Cards */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          <div className="bg-gradient-to-r from-indigo-500 to-indigo-600 p-6 rounded-xl shadow-lg text-white">
+            <div className="flex justify-between items-start">
+              <div>
+                <p className="text-sm font-medium text-indigo-100 uppercase tracking-wider">Rapprochements</p>
+                <p className="text-3xl font-bold mt-2">
+                  {dashboardData.metadata?.total_reconciliations || 0}
+                </p>
+                <div className="flex items-center mt-3">
+                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-indigo-400 text-white">
+                    <FiTrendingUp className="mr-1" />
+                    {dashboardData.metrics?.taux_completude?.toFixed(1) || 0}% complétude
+                  </span>
                 </div>
+              </div>
+              <div className="h-12 w-12 rounded-full bg-white bg-opacity-20 flex items-center justify-center">
+                <FiDollarSign className="text-white text-xl" />
               </div>
             </div>
           </div>
-        )}
+
+          <div className="bg-gradient-to-r from-emerald-500 to-emerald-600 p-6 rounded-xl shadow-lg text-white">
+            <div className="flex justify-between items-start">
+              <div>
+                <p className="text-sm font-medium text-emerald-100 uppercase tracking-wider">Transactions</p>
+                <p className="text-3xl font-bold mt-2">
+                  {dashboardData.metadata?.total_transactions || 0}
+                </p>
+                <div className="flex items-center mt-3">
+                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-400 text-white">
+                    <FaMoneyBillWave className="mr-1" />
+                    {dashboardData.metadata?.total_amount?.toLocaleString() || 0} €
+                  </span>
+                </div>
+              </div>
+              <div className="h-12 w-12 rounded-full bg-white bg-opacity-20 flex items-center justify-center">
+                <FiActivity className="text-white text-xl" />
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-gradient-to-r from-amber-500 to-amber-600 p-6 rounded-xl shadow-lg text-white">
+            <div className="flex justify-between items-start">
+              <div>
+                <p className="text-sm font-medium text-amber-100 uppercase tracking-wider">Anomalies</p>
+                <p className="text-3xl font-bold mt-2">
+                  {dashboardData.metrics?.taux_anomalies?.toFixed(1) || 0}%
+                </p>
+                <div className="flex items-center mt-3">
+                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-400 text-white">
+                    <FiAlertTriangle className="mr-1" />
+                    {dashboardData.charts?.top_anomalies?.length || 0} types
+                  </span>
+                </div>
+              </div>
+              <div className="h-12 w-12 rounded-full bg-white bg-opacity-20 flex items-center justify-center">
+                <FiAlertTriangle className="text-white text-xl" />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Charts Section */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* Trends Chart */}
+          <div className="bg-white p-5 rounded-xl shadow-sm border border-gray-100">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-semibold text-gray-800 flex items-center">
+                <FiTrendingUp className="text-indigo-500 mr-2" />
+                Évolution des rapprochements
+              </h2>
+              <div className="flex items-center text-sm text-gray-500">
+                <FiClock className="mr-1" />
+                Mise à jour: il y a 5 min
+              </div>
+            </div>
+            <div className="h-80">
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={dashboardData.charts?.monthly_trends?.datasets[0]?.data || []}>
+                  <defs>
+                    <linearGradient id="colorTotal" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#6366F1" stopOpacity={0.8}/>
+                      <stop offset="95%" stopColor="#6366F1" stopOpacity={0.1}/>
+                    </linearGradient>
+                  </defs>
+                  <XAxis 
+                    dataKey="name" 
+                    tick={{ fill: '#6B7280' }}
+                    axisLine={{ stroke: '#E5E7EB' }}
+                  />
+                  <YAxis 
+                    tick={{ fill: '#6B7280' }}
+                    axisLine={{ stroke: '#E5E7EB' }}
+                  />
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E5E7EB" />
+                  <Tooltip 
+                    contentStyle={{
+                      backgroundColor: 'white',
+                      borderRadius: '0.5rem',
+                      boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
+                      border: '1px solid #E5E7EB'
+                    }}
+                  />
+                  <Area 
+                    type="monotone" 
+                    dataKey="count" 
+                    stroke="#6366F1" 
+                    strokeWidth={2}
+                    fillOpacity={1} 
+                    fill="url(#colorTotal)" 
+                  />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+
+          {/* Distribution Chart */}
+          <div className="bg-white p-5 rounded-xl shadow-sm border border-gray-100">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-semibold text-gray-800 flex items-center">
+                <FiPieChart className="text-emerald-500 mr-2" />
+                Répartition par statut
+              </h2>
+              <div className="text-sm text-gray-500">
+                Total: {dashboardData.metadata?.total_reconciliations || 0}
+              </div>
+            </div>
+            <div className="h-80">
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie
+                    data={Object.entries(dashboardData.charts?.statut_distribution || {}).map(([name, value]) => ({ name, value }))}
+                    cx="50%"
+                    cy="50%"
+                    labelLine={false}
+                    outerRadius={80}
+                    innerRadius={50}
+                    fill="#8884d8"
+                    dataKey="value"
+                    label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
+                  >
+                    {Object.keys(dashboardData.charts?.statut_distribution || {}).map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                    ))}
+                  </Pie>
+                  <Tooltip 
+                    contentStyle={{
+                      backgroundColor: 'white',
+                      borderRadius: '0.5rem',
+                      boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
+                      border: '1px solid #E5E7EB'
+                    }}
+                  />
+                  <Legend 
+                    layout="vertical" 
+                    verticalAlign="middle" 
+                    align="right"
+                    wrapperStyle={{
+                      paddingLeft: '20px'
+                    }}
+                  />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+        </div>
+
+        {/* Anomalies Chart */}
+        <div className="bg-white p-5 rounded-xl shadow-sm border border-gray-100">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg font-semibold text-gray-800 flex items-center">
+              <FiAlertTriangle className="text-amber-500 mr-2" />
+              Top 5 des anomalies détectées
+            </h2>
+            <div className="text-sm text-amber-600 font-medium">
+              {dashboardData.metrics?.total_anomalies || 0} anomalies totales
+            </div>
+          </div>
+          <div className="h-64">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart
+                data={dashboardData.charts?.top_anomalies || []}
+                layout="vertical"
+                margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
+              >
+                <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} stroke="#E5E7EB" />
+                <XAxis 
+                  type="number" 
+                  tick={{ fill: '#6B7280' }}
+                  axisLine={{ stroke: '#E5E7EB' }}
+                />
+                <YAxis 
+                  dataKey="_id" 
+                  type="category" 
+                  width={150}
+                  tick={{ fill: '#6B7280' }}
+                  axisLine={{ stroke: '#E5E7EB' }}
+                />
+                <Tooltip 
+                  contentStyle={{
+                    backgroundColor: 'white',
+                    borderRadius: '0.5rem',
+                    boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
+                    border: '1px solid #E5E7EB'
+                  }}
+                />
+                <Bar 
+                  dataKey="count" 
+                  fill="#F59E0B" 
+                  radius={[0, 4, 4, 0]} 
+                  animationDuration={1500}
+                />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
+        {/* Recent Activity */}
+        <div className="bg-white p-5 rounded-xl shadow-sm border border-gray-100">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg font-semibold text-gray-800 flex items-center">
+              <FiActivity className="text-purple-500 mr-2" />
+              Activité récente
+            </h2>
+            <Link 
+              to="/dashboarddirecteur/rapports" 
+              className="text-sm text-indigo-600 hover:text-indigo-800 font-medium flex items-center"
+            >
+              Voir tout <FaChevronRight className="ml-1 text-xs" />
+            </Link>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-gray-200">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Facture</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Banque</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Montant</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Statut</th>
+                </tr>
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
+                {dashboardData.recent_activity?.map((item, index) => (
+                  <tr key={index} className="hover:bg-gray-50 transition-colors">
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                      <div className="flex items-center">
+                        <FiClock className="mr-2 text-gray-400" />
+                        {item.date}
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                      {item.facture}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                      {item.banque}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                      {item.montant ? `${item.montant} €` : '-'}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <span className={`px-3 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${
+                        item.statut === 'complet' ? 'bg-green-100 text-green-800' :
+                        item.statut === 'anomalie' ? 'bg-amber-100 text-amber-800' :
+                        'bg-gray-100 text-gray-800'
+                      }`}>
+                        {item.statut === 'complet' ? (
+                          <FiCheckCircle className="mr-1" />
+                        ) : item.statut === 'anomalie' ? (
+                          <FiAlertCircle className="mr-1" />
+                        ) : (
+                          <FiClock className="mr-1" />
+                        )}
+                        {item.statut}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <div className="flex h-screen bg-gray-50 font-sans">
+      {showConfirm && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 backdrop-blur-sm">
+          <div className="bg-white rounded-xl p-8 w-full max-w-md">
+            <div className="flex flex-col items-center text-center space-y-4">
+              <div className="p-3 bg-red-100 rounded-full">
+                <FaSignOutAlt className="text-red-500 text-2xl" />
+              </div>
+              <h3 className="text-2xl font-bold text-gray-900">Déconnexion</h3>
+              <p className="text-gray-600">Êtes-vous sûr de vouloir vous déconnecter ?</p>
+              <div className="flex space-x-4 w-full mt-4">
+                <button 
+                  onClick={handleLogout}
+                  className="flex-1 bg-red-600 hover:bg-red-700 text-white py-3 px-6 rounded-lg font-medium transition-colors flex items-center justify-center shadow-md"
+                >
+                  <FaSignOutAlt className="mr-2" />
+                  Déconnexion
+                </button>
+                <button 
+                  onClick={() => setShowConfirm(false)}
+                  className="flex-1 bg-gray-200 hover:bg-gray-300 text-gray-800 py-3 px-6 rounded-lg font-medium transition-colors shadow-md"
+                >
+                  Annuler
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       <Sidebar />
 
       <div className="flex-1 flex flex-col overflow-hidden">
-        <header className="bg-white shadow-sm py-4 px-6 flex items-center justify-between">
-          <h1 className="text-xl font-bold text-gray-800">
-            {location.pathname === "/dashboarddirecteur" && "Tableau de Bord"}
-            {location.pathname === "/dashboarddirecteur/rapports" && "Rapports Financiers"}
-            {location.pathname === "/dashboarddirecteur/audits" && "Audits Financiers"}
-            {location.pathname === "/dashboarddirecteur/profildirecteur" && "Mon Profil"}
-          </h1>
+        <header className="bg-white shadow-sm py-4 px-6 flex items-center justify-between sticky top-0 z-10">
+          <div className="flex items-center">
+            {getPageIcon()}
+            <h1 className="text-xl font-bold text-gray-800">
+              {getPageTitle()}
+            </h1>
+          </div>
 
           <div className="flex items-center space-x-4">
             <div className="relative hidden md:block">
-              <FaSearch className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
+              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                <FaSearch className="text-gray-400" />
+              </div>
               <input 
                 type="text" 
                 placeholder="Rechercher..." 
-                className="pl-10 pr-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent bg-gray-50"
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
+                className="pl-10 pr-4 py-2 w-64 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent bg-gray-50 transition-all shadow-sm"
               />
             </div>
             <button className="p-2 text-gray-500 hover:text-gray-700 relative">
-              <FaBell />
-              <span className="absolute top-0 right-0 h-2 w-2 rounded-full bg-red-500"></span>
-            </button>
-            <div className="flex items-center space-x-2">
-              <div className="h-8 w-8 rounded-full bg-indigo-100 flex items-center justify-center">
-                <FaUserCircle className="text-indigo-600" />
+              <div className="relative">
+                <FaBell className="text-xl" />
+                <span className="absolute top-0 right-0 h-2.5 w-2.5 rounded-full bg-red-500 border-2 border-white"></span>
               </div>
-              <span className="hidden md:block font-medium text-sm">Directeur Financier</span>
+            </button>
+            <div className="flex items-center space-x-2 group cursor-pointer">
+              <div className="h-10 w-10 rounded-full bg-gradient-to-r from-indigo-500 to-purple-500 flex items-center justify-center text-white font-medium">
+                DF
+              </div>
+              <div className="hidden md:block">
+                <p className="text-sm font-medium">Directeur Financier</p>
+                <p className="text-xs text-gray-500">Administrateur</p>
+              </div>
             </div>
           </div>
         </header>
 
         <main className="flex-1 overflow-y-auto p-6 bg-gray-50">
-          <Outlet />
-
-          {location.pathname === "/dashboarddirecteur" && (
-            <div className="space-y-6">
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <div className="bg-white p-5 rounded-xl shadow-sm border-t-4 border-blue-500">
-                  <div className="flex justify-between">
-                    <div>
-                      <p className="text-sm font-medium text-gray-500">Chiffre d'Affaires</p>
-                      <p className="text-2xl font-bold text-gray-800 mt-1">2.45M €</p>
-                      <div className="flex items-center text-green-500 text-sm mt-1">
-                        <FaChartLine className="mr-1" />
-                        <span>↑ 12% vs trimestre dernier</span>
-                      </div>
-                    </div>
-                    <div className="h-12 w-12 rounded-full bg-blue-50 flex items-center justify-center">
-                      <FaMoneyBillWave className="text-blue-500 text-xl" />
-                    </div>
-                  </div>
-                </div>
-
-                <div className="bg-white p-5 rounded-xl shadow-sm border-t-4 border-green-500">
-                  <div className="flex justify-between">
-                    <div>
-                      <p className="text-sm font-medium text-gray-500">Marge Brute</p>
-                      <p className="text-2xl font-bold text-gray-800 mt-1">1.12M €</p>
-                      <div className="flex items-center text-green-500 text-sm mt-1">
-                        <FaPercentage className="mr-1" />
-                        <span>45.7% de marge</span>
-                      </div>
-                    </div>
-                    <div className="h-12 w-12 rounded-full bg-green-50 flex items-center justify-center">
-                      <FaChartPie className="text-green-500 text-xl" />
-                    </div>
-                  </div>
-                </div>
-
-                <div className="bg-white p-5 rounded-xl shadow-sm border-t-4 border-purple-500">
-                  <div className="flex justify-between">
-                    <div>
-                      <p className="text-sm font-medium text-gray-500">Trésorerie</p>
-                      <p className="text-2xl font-bold text-gray-800 mt-1">845K €</p>
-                      <div className="flex items-center text-blue-500 text-sm mt-1">
-                        <FaBalanceScale className="mr-1" />
-                        <span>Ratio: 1.8</span>
-                      </div>
-                    </div>
-                    <div className="h-12 w-12 rounded-full bg-purple-50 flex items-center justify-center">
-                      <FaDatabase className="text-purple-500 text-xl" />
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <div className="bg-white p-5 rounded-xl shadow-sm">
-                <h2 className="text-lg font-semibold text-gray-800 mb-4">Performance Financière</h2>
-                <div className="h-80">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <AreaChart data={performanceData} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
-                      <defs>
-                        <linearGradient id="colorRevenus" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopColor="#4F46E5" stopOpacity={0.8}/>
-                          <stop offset="95%" stopColor="#4F46E5" stopOpacity={0}/>
-                        </linearGradient>
-                        <linearGradient id="colorDepenses" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopColor="#10B981" stopOpacity={0.8}/>
-                          <stop offset="95%" stopColor="#10B981" stopOpacity={0}/>
-                        </linearGradient>
-                      </defs>
-                      <XAxis dataKey="name" />
-                      <YAxis />
-                      <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                      <Tooltip />
-                      <Area type="monotone" dataKey="revenus" stroke="#4F46E5" fillOpacity={1} fill="url(#colorRevenus)" />
-                      <Area type="monotone" dataKey="depenses" stroke="#10B981" fillOpacity={1} fill="url(#colorDepenses)" />
-                    </AreaChart>
-                  </ResponsiveContainer>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <div className="bg-white p-5 rounded-xl shadow-sm">
-                  <h2 className="text-lg font-semibold text-gray-800 mb-4">Budget vs Dépenses</h2>
-                  <div className="h-64">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={budgetData} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
-                        <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                        <XAxis dataKey="name" />
-                        <YAxis />
-                        <Tooltip />
-                        <Bar dataKey="budget" fill="#4F46E5" radius={[4, 4, 0, 0]} />
-                        <Bar dataKey="utilisé" fill="#10B981" radius={[4, 4, 0, 0]} />
-                      </BarChart>
-                    </ResponsiveContainer>
-                  </div>
-                </div>
-
-                <div className="bg-white p-5 rounded-xl shadow-sm">
-                  <div className="flex items-center justify-between mb-4">
-                    <h2 className="text-lg font-semibold text-gray-800">Audits à Planifier</h2>
-                    <button 
-                      onClick={() => setShowForm(true)}
-                      className="text-indigo-600 hover:text-indigo-800 text-sm flex items-center"
-                    >
-                      <FaPlus className="mr-1" /> Nouvel audit
-                    </button>
-                  </div>
-                  
-                  <div className="space-y-3">
-                    {filteredAudits.slice(0, 3).map((audit) => (
-                      <div key={audit.id} className="border border-gray-100 rounded-lg p-3 hover:shadow-sm transition">
-                        <div className="flex justify-between items-start">
-                          <div>
-                            <h3 className="font-medium">{audit.nom}</h3>
-                            <div className="flex items-center text-sm text-gray-500 mt-1">
-                              <FaCalendarAlt className="mr-1" />
-                              <span>{audit.dateDebut} au {audit.dateFin}</span>
-                            </div>
-                          </div>
-                          <span className={`px-2 py-1 text-xs rounded-full ${
-                            audit.priorite === 'Haute' ? 'bg-red-100 text-red-800' :
-                            'bg-yellow-100 text-yellow-800'
-                          }`}>
-                            {audit.priorite}
-                          </span>
-                        </div>
-                        <div className="flex justify-between items-center mt-2">
-                          <span className={`text-xs px-2 py-1 rounded-full ${
-                            audit.statut === 'Planifié' ? 'bg-green-100 text-green-800' :
-                            audit.statut === 'En cours' ? 'bg-blue-100 text-blue-800' :
-                            'bg-gray-100 text-gray-800'
-                          }`}>
-                            {audit.statut}
-                          </span>
-                          <div>
-                            <button className="text-blue-600 hover:text-blue-800 mr-2">
-                              <FaEdit size={14} />
-                            </button>
-                            <button 
-                              onClick={() => handleDelete(audit.id)}
-                              className="text-red-600 hover:text-red-800"
-                            >
-                              <FaTrash size={14} />
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-
-              <div className="bg-white p-5 rounded-xl shadow-sm">
-                <div className="flex items-center justify-between mb-4">
-                  <h2 className="text-lg font-semibold text-gray-800">Rapports Récents</h2>
-                  <Link to="/dashboarddirecteur/rapports" className="text-indigo-600 hover:text-indigo-800 text-sm">
-                    Voir tous →
-                  </Link>
-                </div>
-                
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  {rapportsData.slice(0, 3).map((rapport) => (
-                    <div key={rapport.id} className="border border-gray-100 rounded-lg p-4 hover:shadow-sm transition">
-                      <div className="flex items-center mb-2">
-                        <div className={`h-3 w-3 rounded-full mr-2 ${
-                          rapport.statut === 'Validé' ? 'bg-green-500' :
-                          rapport.statut === 'En révision' ? 'bg-yellow-500' :
-                          'bg-gray-500'
-                        }`}></div>
-                        <h3 className="font-medium text-sm">{rapport.titre}</h3>
-                      </div>
-                      <div className="text-xs text-gray-500 mb-1">Type: {rapport.type}</div>
-                      <div className="text-xs text-gray-500 mb-3">Date: {rapport.date}</div>
-                      <div className="flex justify-between items-center">
-                        <span className={`text-xs px-2 py-1 rounded-full ${
-                          rapport.statut === 'Validé' ? 'bg-green-100 text-green-800' :
-                          rapport.statut === 'En révision' ? 'bg-yellow-100 text-yellow-800' :
-                          'bg-gray-100 text-gray-800'
-                        }`}>
-                          {rapport.statut}
-                        </span>
-                        <button className="text-indigo-600 text-xs hover:text-indigo-800">
-                          Consulter
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
+          {isActive('/dashboarddirecteur') && !isActive('/dashboarddirecteur/') ? (
+            <DashboardContent />
+          ) : (
+            <Outlet />
           )}
         </main>
       </div>
-
-      {/* Modal pour nouveau audit */}
-      {showForm && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-lg shadow-xl w-full max-w-2xl">
-            <div className="p-6">
-              <h2 className="text-xl font-semibold mb-4">Planifier un nouvel audit</h2>
-              <form onSubmit={handleSubmitAudit}>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Nom de l'audit</label>
-                    <input
-                      type="text"
-                      name="nom"
-                      value={formData.nom}
-                      onChange={(e) => setFormData({...formData, nom: e.target.value})}
-                      className="w-full p-2 border border-gray-300 rounded-md"
-                      required
-                    />
-                  </div>
-                  
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Type d'audit</label>
-                    <select
-                      name="type"
-                      value={formData.type}
-                      onChange={(e) => setFormData({...formData, type: e.target.value})}
-                      className="w-full p-2 border border-gray-300 rounded-md"
-                    >
-                      <option value="Financier">Financier</option>
-                      <option value="RH">Ressources Humaines</option>
-                      <option value="Processus">Processus</option>
-                      <option value="Conformité">Conformité</option>
-                    </select>
-                  </div>
-                  
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Responsable</label>
-                    <input
-                      type="text"
-                      name="responsable"
-                      value={formData.responsable}
-                      onChange={(e) => setFormData({...formData, responsable: e.target.value})}
-                      className="w-full p-2 border border-gray-300 rounded-md"
-                      required
-                    />
-                  </div>
-                  
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Priorité</label>
-                    <select
-                      name="priorite"
-                      value={formData.priorite}
-                      onChange={(e) => setFormData({...formData, priorite: e.target.value})}
-                      className="w-full p-2 border border-gray-300 rounded-md"
-                    >
-                      <option value="Haute">Haute</option>
-                      <option value="Moyenne">Moyenne</option>
-                      <option value="Basse">Basse</option>
-                    </select>
-                  </div>
-                  
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Date de début</label>
-                    <input
-                      type="date"
-                      name="dateDebut"
-                      value={formData.dateDebut}
-                      onChange={(e) => setFormData({...formData, dateDebut: e.target.value})}
-                      className="w-full p-2 border border-gray-300 rounded-md"
-                      required
-                    />
-                  </div>
-                  
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Date de fin</label>
-                    <input
-                      type="date"
-                      name="dateFin"
-                      value={formData.dateFin}
-                      onChange={(e) => setFormData({...formData, dateFin: e.target.value})}
-                      className="w-full p-2 border border-gray-300 rounded-md"
-                      required
-                    />
-                  </div>
-                </div>
-                
-                <div className="mt-6 flex justify-end space-x-3">
-                  <button
-                    type="button"
-                    onClick={() => setShowForm(false)}
-                    className="px-4 py-2 border border-gray-300 rounded-md text-gray-700"
-                  >
-                    Annuler
-                  </button>
-                  <button
-                    type="submit"
-                    className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
-                  >
-                    Planifier l'audit
-                  </button>
-                </div>
-              </form>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 };
 
-export default DashboardDirecteurFinancier;
+export default DashboardDirecteur;

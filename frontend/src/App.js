@@ -25,7 +25,7 @@ import PrivateRouteComptable from './Components/PrivateRouteComptable';
 import PrivateRouteDirecteur from './Components/PrivateRouteDirecteur';
 import ProfilComptable from './Components/ProfilComptable';
 import ModifComptable from './Components/ModifComptable';
-import Rapport from './Components/Rapport';
+import RapportsList from './Components/RapportsList';
 import ModifRapport from './Components/ModifRapport';
 import ExporterRapport from './Components/ExporterRapport';
 import CreerRapport from './Components/CreerRapport';
@@ -43,6 +43,9 @@ import { UserProvider } from './Components/UserContext';
 import Banque from './Components/Banque';
 import Rapprochement from './Components/Rapprochement';
 import FacebookCallback from './Components/FacebookCallback';
+import RapportDetail from './Components/RapportDetail';
+import RapportDirecteur from './Components/RapportDirecteur';
+import RapportPage from './Components/RapportPage';
 // Composant pour vérifier l'authentification globale
 /*function AuthCheck() {
   const navigate = useNavigate();
@@ -101,7 +104,7 @@ function App() {
               }
             >
               <Route path="profilcomptable" element={<ProfilComptable />} />
-              <Route path="rapports" element={<Rapport />} />
+              
               <Route path="creer_rapport" element={<CreerRapport />} />
               <Route path="modif_rapport/:id" element={<ModifRapport />} />
               <Route path="exporter_rapport/:id" element={<ExporterRapport />} />
@@ -109,7 +112,9 @@ function App() {
               <Route path="facture" element={<Facture />} />
               <Route path="factures/:id" element={<FactureDetail />} />
               <Route path="banque" element={<Banque />} />
-              <Route path="rapprochement" elemnet={<Rapprochement />} />
+              <Route path="rapprochement" element={<Rapprochement />} />
+              <Route path="rapport_detail" element={<RapportDetail />} />
+              <Route path="rapport" element={<RapportPage />} />
 
             </Route>
 
@@ -125,6 +130,8 @@ function App() {
               <Route path="profildirecteur" element={<ProfilDirecteur />} />
               <Route path="modify_profil" element={<ModifDirecteur />} />
               <Route path="audits" element={<Audit />} />
+               <Route path="rapports" element={<RapportDirecteur />} />
+               <Route path="rapport_detail" element={<RapportDetail />} />
               <Route path="calendar" element={<Calendar/>} />
             </Route>
           </Routes>

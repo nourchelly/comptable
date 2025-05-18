@@ -1,6 +1,6 @@
-from mongoengine import Document, ReferenceField,fields, CASCADE,NULLIFY,EmailField, ListField
+from mongoengine import DictField,Document,StringField,DateTimeField, ReferenceField,fields, CASCADE,NULLIFY,EmailField, ListField
 from django.contrib.auth.hashers import make_password, check_password
-from mongoengine.errors import ValidationError, NotUniqueError
+from mongoengine.errors import ValidationError, NotUniqueError,DoesNotExist
 from django.utils import timezone
 from datetime import datetime, timedelta
 import datetime 
@@ -320,26 +320,92 @@ class DirecteurFinancier(Document):
         )
         directeur.save()
         return directeur
-    
-class Rapport(Document):
-    facture_id = fields.StringField(required=True)
+class Banque(Document):
+    numero = fields.StringField(required=False)  # Numéro de compte bancaire
+    montant = fields.FloatField()  # Montant de la transaction
+    date_transaction = fields.DateTimeField()  # Date de la transaction
+    description = fields.StringField()  # Description de la transaction
+    solde = fields.FloatField()  # Solde bancaire après la transaction
+    fichier = fields.FileField()  # Fichier PDF du relevé bancaire
+    metadata = fields.DictField()  # Métadonnées supplémentaires
     created_at = fields.DateTimeField(default=datetime.datetime.now)
-    success = fields.BooleanField(default=False)
-    raw_text = fields.StringField(required=True)
-    report = fields.DictField()
-    error = fields.StringField()
-    ai_response = fields.StringField()
     
     meta = {
-        'collection': 'rapport',
-        'indexes': ['facture_id']
+        'collection': 'banques',
+        'indexes': [
+            {
+                'fields': ['numero'],
+                'unique': False,
+                'name': 'numero_index'
+            },
+            {
+                'fields': ['date_transaction'],
+                'name': 'date_transaction_index'
+            }
+        ],
+        'strict': False  # Permet des champs supplémentaires
     }
 
     def clean(self):
-        self.updated_at = datetime.datetime.now()
-        if self.statut == 'Validé' and not hasattr(self, 'validated_at'):
-            self.validated_at = datetime.datetime.now()
+        """Validation avant sauvegarde"""
+        if self.montant and not isinstance(self.montant, (float, int)):
+            raise ValidationError("Le montant doit être un nombre")
 
+    @property
+    def fichier_url(self):
+        return f'/api/banques/{self.id}/download/'
+       
+class Rapport(Document):
+    """Modèle pour stocker les rapports de réconciliation générés"""
+    
+    # Références aux documents liés
+    facture = ReferenceField('Facture', required=True)
+    banque = ReferenceField('Banque', reverse_delete_rule=NULLIFY)
+    reconciliation = ReferenceField('Reconciliation', required=True)
+    
+    # Métadonnées du rapport
+    titre = StringField(required=True)
+    date_generation = DateTimeField(default=datetime.datetime.now)
+    statut = StringField(choices=['complet', 'incomplet', 'anomalie', 'validé'], required=True)
+    
+    # Contenu du rapport
+    resume_facture = DictField(required=True)
+    resume_releve = DictField(required=True)
+    resultat_verification = DictField(required=True)
+    anomalies = ListField(StringField())
+    recommendations = ListField(StringField())
+    created_at = DateTimeField(default=datetime.datetime.now)
+    analyse_texte = StringField()
+    rapport_complet = DictField(required=True)
+    
+    meta = {
+        'collection': 'rapport',  # Nom de collection au pluriel
+        'indexes': [
+            'facture', 
+            'banque', 
+            'reconciliation', 
+            'date_generation',
+            'statut'
+        ],
+        'ordering': ['-date_generation']  # Tri par défaut
+    }
+    
+    def __str__(self):
+        return f"Rapport {self.titre} - {self.date_generation.strftime('%Y-%m-%d %H:%M')}"
+    
+    def clean(self):
+        """Validation avant sauvegarde"""
+        # Vérifie que la facture référencée existe
+        if not Facture.objects(id=self.facture.id).first():
+            raise ValidationError("La facture référencée n'existe pas")
+            
+        # Vérifie que la reconciliation référencée existe
+        if not Reconciliation.objects(id=self.reconciliation.id).first():
+            raise ValidationError("La réconciliation référencée n'existe pas")
+            
+        # Vérification optionnelle de la banque
+        if self.banque and not Banque.objects(id=self.banque.id).first():
+            raise ValidationError("La banque référencée n'existe pas")
 # models.py
 from mongoengine import Document, fields
 
@@ -465,7 +531,12 @@ def facture_upload_path(instance, filename):
     ext = filename.split('.')[-1]
     filename = f"{uuid.uuid4()}.{ext}"
     return os.path.join('factures', filename)
-
+class ImportedFile(Document):
+    filename = fields.StringField(required=True)
+    filepath = fields.StringField(required=True)
+    upload_date = fields.DateTimeField(default=datetime.datetime.utcnow)
+    file_type = fields.StringField(required=True, choices=['invoice', 'statement'])
+    # Ajoutez d'autres champs pertinents comme l'ID de l'utilisateur qui a importé, etc.
 class Facture(Document):
     user = ReferenceField('CustomUser', required=False, sparse=True)
     numero = fields.StringField(required=False)  # Changé à required=False
@@ -482,7 +553,7 @@ class Facture(Document):
     meta = {
         'collection': 'factures',
         'indexes': [
-            {'fields': ['numero'], 'unique': True, 'sparse': True},  # sparse=True permet plusieurs null
+            {'fields': ['numero'], 'unique': True, 'sparse': True, 'name': 'numero_unique_sparse'},  # sparse=True permet plusieurs null
             {'fields': ['user'], 'name': 'user_idx', 'sparse': True}
         ]
     }
@@ -497,29 +568,7 @@ class Facture(Document):
             return os.path.basename(str(self.fichier.name))
         return None
 
-class Banque(Document):
-    numero = fields.StringField(required=False)  # Numéro de transaction
-    montant = fields.FloatField()  # Montant de la transaction
-    date_transaction = fields.DateTimeField()  # Date de la transaction
-    description = fields.StringField()  # Description de la transaction
-    solde = fields.FloatField()  # Solde bancaire après la transaction
-    fichier = fields.FileField()
-    metadata = fields.DictField()   # Fichier PDF du relevé bancaire
-    created_at = fields.DateTimeField(default=datetime.datetime.now)
-    meta = {
-        'collection': 'banques',
-        'indexes': [
-            {
-                'fields': ['numero'],
-                'unique': False,  # Explicitement non unique
-                'name': 'numero_index'  # Nom personnalisé
-            }
-        ]
-    }
 
-    @property
-    def fichier_url(self):
-        return f'/api/banques/{self.id}/download/'
     
 # models.py
 class Notification(Document):
@@ -544,3 +593,22 @@ class Notification(Document):
         ]
     }
 
+class Reconciliation(Document):
+    facture=fields.ReferenceField(Facture)
+    banque=fields.ReferenceField(Banque)
+    invoice_data = fields.DictField(required=True)
+    statement_data = fields.DictField(required=True)
+    verification_result = fields.DictField(required=True)
+    analysis = fields.StringField()
+    statut = StringField(choices=['complet', 'anomalie', 'incomplet'], default='incomplet')
+    report = fields.DictField(required=True)
+    created_at = fields.DateTimeField(default=datetime.datetime.now)
+    
+    meta = {
+        'collection': 'reconciliations',
+        'indexes': [
+            'invoice_data.numero',
+            'statement_data.banque',
+            'created_at'
+        ]
+    }
