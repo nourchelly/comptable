@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import axios from 'axios';
-import validator from 'validator'; 
+import validator from 'validator';
 import { useNavigate } from "react-router-dom";
 import { FaEnvelope, FaLock, FaSpinner } from 'react-icons/fa';
 
@@ -11,10 +11,18 @@ const ForgotPassword = () => {
     const [error, setError] = useState('');
     const [role, setRole] = useState('');
     const [isLoading, setIsLoading] = useState(false);
+    const [attemptCount, setAttemptCount] = useState(0);
+    const [canSubmit, setCanSubmit] = useState(true);
+    const [submitTimeout, setSubmitTimeout] = useState(null);
 
     const handleSubmit = async (e) => {
         e.preventDefault();
-     
+
+        if (!canSubmit) {
+            setError('Trop de tentatives. Veuillez réessayer dans une minute.');
+            return;
+        }
+
         if (!validator.isEmail(email)) {
             setError('Email invalide');
             return;
@@ -28,14 +36,28 @@ const ForgotPassword = () => {
         try {
             const response = await axios.post(
                 'http://127.0.0.1:8000/api/forgot-password/',
-                {   email: email.toLowerCase().trim(),
-                    role: role.toLowerCase().trim()  },
+                { email: email.toLowerCase().trim(), role: role.toLowerCase().trim() },
                 { headers: { 'Content-Type': 'application/json' }}
             );
-            setMessage(response.data.detail || 'Lien envoyé avec succès');
+            setMessage('Si cet email existe dans notre système, un lien de réinitialisation y a été envoyé.');
+            setError('');
+            setAttemptCount(0);
+            setCanSubmit(true);
+            if (submitTimeout) clearTimeout(submitTimeout);
             setTimeout(() => navigate('/connexion'), 3000);
         } catch (err) {
             setError(err.response?.data?.detail || 'Erreur serveur');
+            setMessage('');
+            setAttemptCount(prevCount => prevCount + 1);
+            if (attemptCount >= 2) { // Limiter à 3 tentatives (0, 1, 2)
+                setCanSubmit(false);
+                const timeoutId = setTimeout(() => {
+                    setCanSubmit(true);
+                    setAttemptCount(0);
+                    setSubmitTimeout(null);
+                }, 60000); // Réactiver après 1 minute
+                setSubmitTimeout(timeoutId);
+            }
         } finally {
             setIsLoading(false);
         }
@@ -47,8 +69,8 @@ const ForgotPassword = () => {
             <div className="hidden lg:block lg:w-1/2 bg-gradient-to-br from-indigo-50 to-indigo-100">
                 <div className="h-full flex flex-col items-center justify-center p-12">
                     <div className="mb-8">
-                        <img 
-                            src="/images/fo.png" 
+                        <img
+                            src="/images/fo.png"
                             alt="Mot de passe oublié"
                             className="h-64 w-auto object-contain rounded-lg"
                         />
@@ -125,8 +147,8 @@ const ForgotPassword = () => {
                             <div>
                                 <button
                                     type="submit"
-                                    disabled={isLoading}
-                                    className={`w-full flex justify-center items-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 ${isLoading ? 'opacity-75 cursor-not-allowed' : ''}`}
+                                    disabled={isLoading || !canSubmit}
+                                    className={`w-full flex justify-center items-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 ${isLoading || !canSubmit ? 'opacity-75 cursor-not-allowed' : ''}`}
                                 >
                                     {isLoading ? (
                                         <>
@@ -144,8 +166,8 @@ const ForgotPassword = () => {
                         </form>
 
                         <div className="mt-6 text-center">
-                            <a 
-                                href="/connexion" 
+                            <a
+                                href="/connexion"
                                 className="text-sm font-medium text-indigo-600 hover:text-indigo-500"
                             >
                                 ← Retour à la connexion

@@ -29,20 +29,24 @@ const ResetPassword = () => {
         }
 
         setIsLoading(true);
-        
+
         try {
             const response = await axios.post(
                 'http://127.0.0.1:8000/api/reset-password/',
-                { 
-                 token,
-                 new_password: password,
-                 confirm_password: confirmPassword },
+                {
+                    token,
+                    new_password: password,
+                    confirm_password: confirmPassword },
                 { headers: { 'Content-Type': 'application/json' } }
             );
             setMessage(response.data.detail || 'Mot de passe modifié !');
+            setError(''); // Effacer les erreurs précédentes en cas de succès
             setTimeout(() => navigate('/connexion'), 2000);
         } catch (err) {
             setError(err.response?.data?.detail || 'Erreur serveur');
+            if (err.response?.status === 400 || err.response?.status === 404) {
+                setError(err.response.data.detail || 'Le lien de réinitialisation est invalide ou a expiré.');
+            }
         } finally {
             setIsLoading(false);
         }

@@ -76,9 +76,9 @@ class CustomUser(Document):
         return self.username
     def generate_reset_token(self):
         self.reset_token = str(uuid.uuid4())
-        self.reset_token_expires = datetime.now() + timedelta(hours=24)
+        self.reset_token_expires = timezone.now() + timedelta(hours=24) # timezone.now() est "aware" en UTC
         self.save()
-
+      
     def clear_reset_token(self):
         self.reset_token = None
         self.reset_token_expires = None

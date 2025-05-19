@@ -59,6 +59,7 @@ const Callback = () => {
           case 'directeur':
             navigate('/dashboarddirecteur');
             break;
+            
           default:
             console.log("Rôle non reconnu:", role);
             navigate('/'); // Redirection par défaut

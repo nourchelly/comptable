@@ -268,17 +268,18 @@ const handleCompareDocuments = useCallback(async () => {
         setReconciliations(prev => prev.map(rec =>
           rec.id === reconciliationId
             ? {
-                ...rec,
-                report: {
-                  ...rec.report,
-                  metadata: {
-                    ...rec.report?.metadata,
-                    statut: 'Validé',
-                    date_validation: new Date().toISOString()
-                  }
-                },
-                loadingValidation: false
-              }
+              ...rec,
+              statut: 'Validé', // Ajout de la mise à jour directe du statut
+              report: {
+                ...rec.report,
+                metadata: {
+                  ...rec.report?.metadata,
+                  statut: 'Validé',
+                  date_validation: new Date().toISOString()
+                }
+              },
+              loadingValidation: false
+            }
             : rec
         ));
       } else {
@@ -300,7 +301,7 @@ const handleCompareDocuments = useCallback(async () => {
       toast.dismiss(toastId);
     }
   }, []);
-
+  
   // Sauvegarder les corrections
   const handleSaveCorrections =useCallback(async ({ corrections, comments }) => {
     if (!editingReconciliation) return;

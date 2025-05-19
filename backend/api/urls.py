@@ -56,7 +56,7 @@ urlpatterns = [
     # Authentification via Google
     path('auth/google/callback/', google_auth_callback, name='google_callback'),
     path("get-csrf/", get_csrf, name="get-csrf"),
-    path('auth/facebook/callback/', facebook_auth_callback, name='google_callback'),
+    path('auth/facebook/callback/', facebook_auth_callback, name='facebook_auth_callback'),
     # Gestion des profils et rapports
     path('rapports/<str:id>/', api_rapports, name='rapport-detail'),  # ✏️ Modifier un rapport
    

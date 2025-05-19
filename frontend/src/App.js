@@ -46,31 +46,22 @@ import FacebookCallback from './Components/FacebookCallback';
 import RapportDetail from './Components/RapportDetail';
 import RapportDirecteur from './Components/RapportDirecteur';
 import RapportPage from './Components/RapportPage';
-// Composant pour vérifier l'authentification globale
-/*function AuthCheck() {
-  const navigate = useNavigate();
-  const location = useLocation();
-  
- // Dans le composant AuthCheck
-React.useEffect(() => {
-  const isProtectedRoute = location.pathname.includes('/dashboard');
-  if (isProtectedRoute && !localStorage.getItem('access_token')) {
-      localStorage.setItem('redirectPath', location.pathname);
-      navigate('/connexion');
-  }
-}, [location])};*/
+import FacebookLoginButton from './Components/FacebookLoginButton'; // Importez le bouton de connexion Facebook
+
 function App() {
   return (
     <div className="App">
       <GoogleOAuthProvider clientId="11479995049-09n7oceljn4sgmodv5til5uj7bd072jp.apps.googleusercontent.com">
         <UserProvider>
-         {/* Ajouter ce composant pour la vérification globale */}
           <Routes>
             {/* Routes publiques */}
             <Route path="/" element={<Home />} />
             <Route path="/contact" element={<Contact />} />
             <Route path="/services" element={<Services />} />
-            <Route path="/connexion" element={<Login />} />
+            <Route path="/connexion" element={<Login />}>
+              {/* Ajoutez le bouton de connexion Facebook ici ou dans le composant Login */}
+              <Route path="facebook" element={<FacebookLoginButton />} />
+            </Route>
             <Route path="/signup" element={<Signup />} />
             <Route path="/forgot-password" element={<ForgotPassword />} />
             <Route path="/reset-password/:token" element={<ResetPassword />} />
@@ -104,7 +95,7 @@ function App() {
               }
             >
               <Route path="profilcomptable" element={<ProfilComptable />} />
-              
+
               <Route path="creer_rapport" element={<CreerRapport />} />
               <Route path="modif_rapport/:id" element={<ModifRapport />} />
               <Route path="exporter_rapport/:id" element={<ExporterRapport />} />
@@ -130,9 +121,9 @@ function App() {
               <Route path="profildirecteur" element={<ProfilDirecteur />} />
               <Route path="modify_profil" element={<ModifDirecteur />} />
               <Route path="audits" element={<Audit />} />
-               <Route path="rapports" element={<RapportDirecteur />} />
-               <Route path="rapport_detail" element={<RapportDetail />} />
-              <Route path="calendar" element={<Calendar/>} />
+              <Route path="rapports" element={<RapportDirecteur />} />
+              <Route path="rapport_detail" element={<RapportDetail />} />
+              <Route path="calendar" element={<Calendar />} />
             </Route>
           </Routes>
         </UserProvider>

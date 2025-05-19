@@ -1138,7 +1138,8 @@ def find_anomalies_in_report(report_data):
                     'type': 'rapprochement',
                     'field': 'paiement_trouve',
                     'originalValue': False,
-                    'expectedValue': True
+                    'expectedValue': True,
+                    'statut': rapprochement.get('statut_paiement_trouve', 'non_corrigé'), # Ajouter le statut
                 })
             if not rapprochement.get('montant_correspond'):
                 anomalies.append({
@@ -1147,7 +1148,8 @@ def find_anomalies_in_report(report_data):
                     'type': 'rapprochement',
                     'field': 'montant_correspond',
                     'originalValue': False,
-                    'expectedValue': True
+                    'expectedValue': True,
+                    'statut': rapprochement.get('statut_montant_correspond', 'non_corrigé'), # Ajouter le statut
                 })
             if not rapprochement.get('date_correspond'):
                 anomalies.append({
@@ -1156,10 +1158,12 @@ def find_anomalies_in_report(report_data):
                     'type': 'rapprochement',
                     'field': 'date_correspond',
                     'originalValue': False,
-                    'expectedValue': True
+                    'expectedValue': True,
+                    'statut': rapprochement.get('statut_date_correspond', 'non_corrigé'), # Ajouter le statut
                 })
         # ... autres logiques de détection d'anomalies ...
-    return anomalies
+    return [a for a in anomalies if isinstance(a, dict) and a.get('statut') != 'corrigé']
+
 @app.route('/api/reconciliations', methods=['GET'])
 def get_reconciliations():
     """Endpoint pour récupérer les rapprochements avec filtres"""
@@ -1202,7 +1206,7 @@ def get_reconciliations():
                              get_attr(recon.banque, 'metadata.emetteur', "Inconnu")
 
                 facture_numero = get_attr(recon.facture, 'numero') or \
-                                     get_attr(recon.facture, 'metadata.numero_facture', "N/A")
+                                 get_attr(recon.facture, 'metadata.numero_facture', "N/A")
 
                 # Traitement du rapport
                 report_data = recon.report  # Accéder directement au dictionnaire report
@@ -1263,6 +1267,7 @@ def get_reconciliations():
             "error": "Erreur interne du serveur",
             "details": str(e)
         }), 500
+
 @app.route('/api/reconciliations/<reconciliation_id>', methods=['PATCH'])
 def update_reconciliation(reconciliation_id):
     """Endpoint pour mettre à jour un rapprochement (validation ou corrections)"""
@@ -1343,7 +1348,7 @@ def update_reconciliation(reconciliation_id):
             "error": "Erreur interne du serveur",
             "details": str(e)
         }), 500
-    
+
 @app.route('/api/reconciliations/<reconciliation_id>/correct', methods=['POST'])
 def correct_reconciliation(reconciliation_id):
     """Endpoint pour appliquer des corrections aux anomalies d'un rapprochement"""
@@ -1380,7 +1385,8 @@ def correct_reconciliation(reconciliation_id):
 
         # 5. Application des corrections
         report = reconciliation.report
-        anomalies = report.get('rapprochement', {}).get('anomalies', [])
+        rapprochement_data = report.get('rapprochement', {})
+        anomalies = rapprochement_data.get('anomalies', [])
         print(f"Structure des anomalies AVANT la boucle de correction pour {reconciliation_id}: {anomalies}")
         anomalies_modifiees = []  # Nouvelle liste pour stocker les anomalies modifiées
 
@@ -1431,9 +1437,10 @@ def correct_reconciliation(reconciliation_id):
                     anomalies_modifiees.append(anomaly)
 
         # 6. Mise à jour du rapport avec les anomalies potentiellement modifiées
-        report['rapprochement']['anomalies'] = [
+        rapprochement_data['anomalies'] = [
             a for a in anomalies_modifiees if isinstance(a, dict) or (isinstance(a, str) and 'corrigé' in a)
         ] # Filtrer pour ne garder que les corrections ou les anciennes anomalies corrigées
+        report['rapprochement'] = rapprochement_data
 
         # 7. Mise à jour des métadonnées
         report['metadata'] = {
@@ -1475,7 +1482,7 @@ def correct_reconciliation(reconciliation_id):
             "error": "Erreur interne du serveur",
             "details": str(e)
         }), 500
-    
+      
 @app.route('/api/rapports/<rapport_id>', methods=['GET'])
 def get_rapport(rapport_id):
     """Récupère un rapport spécifique par son ID"""

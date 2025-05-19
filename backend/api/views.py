@@ -1000,46 +1000,52 @@ import json
 
 class PasswordResetRequestView(APIView):
     permission_classes = [AllowAny]
-    
+
     def post(self, request):
         try:
             serializer = PasswordResetRequestSerializer(data=request.data)
             if serializer.is_valid():
                 user = serializer.validated_data['user']
-                
-                if not user.is_active:
+
+                if user:
+                    if not user.is_active:
+                        return Response(
+                            {"detail": "Ce compte est désactivé."},
+                            status=status.HTTP_403_FORBIDDEN
+                        )
+
+                    # Génération du token
+                    user.reset_token = str(uuid.uuid4())
+                    user.reset_token_expires = timezone.now() + timedelta(hours=1)  # Expiration réduite à 1 heure
+                    user.save()
+
+                    # Construction du lien
+                    reset_link = f"{settings.FRONTEND_URL}/reset-password/{user.reset_token}/"
+
+                    # Envoi d'email
+                    try:
+                        send_mail(
+                            f'Réinitialisation de mot de passe ({user.get_role_display()})',
+                            f'Cliquez sur ce lien pour réinitialiser votre mot de passe: {reset_link}',
+                            settings.DEFAULT_FROM_EMAIL,
+                            [user.email],
+                            fail_silently=False,
+                        )
+                        print(f"Email de réinitialisation envoyé à {user.email}")
+                        return Response(
+                            {"detail": "Un lien de réinitialisation a été envoyé à votre email si un compte correspondant existe."},
+                            status=status.HTTP_200_OK
+                        )
+                    except Exception as e:
+                        print(f"Erreur d'envoi d'email: {str(e)}")
+                        return Response(
+                            {"detail": "Erreur lors de l'envoi de l'email."},
+                            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                        )
+                else:
                     return Response(
-                        {"detail": "Ce compte est désactivé."},
-                        status=status.HTTP_403_FORBIDDEN
-                    )
-                
-                # Génération du token
-                user.reset_token = str(uuid.uuid4())
-                user.reset_token_expires = timezone.now() + timedelta(hours=24)
-                user.save()
-                
-                # Construction du lien
-                reset_link = f"{settings.FRONTEND_URL}/reset-password/{user.reset_token}/"
-                
-                # Envoi d'email
-                try:
-                    send_mail(
-                        f'Réinitialisation de mot de passe ({user.get_role_display()})',
-                        f'Cliquez sur ce lien pour réinitialiser votre mot de passe: {reset_link}',
-                        settings.DEFAULT_FROM_EMAIL,
-                        [user.email],
-                        fail_silently=False,
-                    )
-                    print(f"Email envoyé à {user.email}")
-                    return Response(
-                        {"detail": "Un lien de réinitialisation a été envoyé à votre email."},
+                        {"detail": "Un lien de réinitialisation a été envoyé à votre email si un compte correspondant existe."},
                         status=status.HTTP_200_OK
-                    )
-                except Exception as e:
-                    print(f"Erreur d'envoi d'email: {str(e)}")
-                    return Response(
-                        {"detail": "Erreur lors de l'envoi de l'email."},
-                        status=status.HTTP_500_INTERNAL_SERVER_ERROR
                     )
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
         except Exception as e:
@@ -1048,19 +1054,18 @@ class PasswordResetRequestView(APIView):
                 {"detail": "Une erreur serveur est survenue."},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
-from django.utils.timezone import now  # Import correct pour le timezone aware datetime
-from django.utils.timezone import make_aware, get_current_timezone
-from django.utils.timezone import is_naive
 
 @csrf_exempt
 @api_view(['POST'])
 @permission_classes([AllowAny])
 def reset_password(request):
     try:
+        print(f"Reset password request received: {request.body}")
         data = json.loads(request.body)
         token = data.get('token')
         new_password = data.get('new_password')
         confirm_password = data.get('confirm_password')
+        print(f"Token: {token}, New Password: {new_password}, Confirm Password: {confirm_password}")
 
         if not token:
             return Response({"detail": "Token manquant"}, status=400)
@@ -1072,19 +1077,27 @@ def reset_password(request):
             return Response({"detail": "Les mots de passe ne correspondent pas."}, status=400)
 
         try:
+            # Utilisez directement CustomUser.objects.get avec les champs mongoengine
             user = CustomUser.objects.get(reset_token=token)
+            print(f"User found: {user.email}, Reset Token Expires (DB): {user.reset_token_expires}")
         except CustomUser.DoesNotExist:
             return Response({"detail": "Lien invalide ou expiré."}, status=404)
 
         # Vérification de l'expiration du token
-        current_time = now()  # Utilisez now() de django.utils.timezone
+        current_time = now()
         token_expires = user.reset_token_expires
+
+        print(f"Current Time (UTC): {current_time}")
 
         if token_expires is None:
             return Response({"detail": "Token invalide (pas de date d'expiration)."}, status=400)
 
         if is_naive(token_expires):
-            token_expires = make_aware(token_expires, get_current_timezone())
+            # Interprétez l'heure naive comme étant en UTC
+            token_expires = make_aware(token_expires, utc)
+            print(f"Token Expires (aware, UTC): {token_expires}")
+        else:
+            print(f"Token Expires (already aware): {token_expires}")
 
         if token_expires < current_time:
             return Response({"detail": "Lien expiré."}, status=400)
@@ -1094,16 +1107,16 @@ def reset_password(request):
         user.reset_token = None
         user.reset_token_expires = None
         user.save()
-
+        print(f"Password reset successful for user: {user.email}")
         return Response({"detail": "Mot de passe réinitialisé avec succès."}, status=200)
 
     except json.JSONDecodeError:
         return Response({"detail": "Données JSON invalides"}, status=400)
     except Exception as e:
+        print(f"Error during reset password: {e}")
         return Response({"detail": str(e)}, status=500)
-
 # Vue de déconnexion
-from django.utils.timezone import is_naive, make_aware, get_current_timezone
+from django.utils.timezone import now,utc,is_naive, make_aware, get_current_timezone
 from rest_framework_simplejwt.tokens import RefreshToken, TokenError
 from rest_framework_simplejwt.authentication import JWTAuthentication
 from django.http import JsonResponse
@@ -1230,7 +1243,108 @@ def google_auth_callback(request):
         "email": user.email
     })
 
+@api_view(['POST'])
+@csrf_exempt
+@permission_classes([AllowAny])
+def facebook_auth_callback(request):
+    code = request.data.get('code')
+    print("Code Facebook reçu:", code)
 
+    if not code:
+        return JsonResponse({"error": "Code non fourni par Facebook"}, status=400)
+
+    # 1. Obtenir le token d'accès depuis Facebook
+    token_url = "https://graph.facebook.com/v19.0/oauth/access_token"
+    redirect_uri = "http://localhost:3000/auth/facebook/callback"
+    app_id = settings.FACEBOOK_APP_ID  # Utiliser les settings Django
+    app_secret = settings.FACEBOOK_APP_SECRET  # Utiliser les settings Django
+
+    token_params = {
+        "code": code,
+        "client_id": app_id,
+        "client_secret": app_secret,
+        "redirect_uri": redirect_uri,
+    }
+
+    print("Envoi de la requête de token Facebook avec les paramètres:", token_params)
+    token_response = requests.post(token_url, params=token_params)
+    print("Statut réponse token Facebook:", token_response.status_code)
+    print("Contenu réponse token Facebook:", token_response.text)
+
+    if token_response.status_code != 200:
+        return JsonResponse({"error": f"Erreur token Facebook: {token_response.text}"}, status=400)
+
+    tokens = token_response.json()
+    access_token = tokens.get("access_token")
+
+    if not access_token:
+        return JsonResponse({"error": "Token d'accès Facebook non récupéré"}, status=400)
+
+    # 2. Récupérer les infos utilisateur depuis Facebook
+    user_info_url = "https://graph.facebook.com/v19.0/me"
+    user_info_params = {
+        "access_token": access_token,
+        "fields": "id,name,email"  # Demander les champs nécessaires
+    }
+
+    print("Récupération des infos utilisateur Facebook avec token:", access_token[:10] + "...")
+    user_info_response = requests.get(user_info_url, params=user_info_params)
+    print("Statut réponse userinfo Facebook:", user_info_response.status_code)
+    print("Contenu réponse userinfo Facebook:", user_info_response.text)
+
+    if user_info_response.status_code != 200:
+        return JsonResponse({"error": f"Erreur récupération infos utilisateur Facebook: {user_info_response.text}"}, status=400)
+
+    user_info = user_info_response.json()
+    email = user_info.get("email", "").lower().strip()
+    username = user_info.get("name", email.split("@")[0] if email else "")
+    facebook_id = user_info.get("id")
+
+    print(f"Email Facebook extrait: '{email}'")
+    print(f"Username Facebook extrait: '{username}'")
+    print(f"Facebook ID extrait: '{facebook_id}'")
+
+    if not email:
+        return JsonResponse({"error": "Email non récupéré depuis Facebook"}, status=400)
+
+    # 3. Vérifier ou créer l'utilisateur dans MongoEngine
+    try:
+        print(f"Recherche utilisateur avec email: {email}")
+        user = CustomUser.objects.get(email=email)
+        print(f"Utilisateur trouvé: {user.id}, rôle: {user.role}")
+    except CustomUser.DoesNotExist:
+        print(f"Utilisateur non trouvé, création d'un nouveau compte via Facebook")
+        try:
+            user = CustomUser.objects.create(
+                email=email,
+                username=username,
+                role="comptable",
+                password="",
+                is_active=True
+            )
+            print(f"Utilisateur créé avec ID: {user.id}")
+        except Exception as e:
+            print(f"Erreur lors de la création de l'utilisateur via Facebook: {str(e)}")
+            return JsonResponse({"error": f"Erreur création utilisateur Facebook: {str(e)}"}, status=400)
+
+    # 4. Générer le JWT
+    payload = {
+        "user_id": str(user.id),
+        "email": user.email,
+        "role": user.role,
+        "exp": datetime.datetime.utcnow() + datetime.timedelta(hours=24),
+        "iat": datetime.datetime.utcnow()
+    }
+
+    print(f"Génération du JWT avec payload: {payload}")
+    jwt_token = jwt.encode(payload, settings.SECRET_KEY, algorithm="HS256")
+
+    return JsonResponse({
+        "token": jwt_token,
+        "role": user.role,
+        "user_id": str(user.id),
+        "email": user.email
+    })
 #rapport 
 from .models import Rapport
 
@@ -2057,87 +2171,6 @@ def download_facture(request, id):
     except Exception as e:
         logger.error(f"Erreur téléchargement: {str(e)}")
         return JsonResponse({'error': str(e)}, status=500)
-@api_view(['POST'])
-@csrf_exempt
-@permission_classes([AllowAny])
-def facebook_auth_callback(request):
-    code = request.data.get('code')
-    print("Code Facebook reçu:", code)
-
-    if not code:
-        return JsonResponse({"error": "Code non fourni"}, status=400)
-
-    # 1. Obtenir le token d'accès depuis Facebook
-    token_url = "https://graph.facebook.com/v18.0/oauth/access_token"
-    redirect_uri = "http://localhost:3000/auth/facebook/callback"
-    client_id = "3737484549889496"  # Votre App ID Facebook
-    client_secret = "b0bf5f776c2dbfb0dd69a91c6191b3de"  # À mettre dans les variables d'environnement
-
-    token_params = {
-        "client_id": client_id,
-        "client_secret": client_secret,
-        "redirect_uri": redirect_uri,
-        "code": code
-    }
-
-    token_response = requests.get(token_url, params=token_params)
-    if token_response.status_code != 200:
-        return JsonResponse({"error": "Erreur token Facebook"}, status=400)
-
-    tokens = token_response.json()
-    access_token = tokens.get("access_token")
-
-    # 2. Récupérer les infos utilisateur
-    user_info_url = "https://graph.facebook.com/me"
-    user_info_params = {
-        "fields": "id,name,email,picture",
-        "access_token": access_token
-    }
-
-    user_info_response = requests.get(user_info_url, params=user_info_params)
-    if user_info_response.status_code != 200:
-        return JsonResponse({"error": "Erreur récupération infos utilisateur"}, status=400)
-
-    user_info = user_info_response.json()
-    print("Réponse Facebook:", user_info)
-
-    email = user_info.get("email")
-    if not email:
-        return JsonResponse({"error": "Email non récupéré depuis Facebook"}, status=400)
-
-    username = user_info.get("name", email.split("@")[0])
-    facebook_id = user_info.get("id")
-
-    # 3. Vérifier ou créer l'utilisateur dans MongoEngine
-    try:
-        user = CustomUser.objects.get(email=email)
-    except CustomUser.DoesNotExist:
-        user = CustomUser.objects.create(
-            email=email,
-            username=username,
-            facebook_id=facebook_id,  # Stocker l'ID Facebook si besoin
-            role="user",  # Par défaut
-            password="",  # Auth externe
-            is_active=True
-        )
-
-    # 4. Générer le JWT (identique à Google)
-    payload = {
-        "user_id": str(user.id),
-        "email": user.email,
-        "role": user.role,
-        "exp": datetime.utcnow() + timedelta(hours=24),
-        "iat": datetime.utcnow()
-    }
-
-    jwt_token = jwt.encode(payload, settings.SECRET_KEY, algorithm="HS256")
-
-    return JsonResponse({
-        "token": jwt_token,
-        "role": user.role,
-        "user_id": str(user.id),
-        "username": user.username
-    })
 
 
 

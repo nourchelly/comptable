@@ -246,22 +246,7 @@ useEffect(() => {
   };
 
   // Téléchargement des relevés
-  const handleDownload = async (url, filename) => {
-    try {
-      const response = await axios.get(url, {
-        responseType: 'blob',
-        withCredentials: true
-      });
-      
-      const blob = new Blob([response.data], { type: 'application/pdf' });
-      const link = document.createElement('a');
-      link.href = window.URL.createObjectURL(blob);
-      link.download = filename || 'releve_bancaire.pdf';
-      link.click();
-    } catch (err) {
-      toast.error('Erreur lors du téléchargement');
-    }
-  };
+ 
 
   // Import du relevé
   const handleUpload = async () => {
@@ -471,16 +456,7 @@ useEffect(() => {
                   <span className="hidden sm:inline">Importer</span>
                 </button>
                 
-                {filteredReleves.length > 0 && (
-                  <CSVLink
-                    data={csvData}
-                    filename={"releves_bancaires.csv"}
-                    className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg flex items-center justify-center"
-                  >
-                    <FaFileExcel className="mr-2" />
-                    <span className="hidden sm:inline">Exporter</span>
-                  </CSVLink>
-                )}
+                
               </div>
             </div>
           </div>
@@ -620,13 +596,7 @@ useEffect(() => {
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-center">
                           <div className="flex justify-center space-x-2">
-                            <button
-                              onClick={() => handleDownload(releve.downloadUrl, releve.nom_fichier)}
-                              className="h-9 w-9 flex items-center justify-center bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 transition-colors"
-                              title="Télécharger"
-                            >
-                              <FaDownload className="text-sm" />
-                            </button>
+                           
                             <button
                               onClick={() => toggleDetails(releve.id)}
                               className="h-9 w-9 flex items-center justify-center bg-gray-50 text-gray-600 rounded-lg hover:bg-gray-100 transition-colors"
@@ -730,13 +700,7 @@ useEffect(() => {
                                     Fichier & Actions
                                   </h4>
                                   <div className="space-y-3">
-                                    <button
-                                      onClick={() => handleDownload(releve.downloadUrl, releve.nom_fichier)}
-                                      className="w-full flex items-center justify-center px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50"
-                                    >
-                                      <FaDownload className="mr-2" />
-                                      Télécharger le PDF
-                                    </button>
+                                  
                                     <button
                                       onClick={() => navigate(`/dashboardcomptable/rapprochement?releveId=${releve.id}`)}
                                       className="w-full flex items-center justify-center px-4 py-2 border border-transparent rounded-lg text-sm font-medium text-white bg-blue-600 hover:bg-blue-700"
@@ -961,14 +925,7 @@ useEffect(() => {
                 Annuler
               </button>
               <div className="flex space-x-3">
-                {selectedFile && (
-                  <button
-                    onClick={() => handleDownload(URL.createObjectURL(selectedFile), selectedFile.name)}
-                    className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50"
-                  >
-                    Prévisualiser
-                  </button>
-                )}
+               
                 <button
                   onClick={handleUpload}
                   disabled={!selectedFile || uploadStatus === 'uploading'}

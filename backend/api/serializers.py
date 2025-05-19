@@ -107,13 +107,31 @@ class LoginSerializer(serializers.Serializer):
 
 class PasswordResetRequestSerializer(serializers.Serializer):
     email = serializers.EmailField()
-    role = serializers.ChoiceField(choices=CustomUser.ROLE_CHOICES)
-    
+    role = serializers.ChoiceField(choices=CustomUser.ROLE_CHOICES)  # Utilisez directement CustomUser
+
     def validate(self, data):
-        email = data.get('email').strip().lower()  # Normalisation
-        role = data.get('role').strip().lower()    # Normalisation
-        
+        email = data.get('email')
+        role = data.get('role')
+
         print(f"Validation attempt - Email: {email}, Role: {role}")  # Debug
+
+        if email:
+            email = email.strip().lower()  # Normalisation
+        else:
+            raise serializers.ValidationError(
+                {"email": "Ce champ est obligatoire."},
+                code='required'
+            )
+
+        if role:
+            role = role.strip().lower()    # Normalisation
+        else:
+            raise serializers.ValidationError(
+                {"role": "Ce champ est obligatoire."},
+                code='required'
+            )
+
+        print(f"Normalized - Email: {email}, Role: {role}")  # Debug
 
         try:
             user = CustomUser.objects.get(email__iexact=email, role__iexact=role)
@@ -126,7 +144,6 @@ class PasswordResetRequestSerializer(serializers.Serializer):
                 {"detail": "Aucun utilisateur trouvé avec cet email et ce rôle."},
                 code='invalid'
             )
-
 class PasswordResetSerializer(serializers.Serializer):
     token = serializers.CharField()
     new_password = serializers.CharField(write_only=True)
