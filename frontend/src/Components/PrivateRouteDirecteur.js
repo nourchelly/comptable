@@ -1,18 +1,18 @@
 import { Navigate, useLocation } from 'react-router-dom';
 
-const PrivateRouteDirecteur = ({ children }) => {
+const PrivateRouteDirecteur = ({ children, rolesRequises = [] }) => {
   const location = useLocation();
-  // Utilisez localStorage pour être cohérent avec le callback
-  const token = localStorage.getItem('token');
-  const userRole = localStorage.getItem('userRole')?.toLowerCase()?.trim();
+  const token = localStorage.getItem('auth_token');
+  const userRole = localStorage.getItem('userRole')?.toLowerCase();
 
   if (!token) {
-    // Stockez dans localStorage pour persister après redirection
-    localStorage.setItem('redirect_path', location.pathname);
-    return <Navigate to="/connexion" replace state={{ from: location }} />;
+    return <Navigate to="/connexion" state={{ from: location }} replace />;
   }
 
-  
+  // Vérification des rôles si nécessaire
+  if (rolesRequises.length > 0 && !rolesRequises.includes(userRole)) {
+    return <Navigate to="/non-autorise" replace />;
+  }
 
   return children;
 };

@@ -54,16 +54,36 @@ const DashboardComptable = () => {
   }, [navigate]);
 
   const handleLogout = () => {
-    axios.get("http://127.0.0.1:8000/api/logout/")
-      .then(result => {
-        if (result.data.Status) {
-          localStorage.removeItem("valid");
-          navigate('/connexion');
-        }
-      })
-      .catch(err => console.error(err));
-  };
-
+  // Récupérer le token d'authentification stocké
+  const token = localStorage.getItem('auth_token');
+  
+  axios.post("http://127.0.0.1:8000/api/log/", {}, {
+    headers: {
+      'Authorization': `Bearer ${token}`
+    }
+  })
+    .then(result => {
+      if (result.data.status === 'success' || result.data.Status) {
+        // Nettoyer toutes les données d'authentification stockées
+        localStorage.removeItem("valid");
+        localStorage.removeItem("auth_token");
+        localStorage.removeItem("userId");
+        localStorage.removeItem("userRole");
+        
+        // Rediriger vers la page de connexion
+        navigate('/connexion');
+      }
+    })
+    .catch(err => {
+      console.error("Erreur lors de la déconnexion:", err);
+      // En cas d'erreur, nettoyer quand même les données locales
+      localStorage.removeItem("valid");
+      localStorage.removeItem("auth_token");
+      localStorage.removeItem("userId");
+      localStorage.removeItem("userRole");
+      navigate('/connexion');
+    });
+};
   const isActive = (path) => location.pathname === path;
 
   const titleConfig = {
@@ -78,7 +98,7 @@ const DashboardComptable = () => {
       color: "purple"
     },
     "/dashboardcomptable/rapport": {
-      title: "Rapports Comptables",
+      title: "Rapports Financiers",
       icon: <FiFileText className="text-green-600" />,
       color: "green"
     },
@@ -88,12 +108,12 @@ const DashboardComptable = () => {
       color: "blue"
     },
     "/dashboardcomptable/banque": {
-      title: "Banque",
+      title: "Gestion des relevés bancaires",
       icon: <FaUniversity className="text-yellow-600" />,
       color: "yellow"
     },
     "/dashboardcomptable/rapprochement": {
-      title: "Rapprochement",
+      title: "Rapprochements intelligents",
       icon: <FaClipboardCheck className="text-red-600" />,
       color: "red"
     }
@@ -220,7 +240,7 @@ const DashboardComptable = () => {
                 }`}>
                   <FaUniversity className="text-lg" />
                 </div>
-                {sidebarOpen && <span>Banques</span>}
+                {sidebarOpen && <span>Relevés Bancaires</span>}
               </Link>
 
               <Link 
@@ -252,7 +272,7 @@ const DashboardComptable = () => {
                 }`}>
                   <FaFileAlt className="text-lg" />
                 </div>
-                {sidebarOpen && <span>Rapports</span>}
+                {sidebarOpen && <span>Rapports Financiers</span>}
               </Link>
             </div>
 
@@ -334,7 +354,7 @@ const DashboardComptable = () => {
               />
             </div>
             
-            <Notification />
+           
             
             <div className="flex items-center space-x-2">
               <div className="h-10 w-10 rounded-full bg-gradient-to-r from-indigo-500 to-purple-500 flex items-center justify-center text-white font-medium">
@@ -343,7 +363,7 @@ const DashboardComptable = () => {
               {sidebarOpen && (
                 <div className="hidden md:block">
                   <p className="text-sm font-medium">{user?.username || 'Comptable'}</p>
-                  <p className="text-xs text-gray-500">Administrateur</p>
+                  <p className="text-xs text-gray-500">Comptable</p>
                 </div>
               )}
               <FiChevronDown className="text-gray-500 text-sm" />

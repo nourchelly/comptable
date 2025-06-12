@@ -15,16 +15,19 @@ import {
 } from 'react-icons/fa';
 import { 
   FiTrendingUp, FiAlertTriangle, FiActivity, FiDollarSign,
-  FiCheckCircle, FiAlertCircle, FiClock, FiPieChart,FiRefreshCw
+  FiCheckCircle, FiAlertCircle, FiClock, FiPieChart,FiRefreshCw,FiChevronDown
 } from 'react-icons/fi';
 import axios from 'axios';
 import { toast } from 'react-toastify';
+import { useUser } from './UserContext';
 
-const COLORS = ['#6366F1', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6'];
+const COLORS = ['#10B981', '#F59E0B', '#6366F1', '#EF4444', '#8B5CF6'];
 
 const DashboardDirecteur = () => {
   const navigate = useNavigate();
   const location = useLocation();
+  const { user } = useUser();
+  const [sidebarOpen, setSidebarOpen] = useState(true);
   const [dashboardData, setDashboardData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [dateRange, setDateRange] = useState('last30days');
@@ -50,44 +53,91 @@ const DashboardDirecteur = () => {
   };
 
   const handleLogout = () => {
-    axios.get("http://127.0.0.1:8000/api/logout/")
+    const token = localStorage.getItem('auth_token');
+    
+    axios.post("http://127.0.0.1:8000/api/log/", {}, {
+      headers: {
+        'Authorization': `Bearer ${token}`
+      }
+    })
       .then(result => {
-        if (result.data.Status) {
+        if (result.data.status === 'success' || result.data.Status) {
           localStorage.removeItem("valid");
+          localStorage.removeItem("auth_token");
+          localStorage.removeItem("userId");
+          localStorage.removeItem("userRole");
           navigate('/connexion');
         }
       })
-      .catch(err => console.error(err));
+      .catch(err => {
+        console.error("Erreur lors de la déconnexion:", err);
+        localStorage.removeItem("valid");
+        localStorage.removeItem("auth_token");
+        localStorage.removeItem("userId");
+        localStorage.removeItem("userRole");
+        navigate('/connexion');
+      });
   };
 
-  useEffect(() => {
-    const fetchDashboardData = async () => {
-      try {
-        setLoading(true);
-        const response = await axios.get('http://localhost:5000/api/dashboard/finance', {
-          params: {
-            dateRange,
-            banque_id: bankFilter === 'all' ? null : bankFilter
-          },
-          withCredentials: true,
-          headers: {
-            'Content-Type': 'application/json',
-            'Accept': 'application/json'
-          }
-        });
-        setDashboardData(response.data);
-      } catch (error) {
-        toast.error('Erreur lors du chargement des données');
-        console.error(error);
-      } finally {
-        setLoading(false);
-      }
-    };
+useEffect(() => {
+  const fetchDashboardData = async () => {
+    try {
+      setLoading(true);
+      const response = await axios.get('http://localhost:5000/api/dashboard/finance', {
+        params: {
+          dateRange,
+          banque_id: bankFilter === 'all' ? 'all' : bankFilter
+        },
+        withCredentials: true,
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
+        }
+      });
 
-    if (isActive('/dashboarddirecteur') && !isActive('/dashboarddirecteur/')) {
-      fetchDashboardData();
+      // Vérification des données reçues
+      if (!response.data || !response.data.metadata) {
+        throw new Error('Données du dashboard invalides');
+      }
+
+      // Normalisation des données
+      const normalizedData = {
+        ...response.data,
+        metrics: {
+          taux_completude: response.data.metrics?.taux_completude || 0,
+          taux_anomalies: response.data.metrics?.taux_anomalies || 0,
+          montant_total: response.data.metrics?.montant_total || 0,
+          montant_moyen: response.data.metrics?.montant_moyen || 0,
+          montants_par_statut: response.data.metrics?.montants_par_statut || {
+            complet: 0,
+            anomalie: 0,
+            incomplet: 0
+          }
+        },
+        charts: {
+          ...response.data.charts,
+          statut_distribution: response.data.charts?.statut_distribution || {
+            complet: 0,
+            anomalie: 0,
+            incomplet: 0
+          }
+        }
+      };
+
+      setDashboardData(normalizedData);
+    } catch (error) {
+      console.error('Erreur détaillée:', error.response?.data || error.message);
+      toast.error(`Erreur lors du chargement des données: ${error.message}`);
+      setDashboardData(null);
+    } finally {
+      setLoading(false);
     }
-  }, [dateRange, bankFilter, location.pathname]);
+  };
+
+  if (isActive('/dashboarddirecteur') && !isActive('/dashboarddirecteur/')) {
+    fetchDashboardData();
+  }
+}, [dateRange, bankFilter, location.pathname]);
 
   const Sidebar = () => (
     <div className="w-64 bg-gradient-to-b from-indigo-700 to-indigo-800 text-white flex flex-col h-full shadow-xl transition-all duration-300">
@@ -197,7 +247,7 @@ const DashboardDirecteur = () => {
         <div className="flex justify-center items-center h-full">
           <div className="flex flex-col items-center">
             <div className="animate-spin rounded-full h-16 w-16 border-t-4 border-b-4 border-indigo-600 mb-4"></div>
-            <p className="text-gray-600">Chargement des données...</p>
+            
           </div>
         </div>
       );
@@ -222,6 +272,30 @@ const DashboardDirecteur = () => {
       );
     }
 
+    // Préparer les données pour les graphiques
+    const chartData = dashboardData.charts?.monthly_trends?.labels?.map((label, index) => ({
+      name: label,
+      total: dashboardData.charts.monthly_trends.datasets[0]?.data[index] || 0,
+      complet: dashboardData.charts.monthly_trends.datasets[1]?.data[index] || 0,
+      anomalie: dashboardData.charts.monthly_trends.datasets[2]?.data[index] || 0
+    })) || [];
+
+    const amountData = dashboardData.charts?.monthly_amounts?.labels?.map((label, index) => ({
+      name: label,
+      montant: dashboardData.charts.monthly_amounts.datasets[0]?.data[index] || 0
+    })) || [];
+
+    const statusData = Object.entries(dashboardData.charts?.statut_distribution || {}).map(([name, value]) => ({
+      name: name === 'complet' ? 'Complet' : name === 'anomalie' ? 'Anomalie' : 'Incomplet',
+      value,
+      color: name === 'complet' ? '#10B981' : name === 'anomalie' ? '#F59E0B' : '#6366F1'
+    }));
+
+    const anomaliesData = dashboardData.charts?.top_anomalies?.map(item => ({
+      name: item.anomalie || 'Non spécifié',
+      count: item.count || 0
+    })) || [];
+
     return (
       <div className="space-y-6">
         {/* Header with filters */}
@@ -233,10 +307,7 @@ const DashboardDirecteur = () => {
                 Tableau de Bord Financier
               </h1>
               <p className="text-gray-600 mt-1">
-                {dateRange === 'last7days' ? '7 derniers jours' : 
-                 dateRange === 'last30days' ? '30 derniers jours' : 
-                 dateRange === 'last90days' ? '90 derniers jours' : 
-                 'Toutes périodes'}
+                Période: {dashboardData.metadata?.periode || 'Non définie'}
               </p>
             </div>
             
@@ -256,14 +327,12 @@ const DashboardDirecteur = () => {
                   <option value="all">Toutes périodes</option>
                 </select>
               </div>
-              
-             
             </div>
           </div>
         </div>
 
         {/* KPI Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
           <div className="bg-gradient-to-r from-indigo-500 to-indigo-600 p-6 rounded-xl shadow-lg text-white">
             <div className="flex justify-between items-start">
               <div>
@@ -287,14 +356,14 @@ const DashboardDirecteur = () => {
           <div className="bg-gradient-to-r from-emerald-500 to-emerald-600 p-6 rounded-xl shadow-lg text-white">
             <div className="flex justify-between items-start">
               <div>
-                <p className="text-sm font-medium text-emerald-100 uppercase tracking-wider">Transactions</p>
+                <p className="text-sm font-medium text-emerald-100 uppercase tracking-wider">Montant Total</p>
                 <p className="text-3xl font-bold mt-2">
-                  {dashboardData.metadata?.total_transactions || 0}
+                  {(dashboardData.metrics?.montant_total || 0).toLocaleString('fr-FR')} €
                 </p>
                 <div className="flex items-center mt-3">
                   <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-400 text-white">
                     <FaMoneyBillWave className="mr-1" />
-                    {dashboardData.metadata?.total_amount?.toLocaleString() || 0} €
+                    Moy: {(dashboardData.metrics?.montant_moyen || 0).toFixed(0)} €
                   </span>
                 </div>
               </div>
@@ -314,12 +383,32 @@ const DashboardDirecteur = () => {
                 <div className="flex items-center mt-3">
                   <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-400 text-white">
                     <FiAlertTriangle className="mr-1" />
-                    {dashboardData.charts?.top_anomalies?.length || 0} types
+                    {dashboardData.charts?.statut_distribution?.anomalie || 0} cas
                   </span>
                 </div>
               </div>
               <div className="h-12 w-12 rounded-full bg-white bg-opacity-20 flex items-center justify-center">
                 <FiAlertTriangle className="text-white text-xl" />
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-gradient-to-r from-green-500 to-green-600 p-6 rounded-xl shadow-lg text-white">
+            <div className="flex justify-between items-start">
+              <div>
+                <p className="text-sm font-medium text-green-100 uppercase tracking-wider">Complets</p>
+                <p className="text-3xl font-bold mt-2">
+                  {dashboardData.charts?.statut_distribution?.complet || 0}
+                </p>
+                <div className="flex items-center mt-3">
+                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-400 text-white">
+                    <FiCheckCircle className="mr-1" />
+                    {(dashboardData.metrics?.montants_par_statut?.complet || 0).toLocaleString('fr-FR')} €
+                  </span>
+                </div>
+              </div>
+              <div className="h-12 w-12 rounded-full bg-white bg-opacity-20 flex items-center justify-center">
+                <FiCheckCircle className="text-white text-xl" />
               </div>
             </div>
           </div>
@@ -336,12 +425,12 @@ const DashboardDirecteur = () => {
               </h2>
               <div className="flex items-center text-sm text-gray-500">
                 <FiClock className="mr-1" />
-                Mise à jour: il y a 5 min
+                Mise à jour: maintenant
               </div>
             </div>
             <div className="h-80">
               <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={dashboardData.charts?.monthly_trends?.datasets[0]?.data || []}>
+                <AreaChart data={chartData}>
                   <defs>
                     <linearGradient id="colorTotal" x1="0" y1="0" x2="0" y2="1">
                       <stop offset="5%" stopColor="#6366F1" stopOpacity={0.8}/>
@@ -368,7 +457,7 @@ const DashboardDirecteur = () => {
                   />
                   <Area 
                     type="monotone" 
-                    dataKey="count" 
+                    dataKey="total" 
                     stroke="#6366F1" 
                     strokeWidth={2}
                     fillOpacity={1} 
@@ -394,7 +483,7 @@ const DashboardDirecteur = () => {
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
                   <Pie
-                    data={Object.entries(dashboardData.charts?.statut_distribution || {}).map(([name, value]) => ({ name, value }))}
+                    data={statusData}
                     cx="50%"
                     cy="50%"
                     labelLine={false}
@@ -404,8 +493,8 @@ const DashboardDirecteur = () => {
                     dataKey="value"
                     label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
                   >
-                    {Object.keys(dashboardData.charts?.statut_distribution || {}).map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                    {statusData.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={entry.color} />
                     ))}
                   </Pie>
                   <Tooltip 
@@ -430,37 +519,34 @@ const DashboardDirecteur = () => {
           </div>
         </div>
 
-        {/* Anomalies Chart */}
+        {/* Monthly amounts */}
         <div className="bg-white p-5 rounded-xl shadow-sm border border-gray-100">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-lg font-semibold text-gray-800 flex items-center">
-              <FiAlertTriangle className="text-amber-500 mr-2" />
-              Top 5 des anomalies détectées
+              <FaMoneyBillWave className="text-emerald-500 mr-2" />
+              Évolution des montants mensuels
             </h2>
-            <div className="text-sm text-amber-600 font-medium">
-              {dashboardData.metrics?.total_anomalies || 0} anomalies totales
-            </div>
           </div>
           <div className="h-64">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart
-                data={dashboardData.charts?.top_anomalies || []}
-                layout="vertical"
-                margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
-              >
-                <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} stroke="#E5E7EB" />
+              <AreaChart data={amountData}>
+                <defs>
+                  <linearGradient id="colorMontant" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#10B981" stopOpacity={0.8}/>
+                    <stop offset="95%" stopColor="#10B981" stopOpacity={0.1}/>
+                  </linearGradient>
+                </defs>
                 <XAxis 
-                  type="number" 
+                  dataKey="name" 
                   tick={{ fill: '#6B7280' }}
                   axisLine={{ stroke: '#E5E7EB' }}
                 />
                 <YAxis 
-                  dataKey="_id" 
-                  type="category" 
-                  width={150}
                   tick={{ fill: '#6B7280' }}
                   axisLine={{ stroke: '#E5E7EB' }}
+                  tickFormatter={(value) => `${value.toLocaleString()} €`}
                 />
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E5E7EB" />
                 <Tooltip 
                   contentStyle={{
                     backgroundColor: 'white',
@@ -468,168 +554,251 @@ const DashboardDirecteur = () => {
                     boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
                     border: '1px solid #E5E7EB'
                   }}
+                  formatter={(value, name) => [`${value.toLocaleString()} €`, 'Montant']}
                 />
-                <Bar 
-                  dataKey="count" 
-                  fill="#F59E0B" 
-                  radius={[0, 4, 4, 0]} 
-                  animationDuration={1500}
+                <Area 
+                  type="monotone" 
+                  dataKey="montant" 
+                  stroke="#10B981" 
+                  strokeWidth={2}
+                  fillOpacity={1} 
+                  fill="url(#colorMontant)" 
                 />
-              </BarChart>
+              </AreaChart>
             </ResponsiveContainer>
           </div>
         </div>
 
-        {/* Recent Activity */}
+        {/* Anomalies and Banks */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* Anomalies Chart */}
+          <div className="bg-white p-5 rounded-xl shadow-sm border border-gray-100">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-semibold text-gray-800 flex items-center">
+                <FiAlertTriangle className="text-amber-500 mr-2" />
+                Top des anomalies détectées
+              </h2>
+            </div>
+            <div className="h-64">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart
+                  data={anomaliesData}
+                  layout="vertical"
+                  margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
+                >
+                  <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} stroke="#E5E7EB" />
+                  <XAxis 
+                    type="number" 
+                    tick={{ fill: '#6B7280' }}
+                    axisLine={{ stroke: '#E5E7EB' }}
+                  />
+                  <YAxis 
+                    dataKey="name" 
+                    type="category" 
+                    width={120}
+                    tick={{ fill: '#6B7280', fontSize: 12 }}
+                    axisLine={{ stroke: '#E5E7EB' }}
+                  />
+                  <Tooltip 
+                    contentStyle={{
+                      backgroundColor: 'white',
+                      borderRadius: '0.5rem',
+                      boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
+                      border: '1px solid #E5E7EB'
+                    }}
+                  />
+                  <Bar 
+                    dataKey="count" 
+                    fill="#F59E0B" 
+                    radius={[0, 4, 4, 0]} 
+                    animationDuration={1500}
+                  />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+
+          {/* Top Banks */}
+          <div className="bg-white p-5 rounded-xl shadow-sm border border-gray-100">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-semibold text-gray-800 flex items-center">
+                <FaBalanceScale className="text-purple-500 mr-2" />
+                Top banques
+              </h2>
+            </div>
+            <div className="space-y-3">
+              {dashboardData.charts?.top_banques?.map((bank, index) => (
+                <div key={index} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                  <div className="flex items-center">
+                    <div className="w-8 h-8 bg-purple-100 rounded-full flex items-center justify-center mr-3">
+  <span className="text-purple-600 font-semibold text-sm">{index + 1}</span>
+</div>
+                      <div className="w-8 h-8 bg-purple-100 rounded-full flex items-center justify-center mr-3">
+                      <span className="text-purple-600 font-semibold text-sm">{index + 1}</span>
+                    </div>
+                    <div>
+                      <h3 className="font-medium text-gray-900">{bank.banque}</h3>
+                      <p className="text-sm text-gray-500">{bank.count} rapprochements</p>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <div className="flex items-center">
+                      <div className="w-24 bg-gray-200 rounded-full h-2 mr-2">
+                        <div 
+                          className="bg-purple-500 h-2 rounded-full transition-all duration-1000"
+                          style={{ 
+                            width: `${Math.min((bank.count / (dashboardData.charts?.top_banques?.[0]?.count || 1)) * 100, 100)}%` 
+                          }}
+                        ></div>
+                      </div>
+                      <span className="text-sm font-medium text-gray-700">
+                        {((bank.count / dashboardData.metadata?.total_reconciliations) * 100).toFixed(1)}%
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              )) || (
+                <div className="text-center py-8 text-gray-500">
+                  <FaBalanceScale className="mx-auto text-3xl mb-2 opacity-50" />
+                  <p>Aucune donnée bancaire disponible</p>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Recent Activity Section */}
         <div className="bg-white p-5 rounded-xl shadow-sm border border-gray-100">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-lg font-semibold text-gray-800 flex items-center">
-              <FiActivity className="text-purple-500 mr-2" />
+              <FiActivity className="text-indigo-500 mr-2" />
               Activité récente
             </h2>
-            <Link 
-              to="/dashboarddirecteur/rapports" 
-              className="text-sm text-indigo-600 hover:text-indigo-800 font-medium flex items-center"
-            >
-              Voir tout <FaChevronRight className="ml-1 text-xs" />
-            </Link>
+            <button className="text-indigo-600 hover:text-indigo-800 text-sm font-medium flex items-center">
+              Voir tout
+              <FaChevronRight className="ml-1 text-xs" />
+            </button>
           </div>
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Facture</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Banque</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Montant</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Statut</th>
-                </tr>
-              </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
-                {dashboardData.recent_activity?.map((item, index) => (
-                  <tr key={index} className="hover:bg-gray-50 transition-colors">
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      <div className="flex items-center">
-                        <FiClock className="mr-2 text-gray-400" />
-                        {item.date}
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                      {item.facture}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {item.banque}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                      {item.montant ? `${item.montant} €` : '-'}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <span className={`px-3 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${
-                        item.statut === 'complet' ? 'bg-green-100 text-green-800' :
-                        item.statut === 'anomalie' ? 'bg-amber-100 text-amber-800' :
-                        'bg-gray-100 text-gray-800'
-                      }`}>
-                        {item.statut === 'complet' ? (
-                          <FiCheckCircle className="mr-1" />
-                        ) : item.statut === 'anomalie' ? (
-                          <FiAlertCircle className="mr-1" />
-                        ) : (
-                          <FiClock className="mr-1" />
-                        )}
-                        {item.statut}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div className="space-y-3">
+            {dashboardData.recent_activity?.length > 0 ? (
+              dashboardData.recent_activity.map((activity, index) => (
+                <div key={index} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors">
+                  <div className="flex items-center">
+                    <div className={`w-3 h-3 rounded-full mr-3 ${
+                      activity.statut === 'complet' ? 'bg-green-500' :
+                      activity.statut === 'anomalie' ? 'bg-amber-500' : 
+                      'bg-gray-400'
+                    }`}></div>
+                    <div>
+                      <p className="font-medium text-gray-900">Facture #{activity.facture}</p>
+                      <p className="text-sm text-gray-600">{activity.banque} - {activity.date}</p>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <p className="font-semibold text-gray-900">
+                      {activity.montant.toLocaleString('fr-FR')} €
+                    </p>
+                    <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
+                      activity.statut === 'complet' ? 'bg-green-100 text-green-800' :
+                      activity.statut === 'anomalie' ? 'bg-amber-100 text-amber-800' :
+                      'bg-gray-100 text-gray-800'
+                    }`}>
+                      {activity.statut}
+                    </span>
+                  </div>
+                </div>
+              ))
+            ) : (
+              <div className="text-center py-8 text-gray-500">
+                <FiActivity className="mx-auto text-3xl mb-2 opacity-50" />
+                <p>Aucune activité récente</p>
+              </div>
+            )}
           </div>
         </div>
       </div>
     );
   };
 
-  return (
-    <div className="flex h-screen bg-gray-50 font-sans">
-      {showConfirm && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 backdrop-blur-sm">
-          <div className="bg-white rounded-xl p-8 w-full max-w-md">
-            <div className="flex flex-col items-center text-center space-y-4">
-              <div className="p-3 bg-red-100 rounded-full">
-                <FaSignOutAlt className="text-red-500 text-2xl" />
-              </div>
-              <h3 className="text-2xl font-bold text-gray-900">Déconnexion</h3>
-              <p className="text-gray-600">Êtes-vous sûr de vouloir vous déconnecter ?</p>
-              <div className="flex space-x-4 w-full mt-4">
-                <button 
-                  onClick={handleLogout}
-                  className="flex-1 bg-red-600 hover:bg-red-700 text-white py-3 px-6 rounded-lg font-medium transition-colors flex items-center justify-center shadow-md"
-                >
-                  <FaSignOutAlt className="mr-2" />
-                  Déconnexion
-                </button>
-                <button 
-                  onClick={() => setShowConfirm(false)}
-                  className="flex-1 bg-gray-200 hover:bg-gray-300 text-gray-800 py-3 px-6 rounded-lg font-medium transition-colors shadow-md"
-                >
-                  Annuler
-                </button>
-              </div>
+  // Confirmation Dialog
+  const ConfirmDialog = () => (
+    showConfirm && (
+      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div className="bg-white p-6 rounded-xl shadow-xl max-w-md w-full mx-4">
+          <div className="flex items-center mb-4">
+            <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center mr-4">
+              <FaSignOutAlt className="text-red-600 text-xl" />
             </div>
+            <div>
+              <h3 className="text-lg font-semibold text-gray-900">Confirmer la déconnexion</h3>
+              <p className="text-gray-600">Êtes-vous sûr de vouloir vous déconnecter ?</p>
+            </div>
+          </div>
+          <div className="flex justify-end space-x-3">
+            <button
+              onClick={() => setShowConfirm(false)}
+              className="px-4 py-2 text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
+            >
+              Annuler
+            </button>
+            <button
+              onClick={handleLogout}
+              className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
+            >
+              Se déconnecter
+            </button>
           </div>
         </div>
-      )}
+      </div>
+    )
+  );
 
+  return (
+    <div className="flex h-screen bg-gray-50">
       <Sidebar />
-
+      
       <div className="flex-1 flex flex-col overflow-hidden">
-        <header className="bg-white shadow-sm py-4 px-6 flex items-center justify-between sticky top-0 z-10">
-          <div className="flex items-center">
-            {getPageIcon()}
-            <h1 className="text-xl font-bold text-gray-800">
-              {getPageTitle()}
-            </h1>
-          </div>
-
-          <div className="flex items-center space-x-4">
-            <div className="relative hidden md:block">
-              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                <FaSearch className="text-gray-400" />
+        {/* Header */}
+        <header className="bg-white shadow-sm border-b border-gray-200 px-6 py-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center">
+              {getPageIcon()}
+              <div>
+                <h1 className="text-xl font-semibold text-gray-800">{getPageTitle()}</h1>
+                <p className="text-sm text-gray-600">
+                  {dashboardData?.metadata?.periode || 'Chargement...'}
+                </p>
               </div>
-              <input 
-                type="text" 
-                placeholder="Rechercher..." 
-                className="pl-10 pr-4 py-2 w-64 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent bg-gray-50 transition-all shadow-sm"
-              />
             </div>
-            <button className="p-2 text-gray-500 hover:text-gray-700 relative">
-              <div className="relative">
-                <FaBell className="text-xl" />
-                <span className="absolute top-0 right-0 h-2.5 w-2.5 rounded-full bg-red-500 border-2 border-white"></span>
-              </div>
-            </button>
-            <div className="flex items-center space-x-2 group cursor-pointer">
-              <div className="h-10 w-10 rounded-full bg-gradient-to-r from-indigo-500 to-purple-500 flex items-center justify-center text-white font-medium">
-                DF
-              </div>
-              <div className="hidden md:block">
-                <p className="text-sm font-medium">Directeur Financier</p>
-                <p className="text-xs text-gray-500">Administrateur</p>
+            
+            <div className="flex items-center space-x-4">
+              
+              
+              <div className="flex items-center space-x-2">
+                <div className="w-8 h-8 bg-indigo-600 rounded-full flex items-center justify-center">
+                  <span className="text-white text-sm font-medium">D</span>
+                </div>
+                <div className="hidden md:block">
+                  <p className="text-sm font-medium text-gray-900">Directeur</p>
+                  <p className="text-xs text-gray-600">Administrateur</p>
+                </div>
               </div>
             </div>
           </div>
         </header>
 
-        <main className="flex-1 overflow-y-auto p-6 bg-gray-50">
-          {isActive('/dashboarddirecteur') && !isActive('/dashboarddirecteur/') ? (
+        {/* Main Content */}
+        <main className="flex-1 overflow-y-auto p-6">
+          {location.pathname === '/dashboarddirecteur' || location.pathname === '/dashboarddirecteur/' ? (
             <DashboardContent />
           ) : (
             <Outlet />
           )}
         </main>
       </div>
+
+      <ConfirmDialog />
     </div>
   );
 };
-
 export default DashboardDirecteur;

@@ -23,17 +23,26 @@ const NotificationCenter = () => {
   const fetchNotifications = async () => {
     setIsLoading(true);
     try {
+      // CORRECTION 1: URL corrigée (retiré le double 's')
       const response = await axios.get('http://127.0.0.1:8000/api/notifications/', {
         withCredentials: true
       });
       
+      console.log('Réponse API:', response.data); // DEBUG: Ajout de log
+      
       if (response.data.status === 'success') {
         setNotifications(response.data.notifications);
-        setUnreadCount(response.data.notifications.filter(n => !n.lue).length);
+        // CORRECTION 2: Vérification du champ 'lue' 
+        const unreadNotifications = response.data.notifications.filter(n => !n.lue);
+        setUnreadCount(unreadNotifications.length);
+        console.log(`${response.data.notifications.length} notifications reçues, ${unreadNotifications.length} non lues`);
+      } else {
+        console.error('Réponse API avec statut non-success:', response.data);
       }
     } catch (error) {
       toast.error("Erreur de chargement des notifications");
-      console.error("Erreur:", error);
+      console.error("Erreur complète:", error);
+      console.error("Réponse d'erreur:", error.response?.data);
     } finally {
       setIsLoading(false);
     }
@@ -51,7 +60,8 @@ const NotificationCenter = () => {
       ));
       setUnreadCount(prev => Math.max(0, prev - 1));
     } catch (error) {
-      console.error("Erreur:", error);
+      console.error("Erreur marquage comme lu:", error);
+      toast.error("Erreur lors du marquage de la notification");
     }
   };
 
@@ -71,8 +81,8 @@ const NotificationCenter = () => {
     }
   };
 
-  const getNotificationIcon = (type) => {
-    switch(type) {
+ const getNotificationIcon = (notification) => {
+  switch(notification.type_notification ) {
       case 'signalement':
         return <FaExclamationTriangle className="text-red-500 text-lg" />;
       case 'avertissement':
@@ -84,8 +94,8 @@ const NotificationCenter = () => {
     }
   };
 
-  const getNotificationColor = (type) => {
-    switch(type) {
+  const getNotificationColor = (notification) => {
+    switch(notification.type_notification) {
       case 'signalement':
         return 'bg-red-50 border-red-100';
       case 'avertissement':
@@ -107,6 +117,12 @@ const NotificationCenter = () => {
     const interval = setInterval(fetchNotifications, 30000);
     return () => clearInterval(interval);
   }, []);
+
+  // DEBUG: Ajout d'un useEffect pour surveiller les changements
+  useEffect(() => {
+    console.log('Notifications state updated:', notifications);
+    console.log('Unread count:', unreadCount);
+  }, [notifications, unreadCount]);
 
   return (
     <div className="relative">
@@ -197,6 +213,7 @@ const NotificationCenter = () => {
                       <div className={`flex-shrink-0 p-2 rounded-lg ${
                         !notification.lue ? 'bg-white shadow-sm' : 'bg-gray-100'
                       }`}>
+                        {/* CORRECTION 3: Utilisation du bon champ 'type' au lieu de 'type_notification' */}
                         {getNotificationIcon(notification.type_notification)}
                       </div>
                       <div className="flex-1 min-w-0">

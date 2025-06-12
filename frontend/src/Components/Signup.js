@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import axios from 'axios';
 import { Link, useNavigate } from 'react-router-dom';
-import { FaEye, FaEyeSlash, FaPlus, FaTimes } from 'react-icons/fa';
+import { FaEye, FaEyeSlash, FaUser, FaEnvelope, FaLock, FaCheck, FaUserTie, FaChartLine, FaCheckCircle, FaExclamationTriangle, FaClock, FaShieldAlt } from 'react-icons/fa';
 import { ClipLoader } from 'react-spinners';
 
 const Signup = () => {
@@ -10,8 +10,7 @@ const Signup = () => {
         email: '',
         password: '',
         confirmPassword: '',
-        role: 'comptable',
-        secondary_emails: ['']
+        role: 'comptable'
     });
 
     const [error, setError] = useState('');
@@ -23,8 +22,8 @@ const Signup = () => {
     const [loading, setLoading] = useState(false);
     
     const navigate = useNavigate();
-      // Ajout des fonctions manquantes
-      const togglePasswordVisibility = () => {
+    
+    const togglePasswordVisibility = () => {
         setShowPassword(!showPassword);
     };
 
@@ -39,21 +38,6 @@ const Signup = () => {
         if (name === "password") {
             validatePassword(value);
         }
-    };
-
-    const handleSecondaryEmailChange = (index, value) => {
-        const newEmails = [...values.secondary_emails];
-        newEmails[index] = value;
-        setValues({ ...values, secondary_emails: newEmails });
-    };
-
-    const addSecondaryEmail = () => {
-        setValues({ ...values, secondary_emails: [...values.secondary_emails, ''] });
-    };
-
-    const removeSecondaryEmail = (index) => {
-        const newEmails = values.secondary_emails.filter((_, i) => i !== index);
-        setValues({ ...values, secondary_emails: newEmails });
     };
 
     const validatePassword = (password) => {
@@ -94,17 +78,13 @@ const Signup = () => {
             return;
         }
 
-        // Nettoyage des emails secondaires (suppression des vides)
-        const cleanSecondaryEmails = values.secondary_emails.filter(email => email.trim() !== '');
-
         try {
             const response = await axios.post('http://127.0.0.1:8000/api/signup/', {
                 username: values.username,
                 email: values.email,
                 password: values.password,
                 confirmPassword: values.confirmPassword,
-                role: values.role,
-                secondary_emails: cleanSecondaryEmails
+                role: values.role
             }, {
                 headers: { 'Content-Type': 'application/json' }
             });
@@ -112,15 +92,19 @@ const Signup = () => {
             if (response.data.success) {
                 setSuccess({
                     message: response.data.message,
-                    emails: response.data.emails_sent_to
+                    status: response.data.status,
+                    compte_id: response.data.compte_id
                 });
-                // Réinitialisation partielle du formulaire
-                setValues(prev => ({
-                    ...prev,
+                // Réinitialisation complète du formulaire après succès
+                setValues({
+                    username: '',
+                    email: '',
                     password: '',
                     confirmPassword: '',
-                    secondary_emails: ['']
-                }));
+                    role: 'comptable'
+                });
+                setPasswordValid(false);
+                setPasswordStrength('');
             } else {
                 setError(response.data.error || "Une erreur s'est produite lors de l'inscription.");
             }
@@ -131,180 +115,372 @@ const Signup = () => {
         }
     };
 
+    // Composant pour l'affichage du succès avec statut d'approbation
+    const SuccessMessage = ({ success }) => (
+        <div className="mb-6 p-6 bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200 rounded-lg shadow-sm">
+            <div className="flex items-start space-x-3">
+                <FaCheckCircle className="text-green-600 text-xl mt-1 flex-shrink-0" />
+                <div className="flex-1">
+                    <h3 className="text-lg font-semibold text-green-800 mb-2">
+                        Inscription réussie !
+                    </h3>
+                    <p className="text-green-700 mb-4">{success.message}</p>
+                    
+                    {success.status === 'pending_approval' && (
+                        <div className="space-y-4">
+                            {/* Étape 1 : Approbation admin */}
+                            <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
+                                <div className="flex items-start space-x-3">
+                                    <FaClock className="text-amber-600 text-lg mt-0.5 flex-shrink-0" />
+                                    <div>
+                                        <h4 className="font-semibold text-amber-800 mb-2 flex items-center">
+                                            Étape 1 : En attente d'approbation
+                                        </h4>
+                                        <ul className="text-sm text-amber-700 space-y-1.5">
+                                            <li className="flex items-start">
+                                                <span className="w-1.5 h-1.5 bg-amber-500 rounded-full mt-2 mr-2 flex-shrink-0"></span>
+                                                Votre demande est actuellement en cours d'examen par un administrateur
+                                            </li>
+                                            <li className="flex items-start">
+                                                <span className="w-1.5 h-1.5 bg-amber-500 rounded-full mt-2 mr-2 flex-shrink-0"></span>
+                                                Cette étape peut prendre quelques heures à quelques jours
+                                            </li>
+                                            <li className="flex items-start">
+                                                <span className="w-1.5 h-1.5 bg-amber-500 rounded-full mt-2 mr-2 flex-shrink-0"></span>
+                                                Vous recevrez un email une fois votre demande approuvée
+                                            </li>
+                                        </ul>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Étape 2 : Activation par email */}
+                            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                                <div className="flex items-start space-x-3">
+                                    <FaEnvelope className="text-blue-600 text-lg mt-0.5 flex-shrink-0" />
+                                    <div>
+                                        <h4 className="font-semibold text-blue-800 mb-2">
+                                            Étape 2 : Activation du compte
+                                        </h4>
+                                        <ul className="text-sm text-blue-700 space-y-1.5">
+                                            <li className="flex items-start">
+                                                <span className="w-1.5 h-1.5 bg-blue-500 rounded-full mt-2 mr-2 flex-shrink-0"></span>
+                                                Après approbation, vous recevrez un email avec un lien d'activation
+                                            </li>
+                                            <li className="flex items-start">
+                                                <span className="w-1.5 h-1.5 bg-blue-500 rounded-full mt-2 mr-2 flex-shrink-0"></span>
+                                                Cliquez sur ce lien pour activer définitivement votre compte
+                                            </li>
+                                            <li className="flex items-start">
+                                                <span className="w-1.5 h-1.5 bg-blue-500 rounded-full mt-2 mr-2 flex-shrink-0"></span>
+                                                Le lien d'activation sera valide pendant 7 jours
+                                            </li>
+                                            <li className="flex items-start">
+                                                <span className="w-1.5 h-1.5 bg-blue-500 rounded-full mt-2 mr-2 flex-shrink-0"></span>
+                                                Une fois activé, vous pourrez vous connecter normalement
+                                            </li>
+                                        </ul>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Instructions importantes */}
+                            <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-4">
+                                <div className="flex items-start space-x-3">
+                                    <FaExclamationTriangle className="text-indigo-600 text-lg mt-0.5 flex-shrink-0" />
+                                    <div>
+                                        <h4 className="font-semibold text-indigo-800 mb-2">
+                                            Points importants
+                                        </h4>
+                                        <ul className="text-sm text-indigo-700 space-y-1.5">
+                                            <li className="flex items-start">
+                                                <span className="w-1.5 h-1.5 bg-indigo-500 rounded-full mt-2 mr-2 flex-shrink-0"></span>
+                                                Vérifiez régulièrement votre boîte email (y compris les spams)
+                                            </li>
+                                            <li className="flex items-start">
+                                                <span className="w-1.5 h-1.5 bg-indigo-500 rounded-full mt-2 mr-2 flex-shrink-0"></span>
+                                                Conservez cet email pour référence future
+                                            </li>
+                                            <li className="flex items-start">
+                                                <span className="w-1.5 h-1.5 bg-indigo-500 rounded-full mt-2 mr-2 flex-shrink-0"></span>
+                                                En cas de problème, contactez l'administrateur
+                                            </li>
+                                        </ul>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                    
+                    <div className="flex space-x-3 mt-6">
+                        <button 
+                            className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition duration-200 text-sm font-medium flex items-center"
+                            onClick={() => navigate('/connexion')}
+                        >
+                            <FaUser className="mr-2" />
+                            Aller à la connexion
+                        </button>
+                        <button 
+                            className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition duration-200 text-sm font-medium"
+                            onClick={() => {
+                                setSuccess(null);
+                                setError('');
+                            }}
+                        >
+                            Nouvelle inscription
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+
     return (
-        <div className="container d-flex justify-content-center align-items-center vh-100">
-            <div className="row shadow-lg rounded p-3" style={{ maxWidth: '1000px', backgroundColor: '#f8f9fa' }}>
-                <div className="col-md-7">
-                    <div className="p-4">
-                        <h3 className="text-center" style={{ color: '#1D3557' }}>Créer un compte</h3>
-                        
-                        {error && <div className="alert alert-danger text-center">{error}</div>}
-                        
-                        {success && (
-                            <div className="alert alert-success">
-                                <p>{success.message}</p>
-                                <p>Emails notifiés :</p>
-                                <ul>
-                                    {success.emails.map((email, i) => (
-                                        <li key={i}>{email}</li>
-                                    ))}
-                                </ul>
-                                <button 
-                                    className="btn btn-sm btn-outline-primary"
-                                    onClick={() => navigate('/connexion')}
-                                >
-                                    Aller à la page de connexion
-                                </button>
-                            </div>
-                        )}
-                        <form onSubmit={handleSubmit} className="text-center">
-                            {/* Champ Nom d'utilisateur */}
-                            <div className="mb-3 text-start">
-                                <label htmlFor="username" className="form-label text-muted">Nom d'utilisateur*</label>
-                                <input
-                                    type="text"
-                                    name="username"
-                                    autoComplete="off"
-                                    placeholder="Entrez votre nom"
-                                    value={values.username}
-                                    onChange={handleChange}
-                                    className="form-control"
-                                    required
-                                />
-                            </div>
-                            {/* Champ Email */}
-                            <div className="mb-3 text-start">
-                                <label htmlFor="email" className="form-label text-muted">Email*</label>
-                                <input
-                                    type="email"
-                                    name="email"
-                                    autoComplete="off"
-                                    placeholder="Entrez votre email"
-                                    value={values.email}
-                                    onChange={handleChange}
-                                    className="form-control"
-                                    required
-                                />
-                            </div>
-                            {/* Champ Role */}
-                            <div className="mb-3 text-start">
-                                <label htmlFor="role" className="form-label text-muted">Profession*</label>
-                                <select
-                                    name="role"
-                                    value={values.role}
-                                    onChange={handleChange}
-                                    className="form-control"
-                                    required
-                                >
-                                    <option value="comptable" disabled hidden>Sélectionnez votre profession</option>
-                                    <option value="comptable">Comptable</option>
-                                    <option value="directeur">Directeur financier</option>
-                                </select>
-                            </div>
-                            {/* Champ Mot de passe */}
-                            <div className="mb-3 text-start">
-                                <label htmlFor="password" className="form-label text-muted">Mot de passe*</label>
-                                <div className="input-group">
-                                    <input
-                                        type={showPassword ? 'text' : 'password'}
-                                        name="password"
-                                        placeholder="Entrez votre mot de passe"
-                                        value={values.password}
-                                        onChange={handleChange}
-                                        className="form-control"
-                                        required
-                                    />
-                                    <span className="input-group-text bg-light border" style={{ cursor: 'pointer' }} onClick={togglePasswordVisibility}>
-                                        {showPassword ? <FaEyeSlash /> : <FaEye />}
-                                    </span>
-                                </div>
-                                <small className={`form-text text-${passwordStrength === 'Fort' ? 'success' : passwordStrength === 'Moyen' ? 'warning' : 'danger'} text-start`}>
-                                    Sécurité du mot de passe : {passwordStrength}
-                                </small>
-                                <small className="form-text text-muted text-start">
-                                    Le mot de passe doit contenir au moins 8 caractères, un chiffre et un caractère spécial.
-                                </small>
-                            </div>
-                            {/* Champ Confirmer le mot de passe */}
-                            <div className="mb-3 text-start">
-                                <label htmlFor="confirmPassword" className="form-label text-muted">Confirmez le mot de passe*</label>
-                                <div className="input-group">
-                                    <input
-                                        type={showConfirmPassword ? 'text' : 'password'}
-                                        name="confirmPassword"
-                                        placeholder="Confirmez votre mot de passe"
-                                        value={values.confirmPassword}
-                                        onChange={handleChange}
-                                        className="form-control"
-                                        required
-                                    />
-                                    <span className="input-group-text bg-light border" style={{ cursor: 'pointer' }} onClick={toggleConfirmPasswordVisibility}>
-                                        {showConfirmPassword ? <FaEyeSlash /> : <FaEye />}
-                                    </span>
-                                </div>
-                            </div>
-                            <div className="mb-3 text-start">
-                                    <label className="form-label text-muted">
-                                        Emails supplémentaires à notifier (optionnel)
-                                    </label>
-                                    {values.secondary_emails.map((email, index) => (
-                                        <div key={index} className="input-group mb-2">
-                                            <input
-                                                type="email"
-                                                value={email}
-                                                onChange={(e) => handleSecondaryEmailChange(index, e.target.value)}
-                                                className="form-control"
-                                                placeholder="email@exemple.com"
-                                            />
-                                            {values.secondary_emails.length > 1 && (
-                                                <button
-                                                    type="button"
-                                                    className="btn btn-outline-danger"
-                                                    onClick={() => removeSecondaryEmail(index)}
-                                                >
-                                                    <FaTimes />
-                                                </button>
-                                            )}
-                                        </div>
-                                    ))}
-                                    <button
-                                        type="button"
-                                        className="btn btn-sm btn-outline-secondary"
-                                        onClick={addSecondaryEmail}
-                                    >
-                                        <FaPlus /> Ajouter un email
-                                    </button>
-                                    <small className="form-text text-muted">
-                                        Ces emails recevront aussi le lien d'activation
-                                    </small>
-                                </div>
-
-                                <button 
-                                    type="submit" 
-                                    className="btn text-white" 
-                                    style={{ backgroundColor: '#1D3557', padding: '10px', width: '200px' }} 
-                                    disabled={loading}
-                                >
-                                    {loading ? <ClipLoader size={20} color="#ffffff" /> : "S'inscrire"}
-                                </button>
-                            </form>
-                        
-
-                        <div className="text-center mt-3">
-                            <p className="text-muted">
-                                Vous avez déjà un compte ? 
-                                <Link to="/connexion" className="text-primary text-decoration-none"> Connectez-vous ici</Link>
+        <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-7">
+            <div className="w-full max-w-7xl bg-white rounded-xl shadow-2xl overflow-hidden">
+                <div className="flex flex-row">
+                    {/* Left Side - Image */}
+                    <div className="w-2/5 bg-indigo-800 hidden md:flex items-center justify-center p-8">
+                        <div className="text-center text-white">
+                            <img
+                                src="images/106375912_10075609.jpg"
+                                alt="Accounting Theme"
+                                className="w-full h-auto rounded-lg shadow-xl object-cover"
+                                style={{ height: '400px' }}
+                            />
+                            <h3 className="mt-6 text-2xl font-bold">Gestion Financière Simplifiée</h3>
+                            <p className="mt-2 opacity-80">
+                                Rejoignez notre plateforme pour une gestion comptable moderne et efficace
                             </p>
                         </div>
                     </div>
-                </div>
-                <div className="col-md-5 d-none d-md-flex align-items-center justify-content-center">
-                    <img
-                        src="images/106375912_10075609.jpg"
-                        alt="Accounting Theme"
-                        className="img-fluid rounded"
-                        style={{ maxWidth: '110%', height: '400px' }}
-                    />
+                    
+                    {/* Right Side - Form */}
+                    <div className="w-full md:w-3/5 p-8">
+                        <div className="flex items-center justify-center mb-8">
+                            <FaShieldAlt className="text-indigo-600 text-3xl mr-3" />
+                            <h2 className="text-3xl font-bold text-indigo-800">Créer un compte</h2>
+                        </div>
+                        
+                        {error && (
+                            <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg flex items-start space-x-3">
+                                <FaExclamationTriangle className="text-red-500 text-lg mt-0.5 flex-shrink-0" />
+                                <p className="text-red-700">{error}</p>
+                            </div>
+                        )}
+                        
+                        {success && <SuccessMessage success={success} />}
+                        
+                        {!success && (
+                            <form onSubmit={handleSubmit} className="space-y-4">
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                    {/* Username Field */}
+                                    <div className="space-y-2">
+                                        <label className="block text-sm font-medium text-gray-700 flex items-center">
+                                            <FaUser className="mr-2 text-gray-500" />
+                                            Nom d'utilisateur*
+                                        </label>
+                                        <div className="relative">
+                                            <input
+                                                type="text"
+                                                name="username"
+                                                autoComplete="off"
+                                                placeholder="Entrez votre nom"
+                                                value={values.username}
+                                                onChange={handleChange}
+                                                className="w-full px-4 py-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition duration-200"
+                                                required
+                                            />
+                                        </div>
+                                    </div>
+                                    
+                                    {/* Email Field */}
+                                    <div className="space-y-2">
+                                        <label className="block text-sm font-medium text-gray-700 flex items-center">
+                                            <FaEnvelope className="mr-2 text-gray-500" />
+                                            Email*
+                                        </label>
+                                        <div className="relative">
+                                            <input
+                                                type="email"
+                                                name="email"
+                                                autoComplete="off"
+                                                placeholder="Entrez votre email"
+                                                value={values.email}
+                                                onChange={handleChange}
+                                                className="w-full px-4 py-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition duration-200"
+                                                required
+                                            />
+                                        </div>
+                                    </div>
+                                    
+                                    {/* Password Field */}
+                                    <div className="space-y-2">
+                                        <label className="block text-sm font-medium text-gray-700 flex items-center">
+                                            <FaLock className="mr-2 text-gray-500" />
+                                            Mot de passe*
+                                        </label>
+                                        <div className="relative">
+                                            <input
+                                                type={showPassword ? 'text' : 'password'}
+                                                name="password"
+                                                placeholder="Entrez votre mot de passe"
+                                                value={values.password}
+                                                onChange={handleChange}
+                                                className="w-full px-4 py-3 pr-12 rounded-lg border border-gray-300 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition duration-200"
+                                                required
+                                            />
+                                            <button 
+                                                type="button"
+                                                className="absolute inset-y-0 right-0 pr-3 flex items-center"
+                                                onClick={togglePasswordVisibility}
+                                            >
+                                                {showPassword ? (
+                                                    <FaEyeSlash className="text-gray-500 hover:text-indigo-600 transition duration-200" />
+                                                ) : (
+                                                    <FaEye className="text-gray-500 hover:text-indigo-600 transition duration-200" />
+                                                )}
+                                            </button>
+                                        </div>
+                                        <div className="flex items-center justify-between mt-2">
+                                            <span className={`text-xs font-medium px-2 py-1 rounded ${
+                                                passwordStrength === 'Fort' ? 'bg-green-100 text-green-700' : 
+                                                passwordStrength === 'Moyen' ? 'bg-yellow-100 text-yellow-700' : 
+                                                passwordStrength === 'Faible' ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-500'
+                                            }`}>
+                                                {passwordStrength ? `Sécurité: ${passwordStrength}` : 'Sécurité'}
+                                            </span>
+                                            <span className="text-xs text-gray-500">
+                                                {passwordValid ? (
+                                                    <span className="flex items-center text-green-600 font-medium">
+                                                        <FaCheck className="mr-1" /> Valide
+                                                    </span>
+                                                ) : (
+                                                    "8+ car., maj., chiffre, spécial"
+                                                )}
+                                            </span>
+                                        </div>
+                                    </div>
+                                    
+                                    {/* Confirm Password Field */}
+                                    <div className="space-y-2">
+                                        <label className="block text-sm font-medium text-gray-700 flex items-center">
+                                            <FaShieldAlt className="mr-2 text-gray-500" />
+                                            Confirmez le mot de passe*
+                                        </label>
+                                        <div className="relative">
+                                            <input
+                                                type={showConfirmPassword ? 'text' : 'password'}
+                                                name="confirmPassword"
+                                                placeholder="Confirmez votre mot de passe"
+                                                value={values.confirmPassword}
+                                                onChange={handleChange}
+                                                className="w-full px-4 py-3 pr-12 rounded-lg border border-gray-300 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition duration-200"
+                                                required
+                                            />
+                                            <button 
+                                                type="button"
+                                                className="absolute inset-y-0 right-0 pr-3 flex items-center"
+                                                onClick={toggleConfirmPasswordVisibility}
+                                            >
+                                                {showConfirmPassword ? (
+                                                    <FaEyeSlash className="text-gray-500 hover:text-indigo-600 transition duration-200" />
+                                                ) : (
+                                                    <FaEye className="text-gray-500 hover:text-indigo-600 transition duration-200" />
+                                                )}
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                {/* Role Field - Radio Buttons */}
+                                <div className="space-y-3 pt-2">
+                                    <label className="block text-sm font-medium text-gray-700 flex items-center">
+                                        <FaUserTie className="mr-2 text-gray-500" />
+                                        Rôle professionnel*
+                                    </label>
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <label className={`flex items-center p-4 rounded-lg border-2 transition duration-200 cursor-pointer ${
+                                            values.role === 'comptable' 
+                                                ? 'border-indigo-500 bg-indigo-50 shadow-sm' 
+                                                : 'border-gray-200 hover:border-gray-300'
+                                        }`}>
+                                            <input
+                                                type="radio"
+                                                name="role"
+                                                value="comptable"
+                                                checked={values.role === 'comptable'}
+                                                onChange={handleChange}
+                                                className="h-4 w-4 text-indigo-600 focus:ring-indigo-500"
+                                            />
+                                            <div className="ml-3 flex items-center">
+                                                <FaUserTie className={`mr-2 text-lg ${
+                                                    values.role === 'comptable' ? 'text-indigo-600' : 'text-gray-400'
+                                                }`} />
+                                                <span className={`text-sm font-medium ${
+                                                    values.role === 'comptable' ? 'text-indigo-800' : 'text-gray-700'
+                                                }`}>
+                                                    Comptable
+                                                </span>
+                                            </div>
+                                        </label>
+                                        <label className={`flex items-center p-4 rounded-lg border-2 transition duration-200 cursor-pointer ${
+                                            values.role === 'directeur' 
+                                                ? 'border-indigo-500 bg-indigo-50 shadow-sm' 
+                                                : 'border-gray-200 hover:border-gray-300'
+                                        }`}>
+                                            <input
+                                                type="radio"
+                                                name="role"
+                                                value="directeur"
+                                                checked={values.role === 'directeur'}
+                                                onChange={handleChange}
+                                                className="h-4 w-4 text-indigo-600 focus:ring-indigo-500"
+                                            />
+                                            <div className="ml-3 flex items-center">
+                                                <FaChartLine className={`mr-2 text-lg ${
+                                                    values.role === 'directeur' ? 'text-indigo-600' : 'text-gray-400'
+                                                }`} />
+                                                <span className={`text-sm font-medium ${
+                                                    values.role === 'directeur' ? 'text-indigo-800' : 'text-gray-700'
+                                                }`}>
+                                                    Directeur financier
+                                                </span>
+                                            </div>
+                                        </label>
+                                    </div>
+                                </div>
+                                
+                                {/* Submit Button */}
+                                <div className="pt-6">
+                                    <button 
+                                        type="submit" 
+                                        className="w-full py-3 px-4 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-lg transition duration-200 flex items-center justify-center shadow-md hover:shadow-lg"
+                                        disabled={loading}
+                                    >
+                                        {loading ? (
+                                            <ClipLoader size={20} color="#ffffff" />
+                                        ) : (
+                                            <>
+                                                <FaShieldAlt className="mr-2" /> 
+                                                Créer mon compte
+                                            </>
+                                        )}
+                                    </button>
+                                </div>
+                            </form>
+                        )}
+                        
+                        <div className="mt-6 text-center">
+                            <p className="text-gray-600">
+                                Vous avez déjà un compte ?{' '}
+                                <Link to="/connexion" className="text-indigo-600 hover:text-indigo-800 font-medium inline-flex items-center">
+                                    <FaUser className="mr-1" />
+                                    Connectez-vous ici
+                                </Link>
+                            </p>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>

@@ -1,19 +1,19 @@
 import React, { useState, useEffect } from "react";
 import { 
-  FiHome, FiUsers, FiUser, FiFileText, FiClipboard, 
+  FiHome, FiUsers, FiClipboard, 
   FiSettings, FiLogOut, FiSearch, FiBell, FiTrendingUp,
-  FiCheckCircle, FiAlertCircle, FiClock, FiArrowRight
+  FiCheckCircle, FiAlertCircle, FiClock, FiArrowRight,FiChevronDown
 } from "react-icons/fi";
 import { 
-  FaUserShield, FaUserTie, FaUserCheck, FaUserTimes, FaUserPlus,
-  FaFileInvoiceDollar, FaShieldAlt, FaQrcode, FaSpinner, FaTimes,
-  FaChartLine, FaDatabase, FaLock
+  FaUserShield, FaUserTie, FaUserCheck, FaUserTimes, FaUserPlus, FaQrcode
 } from "react-icons/fa";
 import { Link, Outlet, useLocation, useNavigate } from "react-router-dom";
 import axios from "axios";
-
+import { useUser } from './UserContext';
 const Dashboard = () => {
   const navigate = useNavigate();
+  const { user } = useUser();
+  const [sidebarOpen, setSidebarOpen] = useState(true);
   const location = useLocation();
   const [showLogoutModal, setShowLogoutModal] = useState(false);
   const [userStats, setUserStats] = useState({
@@ -50,16 +50,36 @@ const Dashboard = () => {
   }, [navigate]);
 
   const handleLogout = () => {
-    axios.get("http://127.0.0.1:8000/api/logout/")
-      .then(result => {
-        if (result.data.Status) {
-          localStorage.removeItem("valid");
-          navigate('/connexion');
-        }
-      })
-      .catch(err => console.error(err));
-  };
-
+  // Récupérer le token d'authentification stocké
+  const token = localStorage.getItem('auth_token');
+  
+  axios.post("http://127.0.0.1:8000/api/log/", {}, {
+    headers: {
+      'Authorization': `Bearer ${token}`
+    }
+  })
+    .then(result => {
+      if (result.data.status === 'success' || result.data.Status) {
+        // Nettoyer toutes les données d'authentification stockées
+        localStorage.removeItem("valid");
+        localStorage.removeItem("auth_token");
+        localStorage.removeItem("userId");
+        localStorage.removeItem("userRole");
+        
+        // Rediriger vers la page de connexion
+        navigate('/connexion');
+      }
+    })
+    .catch(err => {
+      console.error("Erreur lors de la déconnexion:", err);
+      // En cas d'erreur, nettoyer quand même les données locales
+      localStorage.removeItem("valid");
+      localStorage.removeItem("auth_token");
+      localStorage.removeItem("userId");
+      localStorage.removeItem("userRole");
+      navigate('/connexion');
+    });
+};
   const isActive = (path) => location.pathname === path;
     const getPageTitle = () => {
     switch (location.pathname) {
@@ -67,6 +87,8 @@ const Dashboard = () => {
       case "/dashboard/comptes": return "Gestion des comptes";
       case "/dashboard/profile": return "Profil administrateur";
       case "/dashboard/validation": return "Supervision des actions";
+      case "/dashboard/rapports": return "Rapports";
+      case "/dashboard/pending-users": return "Approuver";
      
       default: return "";
     }
@@ -174,7 +196,37 @@ const Dashboard = () => {
             }`}>
               <FiClipboard className="text-lg" />
             </div>
-            <span>Supervision</span>
+            <span>Actions</span>
+          </Link>
+          <Link 
+            to="/dashboard/rapports" 
+            className={`flex items-center p-3 rounded-lg transition-all ${
+              isActive("/dashboard/rapports") 
+                ? 'bg-white text-indigo-800 shadow-md font-semibold' 
+                : 'text-indigo-100 hover:bg-indigo-600 hover:text-white'
+            }`}
+          >
+            <div className={`p-2 rounded-lg mr-3 ${
+              isActive("/dashboard/rapports") ? 'bg-green-100 text-green-600' : 'bg-green-500 text-white'
+            }`}>
+              <FiTrendingUp className="text-lg" />
+            </div>
+            <span>Rapports financiers</span>
+          </Link>
+            <Link 
+            to="/dashboard/pending-users" 
+            className={`flex items-center p-3 rounded-lg transition-all ${
+              isActive("/dashboard/pending-users") 
+                ? 'bg-white text-indigo-800 shadow-md font-semibold' 
+                : 'text-indigo-100 hover:bg-indigo-600 hover:text-white'
+            }`}
+          >
+            <div className={`p-2 rounded-lg mr-3 ${
+              isActive("/dashboard/pending-users") ? 'bg-purple-100 text-purple-600' : 'bg-purple-500 text-white'
+            }`}>
+              <FaUserShield className="text-lg" />
+            </div>
+            <span>Utilisateurs</span>
           </Link>
         </nav>
 
@@ -216,20 +268,18 @@ const Dashboard = () => {
               />
             </div>
             
-            <button className="p-2 text-gray-500 hover:text-indigo-600 relative">
-              <FiBell className="text-xl" />
-              <span className="absolute top-0 right-0 h-2 w-2 rounded-full bg-red-500"></span>
-            </button>
-            
             <div className="flex items-center space-x-2">
-              <div className="h-10 w-10 rounded-full bg-gradient-to-r from-indigo-500 to-purple-500 flex items-center justify-center text-white font-medium">
-                A
-              </div>
-              <div>
-                <p className="text-sm font-medium">Administrateur</p>
-                <p className="text-xs text-gray-500">Super Admin</p>
-              </div>
-            </div>
+                          <div className="h-10 w-10 rounded-full bg-gradient-to-r from-indigo-500 to-purple-500 flex items-center justify-center text-white font-medium">
+                            {user?.username?.charAt(0).toUpperCase() || 'A'}
+                          </div>
+                          {sidebarOpen && (
+                            <div className="hidden md:block">
+                              <p className="text-sm font-medium">{user?.username || 'Administrateur'}</p>
+                              <p className="text-xs text-gray-500">Administrateur</p>
+                            </div>
+                          )}
+                          <FiChevronDown className="text-gray-500 text-sm" />
+                        </div>
           </div>
         </header>
 
@@ -431,19 +481,7 @@ const Dashboard = () => {
                   to="/dashboard/validation" 
                   className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 hover:shadow-md transition-all group hover:border-green-200"
                 >
-                  <div className="flex items-center mb-4">
-                    <div className="p-3 rounded-full bg-green-50 text-green-600 mr-4 group-hover:bg-green-100">
-                      <FiClipboard className="text-xl" />
-                    </div>
-                    <div>
-                      <h3 className="font-bold text-lg text-gray-800 group-hover:text-green-600">
-                        Journal d'audit
-                      </h3>
-                      <p className="text-gray-500 text-sm mt-1">
-                        Historique des activités
-                      </p>
-                    </div>
-                  </div>
+                  
                   <div className="flex justify-end">
                     <FiArrowRight className="text-gray-300 group-hover:text-green-400" />
                   </div>

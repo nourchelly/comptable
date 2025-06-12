@@ -47,9 +47,7 @@ INSTALLED_APPS = [
     'rest_framework_simplejwt',
      'rest_framework_mongoengine',
     'api',
-    'admin_app',
-    'comptable',
-    'directeur',
+   
     'mongoengine',
     'social_django',
     'allauth',
@@ -57,7 +55,7 @@ INSTALLED_APPS = [
     'allauth.socialaccount',
     #..include the providers you want
     'allauth.socialaccount.providers.google',
-     'allauth.socialaccount.providers.facebook',
+    
 ]
 # Configuration des sessions
 SESSION_ENGINE = "django.contrib.sessions.backends.signed_cookies"
@@ -67,15 +65,12 @@ MIGRATION_MODULES = {
 }
 AUTHENTICATION_BACKENDS = [
     'social_core.backends.google.GoogleOAuth2',
-     # Needed to login by username in Django admin, regardless of `allauth`
+  
     'api.backends.MongoEngineBackend',
-    #'api.backends.MongoBackend',
-    #'api.auth.MongoAuthBackend',
-    #'api.backends.CustomBackend',  # Vérifie si ce module existe !
+   
     'django.contrib.auth.backends.ModelBackend',
 
-     # `allauth` specific authentication methods, such as login by email
-    #'allauth.account.auth_backends.AuthenticationBackend',
+    
 ]
 # Dans settings.py
 CSRF_TRUSTED_ORIGINS = [
@@ -144,35 +139,14 @@ SOCIALACCOUNT_PROVIDERS = {
     }
 }
     
-SOCIALACCOUNT_PROVIDERS = {
-    'facebook': {
-        'APP': {
-            'client_id': '3737484549889496',
-            'secret': 'b0bf5f776c2dbfb0dd69a91c6191b3de',
-            'key': ''
-        },
-        'METHOD': 'oauth2',
-        'SCOPE': ['public_profile', 'email'],
-        'AUTH_PARAMS': {'access_type': 'online'},
-        'FIELDS': [
-            'id',
-            'email',
-            'name',
-            'first_name',
-            'last_name',
-        ],
-    }
-}
-# Configuration Facebook OAuth
-FACEBOOK_APP_ID = '3737484549889496'
-FACEBOOK_APP_SECRET = 'b0bf5f776c2dbfb0dd69a91c6191b3de'
-# Supprimez la première déclaration et gardez celle-ci :
+
+
+# settings.py
+
+TIME_ZONE = 'Africa/Tunis' # Ou le fuseau horaire exact de votre serveur en production
 SIMPLE_JWT = {
     'AUTH_HEADER_TYPES': ('Bearer',),
-    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=60),
-    #'REFRESH_TOKEN_LIFETIME': timedelta(days=1),
-    #'BLACKLIST_AFTER_ROTATION': False,
-    #'ROTATE_REFRESH_TOKENS': False,
+    'ACCESS_TOKEN_LIFETIME': timedelta(hours=24),
     'ALGORITHM': 'HS256',
     'SIGNING_KEY': SECRET_KEY,
     'VERIFYING_KEY': None,
@@ -226,23 +200,6 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'crud.wsgi.application'
 
-
-# Database
-# https://docs.djangoproject.com/en/5.1/ref/settings/#databases
-# 1. Désactiver complètement la configuration SQL par défaut
-# settings.py
-
-# Commenter ou supprimer cette section si vous utilisez MongoDB uniquement
-#DATABASES = {
-   # 'default': {
-       # 'ENGINE': 'django.db.backends.sqlite3',  # Cette ligne est problématique
-       # 'NAME': BASE_DIR / 'db.sqlite3',
-  #  }
-#}
-
-
-
-
 # settings.py
 
 CACHES = {
@@ -283,7 +240,7 @@ TIME_ZONE = 'Africa/Tunis'
 
 USE_I18N = True
 
-USE_TZ = True
+USE_TZ = False
 
 
 # Static files (CSS, JavaScript, Images)
@@ -337,3 +294,92 @@ GRIDFS_DATABASE = 'mydb'
 GOOGLE_OAUTH_CLIENT_ID = "11479995049-09n7oceljn4sgmodv5til5uj7bd072jp.apps.googleusercontent.com"  # Votre ID client
 GOOGLE_OAUTH_CLIENT_SECRET = "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"  # Votre secret client
 GOOGLE_OAUTH_REDIRECT_URI = "http://localhost:3000/auth/google/callback"  # Doit correspondre à votre config Google Cloud
+from django.core.management.utils import get_random_secret_key
+
+# Configuration des JWT
+JWT_SECRET_KEY = os.environ.get('JWT_SECRET_KEY', get_random_secret_key())
+JWT_REFRESH_SECRET_KEY = os.environ.get('JWT_REFRESH_SECRET_KEY', get_random_secret_key())
+
+# Configuration de CORS pour permettre les cookies et les headers Authorization
+CORS_ALLOW_CREDENTIALS = True
+CORS_ALLOW_METHODS = [
+    'DELETE',
+    'GET',
+    'OPTIONS',
+    'PATCH',
+    'POST',
+    'PUT',
+]
+
+CORS_ALLOW_HEADERS = [
+    'accept',
+    'accept-encoding',
+    'authorization',
+    'content-type',
+    'dnt',
+    'origin',
+    'user-agent',
+    'x-csrftoken',
+    'x-requested-with',
+]
+
+# Définir les origines autorisées - en production, spécifiez les domaines exacts
+CORS_ORIGIN_WHITELIST = [
+    'http://localhost:3000',  # Votre frontend React
+    # Ajoutez d'autres origines de production si nécessaire
+]
+import logging.config # Ajoutez cette ligne en haut du fichier si elle n'existe pas
+
+# ... tout votre code settings.py existant ...
+
+# AJOUTEZ CE BLOC DE CODE ICI, À LA FIN DE VOTRE FICHIER settings.py
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'formatters': {
+        'verbose': {
+            'format': '{levelname} {asctime} {module} {process:d} {thread:d} {message}',
+            'style': '{',
+        },
+        'simple': {
+            'format': '{levelname} {message}',
+            'style': '{',
+        },
+    },
+    'handlers': {
+        'console': {
+            'level': 'DEBUG', # <<< Ceci dit d'afficher les messages DEBUG et INFO en console
+            'class': 'logging.StreamHandler',
+            'formatter': 'verbose'
+        },
+        'file': { # Optionnel, mais recommandé pour un fichier de log
+            'level': 'DEBUG', # <<< Niveau pour le fichier de log
+            'class': 'logging.FileHandler',
+            'filename': os.path.join(BASE_DIR, 'django_debug.log'), # Crée un fichier de log à la racine de votre projet
+            'formatter': 'verbose'
+        },
+    },
+    'loggers': {
+        'django': { # Pour les logs internes de Django
+            'handlers': ['console'],
+            'level': 'INFO', # Ou 'DEBUG' si vous voulez plus de logs Django
+            'propagate': False,
+        },
+        'api': { # <<< TRÈS IMPORTANT : Cible votre application 'api'
+            'handlers': ['console', 'file'], # Envoyer les logs à la console ET au fichier
+            'level': 'DEBUG', # <<< CECI DIT D'AFFICHER TOUS LES LOGS DE VOTRE APP 'API'
+            'propagate': False,
+        },
+        # Le logger '__main__' est utile pour les scripts ou les parties de code non rattachées à une app
+        '__main__': {
+            'handlers': ['console'],
+            'level': 'DEBUG',
+            'propagate': False,
+        },
+    },
+    # Configuration pour le logger racine (catch-all)
+    'root': {
+        'handlers': ['console'],
+        'level': 'INFO', # Ou 'DEBUG' pour plus de logs généraux
+    }
+}

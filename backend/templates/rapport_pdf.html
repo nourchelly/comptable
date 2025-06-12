@@ -3,222 +3,222 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Rapport {{ rapport.titre }} | Finance</title>
+    <title>Rapport de Rapprochement Bancaire</title>
     <style>
         :root {
-            --primary-color: #4361ee;
-            --secondary-color: #3f37c9;
-            --success-color: #4cc9f0;
-            --danger-color: #f72585;
-            --warning-color: #f8961e;
-            --info-color: #4895ef;
+            --primary-color: #17a2b8;
+            --secondary-color: #6c757d;
+            --success-color: #28a745;
+            --danger-color: #dc3545;
+            --warning-color: #ffc107;
+            --info-color: #17a2b8;
             --light-color: #f8f9fa;
-            --dark-color: #212529;
-            --border-radius: 0.375rem;
-            --box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+            --dark-color: #343a40;
         }
         
         body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            line-height: 1.6;
-            color: #2d3748;
+            font-family: 'Arial', sans-serif;
+            line-height: 1.4;
+            color: #333;
             margin: 0;
-            padding: 0;
-            background-color: #f7fafc;
+            padding: 20px;
+            background-color: #f5f5f5;
         }
         
         .container {
-            max-width: 1200px;
+            max-width: 1400px;
             margin: 0 auto;
-            padding: 2rem;
+            background-color: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
         }
         
         .header {
             text-align: center;
-            margin-bottom: 2.5rem;
-            padding-bottom: 1.5rem;
-            border-bottom: 1px solid #e2e8f0;
+            margin-bottom: 30px;
+            padding-bottom: 20px;
+            border-bottom: 3px solid var(--primary-color);
         }
         
-        .header img {
-            height: 60px;
-            margin-bottom: 1rem;
-        }
-        
-        h1, h2, h3, h4 {
+        .header h1 {
             color: var(--primary-color);
-            font-weight: 600;
+            font-size: 28px;
+            margin: 0 0 10px 0;
+            font-weight: bold;
         }
         
-        h1 {
-            font-size: 2.25rem;
-            margin-bottom: 0.5rem;
+        .logo {
+            float: right;
+            width: 80px;
+            height: 80px;
+            background-color: #ffa500;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: bold;
+            margin-top: -20px;
         }
         
-        h2 {
-            font-size: 1.75rem;
-            margin-top: 2.5rem;
-            margin-bottom: 1rem;
-            padding-bottom: 0.5rem;
+        .info-section {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 30px;
+            margin-bottom: 30px;
+        }
+        
+        .info-box {
+            background-color: #f8f9fa;
+            padding: 15px;
+            border-radius: 5px;
+            border-left: 4px solid var(--primary-color);
+        }
+        
+        .info-box h3 {
+            color: var(--primary-color);
+            margin: 0 0 10px 0;
+            font-size: 16px;
+        }
+        
+        .info-box p {
+            margin: 5px 0;
+            font-size: 14px;
+        }
+        
+        .info-box strong {
+            color: var(--dark-color);
+        }
+        
+        .section-title {
+            color: var(--primary-color);
+            font-size: 18px;
+            font-weight: bold;
+            margin: 30px 0 15px 0;
+            padding-bottom: 5px;
             border-bottom: 2px solid var(--primary-color);
         }
         
-        h3 {
-            font-size: 1.25rem;
-            margin-top: 1.5rem;
-            margin-bottom: 0.75rem;
-            color: var(--secondary-color);
+        .table-container {
+            margin-bottom: 30px;
+            overflow-x: auto;
         }
         
-        .card {
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 12px;
             background-color: white;
-            border-radius: var(--border-radius);
-            box-shadow: var(--box-shadow);
-            padding: 1.5rem;
-            margin-bottom: 1.5rem;
         }
         
-        .card-header {
-            display: flex;
-            align-items: center;
-            margin-bottom: 1rem;
-            padding-bottom: 0.75rem;
-            border-bottom: 1px solid #e2e8f0;
+        th {
+            background-color: var(--primary-color);
+            color: white;
+            padding: 12px 8px;
+            text-align: center;
+            font-weight: bold;
+            border: 1px solid #dee2e6;
         }
         
-        .card-header svg {
-            margin-right: 0.75rem;
-            color: var(--primary-color);
+        td {
+            padding: 8px;
+            text-align: center;
+            border: 1px solid #dee2e6;
         }
         
-        .info-grid {
+        tr:nth-child(even) {
+            background-color: #f8f9fa;
+        }
+        
+        tr:hover {
+            background-color: #e9ecef;
+        }
+        
+        .amount-positive {
+            color: var(--success-color);
+            font-weight: bold;
+        }
+        
+        .amount-negative {
+            color: var(--danger-color);
+            font-weight: bold;
+        }
+        
+        .total-row {
+            background-color: #e9ecef !important;
+            font-weight: bold;
+        }
+        
+        .total-row td {
+            border-top: 2px solid var(--primary-color);
+        }
+        
+        .verification-section {
+            background-color: var(--info-color);
+            color: white;
+            text-align: center;
+            padding: 15px;
+            margin: 20px 0;
+            border-radius: 5px;
+            font-weight: bold;
+            font-size: 16px;
+        }
+        
+        .ecart-section {
+            background-color: var(--warning-color);
+            color: var(--dark-color);
+            text-align: center;
+            padding: 15px;
+            margin: 20px 0;
+            border-radius: 5px;
+            font-weight: bold;
+            font-size: 16px;
+        }
+        
+        .dual-table {
             display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
-            gap: 1.5rem;
-            margin-bottom: 1.5rem;
-        }
-        
-        .info-item {
-            background-color: white;
-            border-radius: var(--border-radius);
-            box-shadow: var(--box-shadow);
-            padding: 1rem;
-        }
-        
-        .info-item strong {
-            display: block;
-            color: var(--secondary-color);
-            margin-bottom: 0.25rem;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin-bottom: 30px;
         }
         
         .status-badge {
             display: inline-block;
-            padding: 0.25rem 0.75rem;
-            border-radius: 9999px;
-            font-size: 0.875rem;
-            font-weight: 600;
+            padding: 4px 12px;
+            border-radius: 15px;
+            font-size: 12px;
+            font-weight: bold;
         }
         
         .status-success {
-            background-color: #dcfce7;
-            color: #166534;
+            background-color: #d4edda;
+            color: #155724;
         }
         
         .status-warning {
-            background-color: #fef9c3;
-            color: #854d0e;
+            background-color: #fff3cd;
+            color: #856404;
         }
         
         .status-danger {
-            background-color: #fee2e2;
-            color: #991b1b;
-        }
-        
-        .status-info {
-            background-color: #dbeafe;
-            color: #1e40af;
-        }
-        
-        .anomalies-card {
-            border-left: 4px solid var(--danger-color);
-            background-color: #fff5f5;
-        }
-        
-        .recommendations-card {
-            border-left: 4px solid var(--success-color);
-            background-color: #f0fdf4;
-        }
-        
-        .content-box {
-            background-color: white;
-            border-radius: var(--border-radius);
-            box-shadow: var(--box-shadow);
-            padding: 1.5rem;
-            margin-bottom: 1.5rem;
-        }
-        
-        .content-box pre {
-            white-space: pre-wrap;
-            word-break: break-word;
-            font-family: 'Consolas', monospace;
-            background-color: #f8fafc;
-            padding: 1rem;
-            border-radius: var(--border-radius);
-            border: 1px solid #e2e8f0;
-        }
-        
-        ul {
-            list-style-type: none;
-            padding-left: 0;
-        }
-        
-        li {
-            padding: 0.5rem 0;
-            border-bottom: 1px solid #e2e8f0;
-            display: flex;
-            align-items: flex-start;
-        }
-        
-        li:last-child {
-            border-bottom: none;
-        }
-        
-        li::before {
-            content: "•";
-            color: var(--primary-color);
-            font-weight: bold;
-            display: inline-block;
-            width: 1em;
-            margin-right: 0.5rem;
-        }
-        
-        .footer {
-            text-align: center;
-            margin-top: 3rem;
-            padding-top: 1.5rem;
-            border-top: 1px solid #e2e8f0;
-            color: #64748b;
-            font-size: 0.875rem;
+            background-color: #f8d7da;
+            color: #721c24;
         }
         
         @media print {
             body {
                 background-color: white;
-                font-size: 12pt;
+                font-size: 10pt;
             }
             
             .container {
+                box-shadow: none;
                 padding: 0;
             }
             
-            .card, .info-item, .content-box {
-                box-shadow: none;
-                border: 1px solid #ddd;
+            .dual-table {
                 page-break-inside: avoid;
-            }
-            
-            h2 {
-                page-break-after: avoid;
             }
         }
     </style>
@@ -226,239 +226,304 @@
 <body>
     <div class="container">
         <div class="header">
-            <h1>Rapport de Rapprochement Bancaire</h1>
-            <p>Document professionnel - Confidentialité requise</p>
+            <div class="logo">Logo</div>
+            <h1>Rapprochement bancaire</h1>
+            <p>Document généré automatiquement - {{ date_generation or "Date non spécifiée" }}</p>
         </div>
 
-        <div class="info-grid">
-            <div class="info-item">
-                <strong>Titre du Rapport</strong>
-                <span>{{ rapport.titre }}</span>
+        <div class="info-section">
+            <div class="info-box">
+                <h3>Informations Facture</h3>
+                <p><strong>Numéro:</strong> {{ facture.numero if facture and facture.numero else rapport.resume_facture.numero if rapport and rapport.resume_facture else 'N/A' }}</p>
+                <p><strong>Émetteur:</strong> {{ facture.emetteur if facture and facture.emetteur else rapport.resume_facture.emetteur if rapport and rapport.resume_facture else 'N/A' }}</p>
+                <p><strong>Date:</strong> {{ facture.date_emission.strftime('%d/%m/%Y') if facture and facture.date_emission else rapport.resume_facture.date if rapport and rapport.resume_facture else 'N/A' }}</p>
+                <p><strong>Montant:</strong> {{ facture.montant_total if facture and facture.montant_total else rapport.resume_facture.montant_total if rapport and rapport.resume_facture else 'N/A' }} €</p>
             </div>
             
-            <div class="info-item">
-                <strong>Date de Génération</strong>
-                <span>{{ date_generation }}</span>
+            <div class="info-box">
+                <h3>Informations Relevé Bancaire</h3>
+                <p><strong>Banque:</strong> {{ banque.nom if banque and banque.nom else rapport.resume_releve.banque if rapport and rapport.resume_releve else 'N/A' }}</p>
+                <p><strong>Compte:</strong> {{ banque.numero if banque and banque.numero else rapport.resume_releve.compte if rapport and rapport.resume_releve else 'N/A' }}</p>
+                <p><strong>Période:</strong> {{ rapport.resume_releve.periode if rapport and rapport.resume_releve else 'N/A' }}</p>
+                <p><strong>Solde:</strong> {{ banque.solde if banque and banque.solde else rapport.resume_releve.solde_final if rapport and rapport.resume_releve else 'N/A' }} €</p>
+            </div>
+        </div>
+
+        <!-- Soldes initiaux -->
+        <div class="dual-table">
+            <div class="table-container">
+                <h3 class="section-title">Relevé bancaire</h3>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Date</th>
+                            <th>Débit</th>
+                            <th>Crédit</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><strong>Solde initial au</strong> {{ rapport.resume_releve.periode.split(' au ')[0] if rapport and rapport.resume_releve and rapport.resume_releve.periode else '01/01/2024' }}</td>
+                            <td></td>
+                            <td>{{ rapport.resume_releve.solde_initial if rapport and rapport.resume_releve and rapport.resume_releve.solde_initial else '0,00' }} €</td>
+                        </tr>
+                    </tbody>
+                </table>
             </div>
             
-            <div class="info-item">
-                <strong>Statut</strong>
-                <span class="status-badge 
-                    {% if statut == 'complet' %}status-success
-                    {% elif statut == 'incomplet' %}status-warning
-                    {% elif statut == 'anomalie' %}status-danger
-                    {% else %}status-info{% endif %}">
-                    {{ statut }}
-                </span>
+            <div class="table-container">
+                <h3 class="section-title">Écritures comptables - compte en banque</h3>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Date</th>
+                            <th>Débit</th>
+                            <th>Crédit</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><strong>Solde initial au</strong> {{ rapport.resume_releve.periode.split(' au ')[0] if rapport and rapport.resume_releve and rapport.resume_releve.periode else '01/01/2024' }}</td>
+                            <td>{{ rapport.resume_releve.solde_initial if rapport and rapport.resume_releve and rapport.resume_releve.solde_initial else '0,00' }} €</td>
+                            <td></td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Écritures rapprochées -->
+        <div class="section-title">Écritures rapprochées</div>
+        <div class="dual-table">
+            <div class="table-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Date</th>
+                            <th>Libellé opération</th>
+                            <th>Débit</th>
+                            <th>Crédit</th>
+                        </tr>
+                    </thead>
+                    <tbody id="bank-matched-operations">
+                        <!-- Les opérations rapprochées du relevé bancaire seront insérées ici -->
+                        <tr class="total-row">
+                            <td colspan="2"><strong>Total</strong></td>
+                            <td id="bank-matched-debit-total"><strong>0</strong></td>
+                            <td id="bank-matched-credit-total"><strong>0</strong></td>
+                        </tr>
+                    </tbody>
+                </table>
             </div>
             
-            <div class="info-item">
-                <strong>Référence</strong>
-                <span>RAP-{{ rapport.id }}</span>
+            <div class="table-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Date</th>
+                            <th>Libellé opération</th>
+                            <th>Débit</th>
+                            <th>Crédit</th>
+                        </tr>
+                    </thead>
+                    <tbody id="accounting-matched-operations">
+                        <!-- Les écritures comptables rapprochées seront insérées ici -->
+                        <tr class="total-row">
+                            <td colspan="2"><strong>Total</strong></td>
+                            <td id="accounting-matched-debit-total"><strong>0</strong></td>
+                            <td id="accounting-matched-credit-total"><strong>0</strong></td>
+                        </tr>
+                    </tbody>
+                </table>
             </div>
         </div>
 
-        <div class="card">
-            <div class="card-header">
-                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-                    <polyline points="14 2 14 8 20 8"></polyline>
-                    <line x1="16" y1="13" x2="8" y2="13"></line>
-                    <line x1="16" y1="17" x2="8" y2="17"></line>
-                    <polyline points="10 9 9 9 8 9"></polyline>
-                </svg>
-                <h3>Informations sur la Facture</h3>
+        <div class="verification-section">
+            VÉRIFICATION ÉCART : 0€
+        </div>
+
+        <!-- Écritures non rapprochées -->
+        <div class="section-title">Écritures non rapprochées</div>
+        <div class="dual-table">
+            <div class="table-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Date</th>
+                            <th>Libellé opération</th>
+                            <th>Débit</th>
+                            <th>Crédit</th>
+                        </tr>
+                    </thead>
+                    <tbody id="bank-unmatched-operations">
+                        <!-- Les opérations non rapprochées du relevé bancaire seront insérées ici -->
+                        <tr class="total-row">
+                            <td colspan="2"><strong>Total</strong></td>
+                            <td id="bank-unmatched-debit-total"><strong>0</strong></td>
+                            <td id="bank-unmatched-credit-total"><strong>0</strong></td>
+                        </tr>
+                    </tbody>
+                </table>
             </div>
-            <div class="info-grid">
-                <div class="info-item">
-                    <strong>Numéro de Facture</strong>
-                    <span>{{ facture.numero if facture else 'Non disponible' }}</span>
-                </div>
-                
-                <div class="info-item">
-                    <strong>Émetteur</strong>
-                    <span>{{ facture.emetteur if facture else 'Non disponible' }}</span>
-                </div>
-                
-                {% if facture and facture.date_emission %}
-                <div class="info-item">
-                    <strong>Date d'Émission</strong>
-                    <span>{{ facture.date_emission.strftime('%d/%m/%Y') }}</span>
-                </div>
-                {% endif %}
-                
-                {% if facture and facture.montant_total %}
-                <div class="info-item">
-                    <strong>Montant Total</strong>
-                    <span>{{ facture.montant_total }} €</span>
-                </div>
-                {% endif %}
+            
+            <div class="table-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Date</th>
+                            <th>Libellé opération</th>
+                            <th>Débit</th>
+                            <th>Crédit</th>
+                        </tr>
+                    </thead>
+                    <tbody id="accounting-unmatched-operations">
+                        <!-- Les écritures comptables non rapprochées seront insérées ici -->
+                        <tr class="total-row">
+                            <td colspan="2"><strong>Total</strong></td>
+                            <td id="accounting-unmatched-debit-total"><strong>0</strong></td>
+                            <td id="accounting-unmatched-credit-total"><strong>0</strong></td>
+                        </tr>
+                    </tbody>
+                </table>
             </div>
         </div>
 
-        <div class="card">
-            <div class="card-header">
-                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <rect x="2" y="4" width="20" height="16" rx="2"></rect>
-                    <path d="M8 12h8"></path>
-                    <path d="M8 8h8"></path>
-                    <path d="M8 16h8"></path>
-                </svg>
-                <h3>Informations Bancaires</h3>
-            </div>
-            <div class="info-grid">
-                <div class="info-item">
-                    <strong>Numéro de Compte</strong>
-                    <span>{{ banque.numero if banque else 'Non disponible' }}</span>
-                </div>
-                
-                {% if banque and banque.nom %}
-                <div class="info-item">
-                    <strong>Nom de la Banque</strong>
-                    <span>{{ banque.nom }}</span>
-                </div>
-                {% endif %}
-                
-                {% if banque and banque.solde %}
-                <div class="info-item">
-                    <strong>Solde Actuel</strong>
-                    <span>{{ banque.solde }} €</span>
-                </div>
-                {% endif %}
-            </div>
+        <div class="ecart-section" id="final-gap">
+            ÉCART : 0€
         </div>
 
-        <h2>Analyse de Rapprochement</h2>
-        
-        <div class="card">
-            <div class="card-header">
-                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-                    <path d="M14 2v6h6"></path>
-                    <path d="M16 13H8"></path>
-                    <path d="M16 17H8"></path>
-                    <path d="M10 9H8"></path>
-                </svg>
-                <h3>Résumé Facture</h3>
-            </div>
-            <div class="content-box">
-                <pre>{{ resume_facture if resume_facture else 'Aucun résumé disponible pour la facture' }}</pre>
-            </div>
-        </div>
-        
-        <div class="card">
-            <div class="card-header">
-                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
-                </svg>
-                <h3>Résumé Relevé Bancaire</h3>
-            </div>
-            <div class="content-box">
-                <pre>{{ resume_releve if resume_releve else 'Aucun résumé disponible pour le relevé bancaire' }}</pre>
-            </div>
-        </div>
-
-        <div class="card">
-            <div class="card-header">
-                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <circle cx="12" cy="12" r="10"></circle>
-                    <line x1="12" y1="8" x2="12" y2="12"></line>
-                    <line x1="12" y1="16" x2="12.01" y2="16"></line>
-                </svg>
-                <h3>Résultat de la Vérification</h3>
-            </div>
-            <div class="content-box">
-                <p><strong>Statut :</strong> 
+        <!-- Section de résumé et anomalies -->
+        <div class="info-section" style="margin-top: 30px;">
+            <div class="info-box">
+                <h3>Résultat du Rapprochement</h3>
+                <p><strong>Statut:</strong> 
                     <span class="status-badge 
-                        {% if resultat_verification == 'Conforme' %}status-success
-                        {% elif resultat_verification == 'Non conforme' %}status-danger
-                        {% else %}status-warning{% endif %}">
-                        {{ resultat_verification if resultat_verification else 'Non vérifié' }}
+                        {% if rapport and rapport.resultat_verification and rapport.resultat_verification.paiement_trouve %}status-success
+                        {% else %}status-danger{% endif %}">
+                        {% if rapport and rapport.resultat_verification and rapport.resultat_verification.paiement_trouve %}Paiement trouvé{% else %}Paiement non trouvé{% endif %}
                     </span>
                 </p>
-                {% if commentaire_verification %}
-                <p><strong>Commentaire :</strong> {{ commentaire_verification }}</p>
-                {% endif %}
+                <p><strong>Niveau de correspondance:</strong> {{ rapport.resultat_verification.niveau_correspondance if rapport and rapport.resultat_verification else 'N/A' }}</p>
+                <p><strong>Score final:</strong> {{ rapport.verification_result.score_final if rapport and rapport.verification_result else 'N/A' }}/100</p>
+            </div>
+            
+            <div class="info-box">
+                <h3>Statistiques</h3>
+                <p><strong>Opérations rapprochées:</strong> <span id="matched-count">0</span></p>
+                <p><strong>Opérations non rapprochées:</strong> <span id="unmatched-count">0</span></p>
+                <p><strong>Écart total:</strong> <span id="total-gap">0€</span></p>
+                <p><strong>Anomalies détectées:</strong> {{ rapport.anomalies|length if rapport and rapport.anomalies else 0 }}</p>
             </div>
         </div>
 
-        {% if anomalies and anomalies|length > 0 %}
-        <div class="card anomalies-card">
-            <div class="card-header">
-                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
-                    <line x1="12" y1="9" x2="12" y2="13"></line>
-                    <line x1="12" y1="17" x2="12.01" y2="17"></line>
-                </svg>
-                <h3>Anomalies Détectées</h3>
-            </div>
-            <div class="content-box">
-                <ul>
-                    {% for anomalie in anomalies %}
-                        <li>{{ anomalie }}</li>
-                    {% endfor %}
-                </ul>
-            </div>
+        <!-- Anomalies détectées -->
+        {% if rapport and rapport.anomalies and rapport.anomalies|length > 0 %}
+        <div class="section-title" style="color: var(--danger-color);">Anomalies Détectées</div>
+        <div class="info-box" style="border-left-color: var(--danger-color); background-color: #f8d7da;">
+            <ul style="margin: 0; padding-left: 20px;">
+                {% for anomalie in rapport.anomalies %}
+                <li style="color: var(--danger-color); margin: 5px 0;">{{ anomalie }}</li>
+                {% endfor %}
+            </ul>
         </div>
         {% endif %}
 
-        {% if recommendations and recommendations|length > 0 %}
-        <div class="card recommendations-card">
-            <div class="card-header">
-                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3zM7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"></path>
-                </svg>
-                <h3>Recommandations</h3>
-            </div>
-            <div class="content-box">
-                <ul>
-                    {% for recommendation in recommendations %}
-                        <li>{{ recommendation }}</li>
-                    {% endfor %}
-                </ul>
-            </div>
+        <!-- Recommandations -->
+        {% if rapport and rapport.recommendations and rapport.recommendations|length > 0 %}
+        <div class="section-title" style="color: var(--success-color);">Recommandations</div>
+        <div class="info-box" style="border-left-color: var(--success-color); background-color: #d4edda;">
+            <ul style="margin: 0; padding-left: 20px;">
+                {% for recommendation in rapport.recommendations %}
+                <li style="color: var(--success-color); margin: 5px 0;">{{ recommendation }}</li>
+                {% endfor %}
+            </ul>
         </div>
         {% endif %}
-
-        {% if analyse_texte %}
-        <div class="card">
-            <div class="card-header">
-                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
-                    <circle cx="9" cy="7" r="4"></circle>
-                    <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
-                    <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
-                </svg>
-                <h3>Analyse Approfondie</h3>
-            </div>
-            <div class="content-box">
-                <pre>{{ analyse_texte }}</pre>
-            </div>
-        </div>
-        {% endif %}
-
-        {% if rapport_complet %}
-        <div class="card">
-            <div class="card-header">
-                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-                    <polyline points="14 2 14 8 20 8"></polyline>
-                    <line x1="16" y1="13" x2="8" y2="13"></line>
-                    <line x1="16" y1="17" x2="8" y2="17"></line>
-                    <polyline points="10 9 9 9 8 9"></polyline>
-                </svg>
-                <h3>Rapport Complet</h3>
-            </div>
-            <div class="content-box">
-                <pre>{{ rapport_complet }}</pre>
-            </div>
-        </div>
-        {% endif %}
-
-        <div class="footer">
-            <p>Document généré automatiquement le {{ date_generation }} - © 2025 Votre Société. Tous droits réservés.</p>
-            <p>Ce document est confidentiel et destiné exclusivement à son destinataire.</p>
-        </div>
     </div>
+
+    <script>
+        // Simulation de données pour démonstration
+        document.addEventListener('DOMContentLoaded', function() {
+            // Données d'exemple pour les opérations rapprochées
+            const matchedBankOps = [
+                { date: '01/01/2024', libelle: 'Virement client ABC', debit: 0, credit: 1500 },
+                { date: '02/01/2024', libelle: 'Paiement fournisseur XYZ', debit: 800, credit: 0 },
+                { date: '03/01/2024', libelle: 'Virement salarié', debit: 2500, credit: 0 }
+            ];
+
+            const matchedAccountingOps = [
+                { date: '01/01/2024', libelle: 'Virement client ABC', debit: 1500, credit: 0 },
+                { date: '02/01/2024', libelle: 'Paiement fournisseur XYZ', debit: 0, credit: 800 },
+                { date: '03/01/2024', libelle: 'Virement salarié', debit: 0, credit: 2500 }
+            ];
+
+            // Données d'exemple pour les opérations non rapprochées
+            const unmatchedBankOps = [
+                { date: '04/01/2024', libelle: 'Frais bancaires', debit: 25, credit: 0 },
+                { date: '05/01/2024', libelle: 'Intérêts créditeurs', debit: 0, credit: 15 }
+            ];
+
+            const unmatchedAccountingOps = [
+                { date: '04/01/2024', libelle: 'Facture en attente', debit: 0, credit: 500 },
+                { date: '05/01/2024', libelle: 'Provision douteuse', debit: 200, credit: 0 }
+            ];
+
+            // Fonction pour populer un tableau
+            function populateTable(tableId, operations, totalDebitId, totalCreditId) {
+                const tbody = document.getElementById(tableId);
+                const totalRow = tbody.querySelector('.total-row');
+                
+                let totalDebit = 0;
+                let totalCredit = 0;
+
+                operations.forEach(op => {
+                    const row = document.createElement('tr');
+                    row.innerHTML = `
+                        <td>${op.date}</td>
+                        <td>${op.libelle}</td>
+                        <td class="${op.debit > 0 ? 'amount-negative' : ''}">${op.debit > 0 ? op.debit.toFixed(2) : ''}</td>
+                        <td class="${op.credit > 0 ? 'amount-positive' : ''}">${op.credit > 0 ? op.credit.toFixed(2) : ''}</td>
+                    `;
+                    tbody.insertBefore(row, totalRow);
+                    
+                    totalDebit += op.debit;
+                    totalCredit += op.credit;
+                });
+
+                // Mise à jour des totaux
+                document.getElementById(totalDebitId).textContent = totalDebit.toFixed(2);
+                document.getElementById(totalCreditId).textContent = totalCredit.toFixed(2);
+
+                return { totalDebit, totalCredit };
+            }
+
+            // Population des tableaux
+            const matchedBank = populateTable('bank-matched-operations', matchedBankOps, 'bank-matched-debit-total', 'bank-matched-credit-total');
+            const matchedAccounting = populateTable('accounting-matched-operations', matchedAccountingOps, 'accounting-matched-debit-total', 'accounting-matched-credit-total');
+            const unmatchedBank = populateTable('bank-unmatched-operations', unmatchedBankOps, 'bank-unmatched-debit-total', 'bank-unmatched-credit-total');
+            const unmatchedAccounting = populateTable('accounting-unmatched-operations', unmatchedAccountingOps, 'accounting-unmatched-debit-total', 'accounting-unmatched-credit-total');
+
+            // Calcul de l'écart final
+            const bankTotal = (matchedBank.totalCredit - matchedBank.totalDebit) + (unmatchedBank.totalCredit - unmatchedBank.totalDebit);
+            const accountingTotal = (matchedAccounting.totalCredit - matchedAccounting.totalDebit) + (unmatchedAccounting.totalCredit - unmatchedAccounting.totalDebit);
+            const finalGap = Math.abs(bankTotal - accountingTotal);
+
+            // Mise à jour des éléments d'interface
+            document.getElementById('final-gap').textContent = `ÉCART : ${finalGap.toFixed(2)}€`;
+            document.getElementById('matched-count').textContent = matchedBankOps.length;
+            document.getElementById('unmatched-count').textContent = unmatchedBankOps.length + unmatchedAccountingOps.length;
+            document.getElementById('total-gap').textContent = `${finalGap.toFixed(2)}€`;
+
+            // Couleur de l'écart selon le montant
+            const gapElement = document.getElementById('final-gap');
+            if (finalGap === 0) {
+                gapElement.style.backgroundColor = 'var(--success-color)';
+                gapElement.style.color = 'white';
+            } else if (finalGap > 100) {
+                gapElement.style.backgroundColor = 'var(--danger-color)';
+                gapElement.style.color = 'white';
+            }
+        });
+    </script>
 </body>
 </html>

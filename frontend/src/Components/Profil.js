@@ -2,24 +2,36 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useUser } from './UserContext';
 import { useNavigate, Link } from 'react-router-dom';
-import { 
-  IdentificationIcon,
-  EnvelopeIcon,
-  CalendarIcon,
-  ShieldCheckIcon,
-  PencilSquareIcon,
-  TrashIcon,
-  ArrowLeftIcon,
-  ExclamationTriangleIcon,
-  CogIcon,
-  LockClosedIcon,
-  BellIcon,
-  PlusCircleIcon
+import {
+    IdentificationIcon,
+    EnvelopeIcon,
+    CalendarIcon,
+    ShieldCheckIcon,
+    PencilSquareIcon,
+    TrashIcon,
+    ArrowLeftIcon,
+    ExclamationTriangleIcon,
+    CogIcon,
+    LockClosedIcon,
+    BellIcon,
+    PlusCircleIcon,
+    TagIcon,
+    FaceSmileIcon
 } from '@heroicons/react/24/outline';
 
 const UserProfileView = () => {
     const { user, logout } = useUser();
-    const [profile, setProfile] = useState(null);
+    const [profile, setProfile] = useState({
+        username: '',
+        email: '',
+        nom_complet: '',
+        telephone: '',
+        date_naissance: '',
+        sexe: '',
+        last_login: '',
+        date_creation: '',
+        role: ''
+    });
     const [showDeleteConfirmation, setShowDeleteConfirmation] = useState(false);
     const [error, setError] = useState(null);
     const [loading, setLoading] = useState(true);
@@ -28,10 +40,16 @@ const UserProfileView = () => {
     const [formData, setFormData] = useState({
         nom_complet: '',
         telephone: '',
-        last_login: '',
-        date_creation: ''
+        date_naissance: '',
+        sexe: ''
     });
     const navigate = useNavigate();
+
+    const GENDER_CHOICES = [
+        { value: 'Homme', label: 'Homme' },
+        { value: 'Femme', label: 'Femme' },
+        { value: 'Autre', label: 'Autre' },
+    ];
 
     useEffect(() => {
         const fetchProfile = async () => {
@@ -40,26 +58,35 @@ const UserProfileView = () => {
                 setLoading(false);
                 return;
             }
-            
+
             try {
                 const response = await axios.get(`http://127.0.0.1:8000/api/profiladmin/${user.id}/`, {
                     withCredentials: true
                 });
-                
-                if (!response.data) {
-                    throw new Error("Aucune donnée reçue");
-                }
-        
-                setProfile({
-                    username: response.data.username || 'Non spécifié',
-                    email: response.data.email || 'Non spécifié',
-                    nom_complet: response.data.nom_complet || null,
-                    telephone: response.data.telephone || null,
-                    last_login: response.data.last_login || 'Non spécifié',
-                    date_creation: response.data.date_creation || 'Non spécifié',
-                    role: response.data.role || 'Admin'
+
+                const profileData = response.data || {};
+
+                setFormData({
+                    nom_complet: profileData.nom_complet || '',
+                    telephone: profileData.telephone || '',
+                    date_naissance: profileData.date_naissance 
+                        ? new Date(profileData.date_naissance).toISOString().split('T')[0] 
+                        : '',
+                    sexe: profileData.sexe || '',
                 });
-                
+
+                setProfile({
+                    username: profileData.username || 'Non spécifié',
+                    email: profileData.email || 'Non spécifié',
+                    nom_complet: profileData.nom_complet || null,
+                    telephone: profileData.telephone || null,
+                    date_naissance: profileData.date_naissance || null,
+                    sexe: profileData.sexe || null,
+                    last_login: profileData.last_login || 'Non spécifié',
+                    date_creation: profileData.date_joined || 'Non spécifié',
+                    role: profileData.role || 'Admin'
+                });
+
             } catch (err) {
                 console.error("Erreur lors de la récupération du profil:", err);
                 setError(err.message || "Impossible de charger les informations du profil");
@@ -67,20 +94,20 @@ const UserProfileView = () => {
                 setLoading(false);
             }
         };
-    
+
         fetchProfile();
     }, [user]);
 
     const handleDelete = () => {
         setShowDeleteConfirmation(true);
     };
-    
+
     const confirmDelete = async () => {
         try {
-            const response = await axios.delete(`http://127.0.0.1:8000/api/profilcomptable/${user.id}/`, {
+            const response = await axios.delete(`http://127.0.0.1:8000/api/profiladmin/${user?.id}/`, {
                 withCredentials: true
             });
-            
+
             if (response.data?.status === 'success') {
                 alert("Votre compte a été supprimé avec succès");
                 logout();
@@ -88,7 +115,7 @@ const UserProfileView = () => {
             }
         } catch (err) {
             console.error("Erreur lors de la suppression du compte:", err);
-            setError("Impossible de supprimer le compte");
+            setError(err.response?.data?.error || "Impossible de supprimer le compte");
         } finally {
             setShowDeleteConfirmation(false);
         }
@@ -103,36 +130,48 @@ const UserProfileView = () => {
     };
 
     const handleSubmit = async (e) => {
-        e.preventDefault();
-        try {
-            const response = await axios.post(
-                `http://127.0.0.1:8000/api/profiladmin/`,
-                {
-                    user_id: user.id,
-                    nom_complet: formData.nom_complet,
-                    telephone: formData.telephone,
-                },
+    e.preventDefault();
+    try {
+        const payload = {
+            user_id: user?.id,
+            nom_complet: formData.nom_complet,
+            telephone: formData.telephone,
+            date_naissance: formData.date_naissance,
+            sexe: formData.sexe
+        };
+
+        const response = await axios.post(
+            `http://127.0.0.1:8000/api/profiladmin/`,
+            payload,
+            { withCredentials: true }
+        );
+
+        if (response.data?.status === 'success') {
+            // Recharger les données du profil
+            const profileResponse = await axios.get(
+                `http://127.0.0.1:8000/api/profiladmin/${user?.id}/`,
                 { withCredentials: true }
             );
-
-            if (response.data.status === 'success') {
-                const profileResponse = await axios.get(
-                    `http://127.0.0.1:8000/api/profiladmin/${user.id}/`,
-                    { withCredentials: true }
-                );
-                setProfile({
-                    ...profile,
-                    nom_complet: profileResponse.data.nom_complet,
-                    telephone: profileResponse.data.telephone
-                });
-                setShowAddForm(false);
-                setError(null);
+            
+            setProfile(prev => ({
+                ...prev,
+                ...profileResponse.data
+            }));
+            
+            setShowAddForm(false);
+            setError(null);
+            
+            // Afficher un message si le profil admin a été créé
+            if (response.data.admin_created) {
+                alert("Profil admin créé avec succès");
             }
-        } catch (err) {
-            console.error("Erreur lors de l'ajout des informations:", err);
-            setError(err.response?.data?.error || "Erreur lors de l'ajout des informations");
         }
-    };
+    } catch (err) {
+        console.error("Erreur lors de la mise à jour:", err);
+        setError(err.response?.data?.error || 
+               "Erreur lors de la mise à jour du profil");
+    }
+};
 
     if (!user) {
         return (
@@ -145,8 +184,8 @@ const UserProfileView = () => {
                 <h3 className="text-2xl font-bold text-gray-800 mb-3">Accès non autorisé</h3>
                 <p className="text-gray-600 mb-6">Connectez-vous pour accéder à votre profil</p>
                 <div className="flex justify-center">
-                    <Link 
-                        to="/connexion" 
+                    <Link
+                        to="/connexion"
                         className="inline-flex items-center px-6 py-3 bg-gradient-to-r from-blue-500 to-indigo-600 text-white font-medium rounded-lg shadow-lg hover:shadow-xl transition-all hover:from-blue-600 hover:to-indigo-700"
                     >
                         <LockClosedIcon className="h-5 w-5 mr-2" />
@@ -175,7 +214,7 @@ const UserProfileView = () => {
         <div className="min-h-screen bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
             <div className="max-w-6xl mx-auto">
                 <div className="flex justify-between items-center mb-8">
-                    <button 
+                    <button
                         onClick={() => navigate(-1)}
                         className="flex items-center space-x-2 text-indigo-600 hover:text-indigo-800 transition-colors"
                     >
@@ -196,14 +235,14 @@ const UserProfileView = () => {
                     <div className="flex flex-col lg:flex-row">
                         {/* Section Profil */}
                         <div className="w-full lg:w-1/3 bg-gradient-to-b from-indigo-600 to-indigo-700 p-8 flex flex-col items-center">
-                            <div 
+                            <div
                                 className="relative mb-6 group"
                                 onMouseEnter={() => setHoverPhoto(true)}
                                 onMouseLeave={() => setHoverPhoto(false)}
                             >
                                 <div className="h-40 w-40 rounded-full border-4 border-white shadow-xl overflow-hidden transition-transform duration-300 group-hover:scale-105">
-                                    <img 
-                                        src="/images/nou.jpg" 
+                                    <img
+                                        src="/images/nou.jpg"
                                         alt="Profil administrateur"
                                         className="h-full w-full object-cover"
                                     />
@@ -219,10 +258,10 @@ const UserProfileView = () => {
                                     </div>
                                 )}
                             </div>
-                            
-                            <h2 className="text-2xl font-bold text-white text-center">{profile.username}</h2>
-                            <p className="text-indigo-200 mt-1 text-sm font-medium capitalize">{profile.role}</p>
-                            
+
+                            <h2 className="text-2xl font-bold text-white text-center">{profile?.username || 'Utilisateur'}</h2>
+                            <p className="text-indigo-200 mt-1 text-sm font-medium capitalize">{profile?.role || 'Admin'}</p>
+
                             <div className="mt-8 w-full space-y-4">
                                 <Link
                                     to={`/dashboard/edit-profile`}
@@ -231,14 +270,24 @@ const UserProfileView = () => {
                                     <PencilSquareIcon className="h-5 w-5" />
                                     <span>Modifier le profil</span>
                                 </Link>
-                                
-                                {(!profile.nom_complet || !profile.telephone) && (
+
+                                {(!profile?.nom_complet || !profile?.telephone || !profile?.date_naissance || !profile?.sexe) && (
                                     <button
-                                        onClick={() => setShowAddForm(true)}
+                                        onClick={() => {
+                                            setShowAddForm(true);
+                                            setFormData({
+                                                nom_complet: profile?.nom_complet || '',
+                                                telephone: profile?.telephone || '',
+                                                date_naissance: profile?.date_naissance 
+                                                    ? new Date(profile.date_naissance).toISOString().split('T')[0] 
+                                                    : '',
+                                                sexe: profile?.sexe || '',
+                                            });
+                                        }}
                                         className="w-full flex items-center justify-center space-x-2 px-6 py-3 bg-green-600 text-white font-medium rounded-lg shadow-md hover:bg-green-700 transition-all"
                                     >
                                         <PlusCircleIcon className="h-5 w-5" />
-                                        <span>Ajouter des informations</span>
+                                        <span>Compléter les informations</span>
                                     </button>
                                 )}
                             </div>
@@ -250,7 +299,7 @@ const UserProfileView = () => {
                                 <h3 className="text-2xl font-bold text-gray-800">Informations du profil</h3>
                                 <p className="text-gray-500">Gérez vos informations personnelles et paramètres</p>
                             </div>
-                            
+
                             <div className="p-8">
                                 {error && (
                                     <div className="mb-6 p-4 bg-red-50 rounded-lg flex items-start border border-red-200">
@@ -260,7 +309,7 @@ const UserProfileView = () => {
                                         </div>
                                     </div>
                                 )}
-                                
+
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                     {/* Carte Identité */}
                                     <div className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm hover:shadow-md transition-shadow">
@@ -273,63 +322,88 @@ const UserProfileView = () => {
                                         <div className="space-y-3 pl-16">
                                             <div>
                                                 <p className="text-xs text-gray-500 uppercase tracking-wider">Nom d'utilisateur</p>
-                                                <p className="text-gray-900 font-medium">{profile.username}</p>
+                                                <p className="text-gray-900 font-medium">{profile?.username || 'Non spécifié'}</p>
                                             </div>
                                             <div>
                                                 <p className="text-xs text-gray-500 uppercase tracking-wider">Nom complet</p>
                                                 <p className="text-gray-900 font-medium">
-                                                    {profile.nom_complet || (
+                                                    {profile?.nom_complet || (
                                                         <span className="text-gray-400">Non spécifié</span>
                                                     )}
                                                 </p>
                                             </div>
                                         </div>
                                     </div>
-                                    
-                                    {/* Carte Contact */}
+
+                                    {/* Carte Contact & Infos personnelles */}
                                     <div className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm hover:shadow-md transition-shadow">
                                         <div className="flex items-center mb-4">
                                             <div className="p-3 bg-purple-100 rounded-lg mr-4">
                                                 <EnvelopeIcon className="h-6 w-6 text-purple-600" />
                                             </div>
-                                            <h4 className="text-lg font-semibold text-gray-800">Contact</h4>
+                                            <h4 className="text-lg font-semibold text-gray-800">Contact & Personnel</h4>
                                         </div>
                                         <div className="space-y-3 pl-16">
                                             <div>
                                                 <p className="text-xs text-gray-500 uppercase tracking-wider">Email</p>
-                                                <p className="text-gray-900 font-medium">{profile.email}</p>
+                                                <p className="text-gray-900 font-medium">{profile?.email || 'Non spécifié'}</p>
                                             </div>
                                             <div>
                                                 <p className="text-xs text-gray-500 uppercase tracking-wider">Téléphone</p>
                                                 <p className="text-gray-900 font-medium">
-                                                    {profile.telephone || (
+                                                    {profile?.telephone || (
+                                                        <span className="text-gray-400">Non spécifié</span>
+                                                    )}
+                                                </p>
+                                            </div>
+                                            <div>
+                                                <p className="text-xs text-gray-500 uppercase tracking-wider">Date de naissance</p>
+                                                <p className="text-gray-900 font-medium">
+                                                    {profile?.date_naissance ?
+                                                        new Date(profile.date_naissance).toLocaleDateString('fr-FR') :
+                                                        <span className="text-gray-400">Non spécifié</span>
+                                                    }
+                                                </p>
+                                            </div>
+                                            <div>
+                                                <p className="text-xs text-gray-500 uppercase tracking-wider">Sexe</p>
+                                                <p className="text-gray-900 font-medium">
+                                                    {profile?.sexe || (
                                                         <span className="text-gray-400">Non spécifié</span>
                                                     )}
                                                 </p>
                                             </div>
                                         </div>
                                     </div>
-                                    
-                                    {/* Carte Informations */}
+
+                                    {/* Carte Informations (Dates) */}
                                     <div className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm hover:shadow-md transition-shadow">
                                         <div className="flex items-center mb-4">
                                             <div className="p-3 bg-green-100 rounded-lg mr-4">
                                                 <CalendarIcon className="h-6 w-6 text-green-600" />
                                             </div>
-                                            <h4 className="text-lg font-semibold text-gray-800">Informations</h4>
+                                            <h4 className="text-lg font-semibold text-gray-800">Historique du compte</h4>
                                         </div>
                                         <div className="space-y-3 pl-16">
                                             <div>
                                                 <p className="text-xs text-gray-500 uppercase tracking-wider">Date de création</p>
                                                 <p className="text-gray-900 font-medium">
-                                                    {profile.date_creation ? 
-                                                        new Date(profile.date_creation).toLocaleDateString() : 
+                                                    {profile?.date_creation ?
+                                                        new Date(profile.date_creation).toLocaleDateString('fr-FR') :
                                                         'Non spécifié'}
+                                                </p>
+                                            </div>
+                                            <div>
+                                                <p className="text-xs text-gray-500 uppercase tracking-wider">Dernière connexion</p>
+                                                <p className="text-gray-900 font-medium">
+                                                    {profile?.last_login ?
+                                                        new Date(profile.last_login).toLocaleString('fr-FR') :
+                                                        "Jamais connecté"}
                                                 </p>
                                             </div>
                                         </div>
                                     </div>
-                                    
+
                                     {/* Carte Sécurité */}
                                     <div className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm hover:shadow-md transition-shadow">
                                         <div className="flex items-center mb-4">
@@ -341,26 +415,18 @@ const UserProfileView = () => {
                                         <div className="space-y-3 pl-16">
                                             <div>
                                                 <p className="text-xs text-gray-500 uppercase tracking-wider">Rôle</p>
-                                                <p className="text-gray-900 font-medium capitalize">{profile.role}</p>
-                                            </div>
-                                            <div>
-                                                <p className="text-xs text-gray-500 uppercase tracking-wider">Dernière connexion</p>
-                                                <p className="text-gray-900 font-medium">
-                                                    {profile.last_login ? 
-                                                        new Date(profile.last_login).toLocaleString() : 
-                                                        "Jamais connecté"}
-                                                </p>
+                                                <p className="text-gray-900 font-medium capitalize">{profile?.role || 'Admin'}</p>
                                             </div>
                                         </div>
                                     </div>
                                 </div>
                             </div>
-                            
+
                             <div className="px-8 py-6 bg-gray-50 border-t border-gray-200 flex flex-col sm:flex-row justify-between items-center">
                                 <div className="mb-4 sm:mb-0">
                                     <p className="text-sm text-gray-500">
-                                        Compte créé le {profile.date_creation ? 
-                                            new Date(profile.date_creation).toLocaleDateString() : 
+                                        Compte créé le {profile?.date_creation ?
+                                            new Date(profile.date_creation).toLocaleDateString('fr-FR') :
                                             'Date inconnue'}
                                     </p>
                                 </div>
@@ -444,8 +510,8 @@ const UserProfileView = () => {
                 <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
                     <div className="bg-white rounded-lg p-6 w-full max-w-md">
                         <div className="flex justify-between items-center mb-4">
-                            <h3 className="text-xl font-bold text-gray-800">Ajouter des informations</h3>
-                            <button 
+                            <h3 className="text-xl font-bold text-gray-800">Compléter les informations</h3>
+                            <button
                                 onClick={() => setShowAddForm(false)}
                                 className="text-gray-500 hover:text-gray-700"
                             >
@@ -455,11 +521,12 @@ const UserProfileView = () => {
                         <form onSubmit={handleSubmit}>
                             <div className="space-y-4">
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                                    <label htmlFor="nom_complet" className="block text-sm font-medium text-gray-700 mb-1">
                                         Nom complet <span className="text-red-500">*</span>
                                     </label>
                                     <input
                                         type="text"
+                                        id="nom_complet"
                                         name="nom_complet"
                                         value={formData.nom_complet}
                                         onChange={handleInputChange}
@@ -468,17 +535,50 @@ const UserProfileView = () => {
                                     />
                                 </div>
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                                    <label htmlFor="telephone" className="block text-sm font-medium text-gray-700 mb-1">
                                         Téléphone <span className="text-red-500">*</span>
                                     </label>
                                     <input
                                         type="text"
+                                        id="telephone"
                                         name="telephone"
                                         value={formData.telephone}
                                         onChange={handleInputChange}
                                         className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500"
                                         required
                                     />
+                                </div>
+                                <div>
+                                    <label htmlFor="date_naissance" className="block text-sm font-medium text-gray-700 mb-1">
+                                        Date de naissance
+                                    </label>
+                                    <input
+                                        type="date"
+                                        id="date_naissance"
+                                        name="date_naissance"
+                                        value={formData.date_naissance}
+                                        onChange={handleInputChange}
+                                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                    />
+                                </div>
+                                <div>
+                                    <label htmlFor="sexe" className="block text-sm font-medium text-gray-700 mb-1">
+                                        Sexe
+                                    </label>
+                                    <select
+                                        id="sexe"
+                                        name="sexe"
+                                        value={formData.sexe}
+                                        onChange={handleInputChange}
+                                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                    >
+                                        <option value="">Sélectionner</option>
+                                        {GENDER_CHOICES.map(option => (
+                                            <option key={option.value} value={option.value}>
+                                                {option.label}
+                                            </option>
+                                        ))}
+                                    </select>
                                 </div>
                             </div>
                             <div className="mt-6 flex justify-end space-x-3">

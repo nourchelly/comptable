@@ -9,11 +9,10 @@ import {
   FaSync,
   FaSearch,
   FaFilter,
-  FaPlus,
-  FaDownload,
-  FaInfoCircle,
-  FaCheckCircle,
-FaTimesCircle} from 'react-icons/fa';
+  FaChevronDown,
+  FaChevronUp,
+  FaTimesCircle
+} from 'react-icons/fa';
 import { toast, ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 import { useNavigate } from 'react-router-dom';
@@ -41,21 +40,79 @@ const STATUS_CONFIG = {
   }
 };
 
+const TableSection = ({ title, data, columns, expandable = false }) => {
+  const [expanded, setExpanded] = useState(false);
+
+  if (!data || data.length === 0) {
+    return (
+      <div className="mb-6">
+        <h4 className="text-sm font-medium text-gray-500 mb-3">{title}</h4>
+        <p className="text-sm text-gray-500">Aucune donnée disponible</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="mb-6">
+      <div className="flex justify-between items-center mb-3">
+        <h4 className="text-sm font-medium text-gray-500">{title}</h4>
+        {expandable && (
+          <button
+            onClick={() => setExpanded(!expanded)}
+            className="text-gray-500 hover:text-gray-700"
+          >
+            {expanded ? <FaChevronUp /> : <FaChevronDown />}
+          </button>
+        )}
+      </div>
+
+      <div className={`overflow-x-auto ${expandable && !expanded ? 'max-h-40 overflow-y-hidden' : ''}`}>
+        <table className="min-w-full divide-y divide-gray-200">
+          <thead className="bg-gray-50">
+            <tr>
+              {columns.map((column, index) => (
+                <th
+                  key={index}
+                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+                >
+                  {column.header}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody className="bg-white divide-y divide-gray-200">
+            {data.map((item, rowIndex) => (
+              <tr key={rowIndex}>
+                {columns.map((column, colIndex) => (
+                  <td key={colIndex} className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                    {column.accessor(item)}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+};
+
 const RapportsList = ({ onSelectRapport }) => {
   const navigate = useNavigate();
   const [rapports, setRapports] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
   const [filters, setFilters] = useState({
     statut: '',
     search: '',
     dateDebut: '',
     dateFin: ''
   });
-  const [selectedRapport, setSelectedRapport] = useState(null);
+  const [selectedRapportDetails, setSelectedRapportDetails] = useState(null);
+  const [loadingDetails, setLoadingDetails] = useState(false);
   const [showDetailsModal, setShowDetailsModal] = useState(false);
+  const [showDeleteConfirmModal, setShowDeleteConfirmModal] = useState(false);
+  const [rapportToDelete, setRapportToDelete] = useState(null);
 
-  // Charger les rapports
   const fetchRapports = async () => {
     setLoading(true);
     try {
@@ -63,18 +120,13 @@ const RapportsList = ({ onSelectRapport }) => {
       if (filters.statut) params.append('statut', filters.statut);
       if (filters.dateDebut) params.append('dateDebut', filters.dateDebut);
       if (filters.dateFin) params.append('dateFin', filters.dateFin);
-      
+
       const response = await axios.get(`http://localhost:5000/api/rapports?${params.toString()}`);
-      
-      const data = response.data.success 
-        ? (response.data.data || []) 
-        : [];
-      
+      const data = response.data.success ? response.data.data || [] : [];
       setRapports(Array.isArray(data) ? data : []);
-      setError(null);
     } catch (err) {
-      console.error('Erreur de chargement:', err);
-      setError(err.response?.data?.message || 'Erreur lors du chargement des rapports');
+      console.error('Erreur de chargement des rapports:', err);
+      toast.error('Erreur lors du chargement des rapports');
       setRapports([]);
     } finally {
       setLoading(false);
@@ -85,17 +137,39 @@ const RapportsList = ({ onSelectRapport }) => {
     fetchRapports();
   }, [filters.statut, filters.dateDebut, filters.dateFin]);
 
-  // Gestion des actions
-  const handleDeleteRapport = async (rapportId) => {
-    if (window.confirm('Êtes-vous sûr de vouloir supprimer ce rapport ?')) {
-      try {
-        await axios.delete(`http://localhost:5000/api/rapports/${rapportId}`);
-        fetchRapports();
-        toast.success('Rapport supprimé avec succès');
-      } catch (err) {
-        console.error('Erreur lors de la suppression:', err);
-        toast.error('Erreur lors de la suppression du rapport');
-      }
+  const fetchRapportDetails = async (rapportId) => {
+    setLoadingDetails(true);
+    setSelectedRapportDetails(null);
+    try {
+      const response = await axios.get(`http://localhost:5000/api/rapports/${rapportId}`);
+      setSelectedRapportDetails(response.data);
+      setShowDetailsModal(true);
+    } catch (err) {
+      console.error('Erreur de chargement des détails:', err);
+      toast.error('Erreur lors du chargement des détails du rapport');
+    } finally {
+      setLoadingDetails(false);
+    }
+  };
+
+  const confirmDeleteRapport = (rapportId) => {
+    setRapportToDelete(rapportId);
+    setShowDeleteConfirmModal(true);
+  };
+
+  const handleDeleteRapport = async () => {
+    if (!rapportToDelete) return;
+
+    try {
+      await axios.delete(`http://localhost:5000/api/rapports/${rapportToDelete}`);
+      fetchRapports();
+      toast.success('Rapport supprimé avec succès');
+    } catch (err) {
+      console.error('Erreur lors de la suppression:', err);
+      toast.error('Erreur lors de la suppression du rapport');
+    } finally {
+      setShowDeleteConfirmModal(false);
+      setRapportToDelete(null);
     }
   };
 
@@ -103,15 +177,15 @@ const RapportsList = ({ onSelectRapport }) => {
     try {
       const endpoint = `http://localhost:5000/api/rapports/${rapportId}/${type}`;
       const response = await axios.get(endpoint, { responseType: 'blob' });
-      
+
       const url = window.URL.createObjectURL(new Blob([response.data]));
       const link = document.createElement('a');
       link.href = url;
-      link.setAttribute('download', `rapport-${rapportId}-${new Date().toISOString().slice(0,10)}.${type}`);
+      link.setAttribute('download', `rapport-${rapportId}-${new Date().toISOString().slice(0, 10)}.${type}`);
       document.body.appendChild(link);
       link.click();
       link.remove();
-      
+
       toast.success(`Export ${type.toUpperCase()} généré avec succès`);
     } catch (err) {
       console.error(`Erreur d'export ${type}:`, err);
@@ -119,21 +193,23 @@ const RapportsList = ({ onSelectRapport }) => {
     }
   };
 
-  // Fonctions utilitaires
   const getFactureNumero = (rapport) => rapport?.facture?.numero || rapport?.facture_numero || 'N/A';
   const getBanqueNumero = (rapport) => rapport?.banque?.numero || rapport?.banque_numero || 'N/A';
 
   const formatDate = (dateString) => {
     if (!dateString) return 'N/A';
     try {
-      return new Date(dateString).toLocaleDateString('fr-FR', {
-        day: '2-digit',
-        month: '2-digit',
-        year: 'numeric'
-      });
+      return new Date(dateString).toLocaleDateString('fr-FR');
     } catch {
       return 'Date invalide';
     }
+  };
+
+  const formatCurrency = (amount, currency) => {
+    return new Intl.NumberFormat('fr-FR', {
+      style: 'currency',
+      currency: currency || 'EUR'
+    }).format(amount || 0);
   };
 
   const handleFilterChange = (e) => {
@@ -141,45 +217,34 @@ const RapportsList = ({ onSelectRapport }) => {
     setFilters(prev => ({ ...prev, [name]: value }));
   };
 
-  // Filtrage et tri optimisés
   const filteredRapports = useMemo(() => {
     const searchTerm = filters.search.toLowerCase();
-    
     return rapports.filter(rapport => {
-      if (!rapport) return false;
-      
       const matchesSearch = (
         (rapport.titre || '').toLowerCase().includes(searchTerm) ||
         getFactureNumero(rapport).toLowerCase().includes(searchTerm) ||
         getBanqueNumero(rapport).toLowerCase().includes(searchTerm)
       );
-      
       const matchesStatus = !filters.statut || rapport.statut === filters.statut;
-      
       return matchesSearch && matchesStatus;
     });
   }, [rapports, filters.search, filters.statut]);
 
-  // Statistiques
-  const stats = useMemo(() => {
-    return {
-      complet: filteredRapports.filter(r => r.statut === 'complet').length,
-      incomplet: filteredRapports.filter(r => r.statut === 'incomplet').length,
-      anomalie: filteredRapports.filter(r => r.statut === 'anomalie').length,
-      total: filteredRapports.length
-    };
-  }, [filteredRapports]);
+  const stats = useMemo(() => ({
+    complet: filteredRapports.filter(r => r.statut === 'complet').length,
+    incomplet: filteredRapports.filter(r => r.statut === 'incomplet').length,
+    anomalie: filteredRapports.filter(r => r.statut === 'anomalie').length,
+    total: filteredRapports.length
+  }), [filteredRapports]);
 
-  // Ouvrir les détails d'un rapport
   const openDetails = (rapport) => {
-    setSelectedRapport(rapport);
-    setShowDetailsModal(true);
+    fetchRapportDetails(rapport.id);
   };
 
   return (
     <div className="min-h-screen bg-gray-50 p-4 md:p-6">
       <ToastContainer position="top-right" autoClose={3000} />
-      
+
       <div className="max-w-7xl mx-auto">
         {/* En-tête */}
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
@@ -194,9 +259,8 @@ const RapportsList = ({ onSelectRapport }) => {
               </p>
             </div>
           </div>
-          
+
           <div className="flex flex-wrap gap-2">
-           
             <button
               onClick={fetchRapports}
               className="flex items-center px-4 py-2 bg-white border border-gray-300 rounded-lg shadow-sm hover:bg-gray-50"
@@ -223,7 +287,7 @@ const RapportsList = ({ onSelectRapport }) => {
                 onChange={handleFilterChange}
               />
             </div>
-            
+
             <div className="relative">
               <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                 <FaFilter className="text-gray-400" />
@@ -235,47 +299,15 @@ const RapportsList = ({ onSelectRapport }) => {
                 onChange={handleFilterChange}
               >
                 <option value="">Tous les statuts</option>
-                {Object.entries(STATUS_CONFIG).map(([key, {label}]) => (
+                {Object.entries(STATUS_CONFIG).map(([key, { label }]) => (
                   <option key={key} value={key}>{label}</option>
                 ))}
               </select>
             </div>
-
-           
-
-            
           </div>
         </div>
 
-        {/* Statistiques */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-          <StatCard 
-            title="Complets" 
-            value={stats.complet} 
-            color="green" 
-            icon={<FaCheckCircle className="text-green-500" />}
-          />
-          <StatCard 
-            title="Incomplets" 
-            value={stats.incomplet} 
-            color="yellow" 
-            icon={<FaInfoCircle className="text-yellow-500" />}
-          />
-          <StatCard 
-            title="Anomalies" 
-            value={stats.anomalie} 
-            color="red" 
-            icon={<FaInfoCircle className="text-red-500" />}
-          />
-          <StatCard 
-            title="Total" 
-            value={stats.total} 
-            color="indigo" 
-            icon={<FaFilePdf className="text-indigo-500" />}
-          />
-        </div>
-
-        {/* Tableau des rapports */}
+        {/* Tableau principal */}
         <div className="bg-white shadow-sm rounded-lg overflow-hidden">
           <div className="overflow-x-auto">
             <table className="min-w-full divide-y divide-gray-200">
@@ -316,26 +348,12 @@ const RapportsList = ({ onSelectRapport }) => {
                       <div className="flex flex-col items-center justify-center">
                         <FaFilePdf className="text-gray-400 text-3xl mb-2" />
                         <span>Aucun rapport trouvé</span>
-                        {filters.statut || filters.search ? (
-                          <button
-                            onClick={() => setFilters({
-                              statut: '',
-                              search: '',
-                              dateDebut: '',
-                              dateFin: ''
-                            })}
-                            className="mt-2 text-sm text-indigo-600 hover:text-indigo-800"
-                          >
-                            Réinitialiser les filtres
-                          </button>
-                        ) : null}
                       </div>
                     </td>
                   </tr>
                 ) : (
                   filteredRapports.map((rapport) => {
                     const status = STATUS_CONFIG[rapport.statut] || STATUS_CONFIG.default;
-                    
                     return (
                       <tr key={rapport.id} className="hover:bg-gray-50">
                         <td className="px-6 py-4 whitespace-nowrap">
@@ -367,36 +385,27 @@ const RapportsList = ({ onSelectRapport }) => {
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                           <div className="flex justify-end space-x-2">
-                            <ActionButton 
-                              icon={<FaEye />} 
-                              color="text-indigo-600 hover:text-indigo-900" 
+                            <button
                               onClick={() => openDetails(rapport)}
-                              tooltip="Voir détails"
-                            />
-                            <ActionButton 
-                              icon={<FaEdit />} 
-                              color="text-blue-600 hover:text-blue-900" 
+                              className="p-2 text-indigo-600 hover:text-indigo-900 rounded-lg hover:bg-gray-100"
+                              title="Voir détails"
+                            >
+                              <FaEye />
+                            </button>
+                            <button
                               onClick={() => navigate(`/dashboardcomptable/modif_rapport/${rapport.id}`)}
-                              tooltip="Modifier"
-                            />
-                            <ActionButton 
-                              icon={<FaTrash />} 
-                              color="text-red-600 hover:text-red-900" 
-                              onClick={() => handleDeleteRapport(rapport.id)}
-                              tooltip="Supprimer"
-                            />
-                            <ActionButton 
-                              icon={<FaFilePdf />} 
-                              color="text-red-500 hover:text-red-700" 
-                              onClick={() => handleExport(rapport.id, 'pdf')}
-                              tooltip="Export PDF"
-                            />
-                            <ActionButton 
-                              icon={<FaFileExcel />} 
-                              color="text-green-600 hover:text-green-800" 
-                              onClick={() => handleExport(rapport.id, 'excel')}
-                              tooltip="Export Excel"
-                            />
+                              className="p-2 text-blue-600 hover:text-blue-900 rounded-lg hover:bg-gray-100"
+                              title="Modifier"
+                            >
+                              <FaEdit />
+                            </button>
+                            <button
+                              onClick={() => confirmDeleteRapport(rapport.id)}
+                              className="p-2 text-red-600 hover:text-red-900 rounded-lg hover:bg-gray-100"
+                              title="Supprimer"
+                            >
+                              <FaTrash />
+                            </button>
                           </div>
                         </td>
                       </tr>
@@ -410,82 +419,212 @@ const RapportsList = ({ onSelectRapport }) => {
       </div>
 
       {/* Modal de détails */}
-      {showDetailsModal && selectedRapport && (
+      {showDetailsModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-lg shadow-xl w-full max-w-4xl max-h-[90vh] overflow-y-auto">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-6xl max-h-[90vh] overflow-y-auto">
             <div className="flex justify-between items-center border-b p-4">
               <h3 className="text-lg font-semibold text-gray-800">Détails du rapport</h3>
-              <button 
-                onClick={() => setShowDetailsModal(false)} 
+              <button
+                onClick={() => setShowDetailsModal(false)}
                 className="text-gray-400 hover:text-gray-600"
               >
                 <FaTimesCircle className="text-xl" />
               </button>
             </div>
-            
-            <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div>
-                <h4 className="text-sm font-medium text-gray-500 mb-3">Informations générales</h4>
-                <DetailItem label="Numéro de facture" value={getFactureNumero(selectedRapport)} />
-                <DetailItem label="Numéro de banque" value={getBanqueNumero(selectedRapport)} />
-                <DetailItem label="Date de génération" value={formatDate(selectedRapport.date_generation)} />
-                <DetailItem label="Statut" value={
-                  <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
-                    STATUS_CONFIG[selectedRapport.statut]?.color || STATUS_CONFIG.default.color
-                  }`}>
-                    {STATUS_CONFIG[selectedRapport.statut]?.label || STATUS_CONFIG.default.label}
-                  </span>
-                } />
-              </div>
-              
-              <div>
-                <h4 className="text-sm font-medium text-gray-500 mb-3">Anomalies</h4>
-                {selectedRapport.anomalies_count > 0 ? (
-                  <div className="bg-red-50 p-3 rounded-lg">
-                    <p className="text-sm text-red-800">
-                      {selectedRapport.anomalies_count} anomalie(s) détectée(s)
-                    </p>
-                    {selectedRapport.anomalies_details && (
-                      <pre className="mt-2 text-xs text-red-600 whitespace-pre-wrap">
-                        {selectedRapport.anomalies_details}
-                      </pre>
-                    )}
-                  </div>
-                ) : (
-                  <div className="bg-green-50 p-3 rounded-lg">
-                    <p className="text-sm text-green-800">Aucune anomalie détectée</p>
-                  </div>
-                )}
-              </div>
-              
-              <div className="md:col-span-2">
-                <h4 className="text-sm font-medium text-gray-500 mb-3">Actions</h4>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                  <button
-                    onClick={() => {
-                      setShowDetailsModal(false);
-                      navigate(`/dashboardcomptable/modif_rapport/${selectedRapport.id}`);
-                    }}
-                    className="flex items-center justify-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-                  >
-                    <FaEdit className="mr-2" />
-                    Modifier
-                  </button>
-                  <button
-                    onClick={() => handleExport(selectedRapport.id, 'pdf')}
-                    className="flex items-center justify-center px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
-                  >
-                    <FaFilePdf className="mr-2" />
-                    Export PDF
-                  </button>
-                  <button
-                    onClick={() => handleExport(selectedRapport.id, 'excel')}
-                    className="flex items-center justify-center px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
-                  >
-                    <FaFileExcel className="mr-2" />
-                    Export Excel
-                  </button>
+
+            {loadingDetails ? (
+              <div className="p-6 text-center">
+                <div className="flex justify-center my-8">
+                  <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-indigo-500"></div>
                 </div>
+                <p className="text-gray-600">Chargement des détails du rapport...</p>
+              </div>
+            ) : selectedRapportDetails ? (
+              <div className="p-6">
+                {/* Informations générales */}
+                <TableSection
+                  title="Informations générales"
+                  data={[selectedRapportDetails]}
+                  columns={[
+                    { header: 'Titre', accessor: item => item.titre || 'N/A' },
+                    { header: 'Numéro de facture', accessor: item => getFactureNumero(item) },
+                    { header: 'Numéro de banque', accessor: item => getBanqueNumero(item) },
+                    { header: 'Date de génération', accessor: item => formatDate(item.date_generation) },
+                    { 
+                      header: 'Statut', 
+                      accessor: item => (
+                        <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
+                          STATUS_CONFIG[item.statut]?.color || STATUS_CONFIG.default.color
+                        }`}>
+                          {STATUS_CONFIG[item.statut]?.label || STATUS_CONFIG.default.label}
+                        </span>
+                      )
+                    }
+                  ]}
+                />
+
+                {/* Détails de la facture */}
+                {selectedRapportDetails.facture && (
+                  <>
+                    <TableSection
+                      title="Détails de la facture"
+                      data={[selectedRapportDetails.facture]}
+                      columns={[
+                        { header: 'Numéro', accessor: fact => fact.numero || 'N/A' },
+                        { header: 'Émetteur', accessor: fact => fact.emetteur || 'N/A' },
+                        { header: 'Date émission', accessor: fact => formatDate(fact.date_emission) },
+                        { header: 'Montant total', accessor: fact => formatCurrency(fact.montant_total, fact.devise) },
+                        { header: 'Client', accessor: fact => fact.client?.nom || 'N/A' }
+                      ]}
+                    />
+
+                    {selectedRapportDetails.facture.items?.length > 0 && (
+                      <TableSection
+                        title="Articles de la facture"
+                        data={selectedRapportDetails.facture.items}
+                        columns={[
+                          { header: 'Description', accessor: item => item.description || 'N/A' },
+                          { header: 'Quantité', accessor: item => item.quantite || 0 },
+                          { header: 'Prix unitaire', accessor: item => formatCurrency(item.prix_unitaire, selectedRapportDetails.facture.devise) },
+                          { header: 'Montant ligne', accessor: item => formatCurrency(item.montant_ligne, selectedRapportDetails.facture.devise) }
+                        ]}
+                        expandable
+                      />
+                    )}
+                  </>
+                )}
+
+                {/* Détails du relevé bancaire */}
+                {selectedRapportDetails.banque && (
+                  <>
+                    <TableSection
+                      title="Détails du relevé bancaire"
+                      data={[selectedRapportDetails.banque]}
+                      columns={[
+                        { header: 'Numéro de compte', accessor: banque => banque.numero_compte || 'N/A' },
+                        { header: 'Nom de la banque', accessor: banque => banque.nom_banque || 'N/A' },
+                        { header: 'Date début', accessor: banque => formatDate(banque.date_debut) },
+                        { header: 'Date fin', accessor: banque => formatDate(banque.date_fin) }
+                      ]}
+                    />
+
+                    {selectedRapportDetails.banque.transactions?.length > 0 && (
+                      <TableSection
+                        title="Transactions bancaires"
+                        data={selectedRapportDetails.banque.transactions}
+                        columns={[
+                          { header: 'Date', accessor: tr => formatDate(tr.date) },
+                          { header: 'Description', accessor: tr => tr.description || 'N/A' },
+                          { header: 'Montant', accessor: tr => formatCurrency(tr.montant, tr.devise) },
+                          { header: 'Référence', accessor: tr => tr.reference || 'N/A' }
+                        ]}
+                        expandable
+                      />
+                    )}
+                  </>
+                )}
+
+                {/* Rapprochement */}
+                {selectedRapportDetails.rapprochement && (
+                  <TableSection
+                    title="Rapprochement"
+                    data={[selectedRapportDetails.rapprochement]}
+                    columns={[
+                      { header: 'Statut', accessor: rap => rap.statut_rapprochement || 'N/A' },
+                      { header: 'Transactions rapprochées', accessor: rap => rap.transactions_rapprochees_count || 0 },
+                      { header: 'Écart total', accessor: rap => formatCurrency(rap.ecart_total, rap.devise_ecart) },
+                      { header: 'Détails écart', accessor: rap => rap.details_ecart || 'Aucun détail' }
+                    ]}
+                  />
+                )}
+
+                {/* Anomalies */}
+                {selectedRapportDetails.anomalies?.length > 0 && (
+                  <TableSection
+                    title={`Anomalies (${selectedRapportDetails.anomalies.length})`}
+                    data={selectedRapportDetails.anomalies.map((a, i) => ({ id: i, anomalie: a }))}
+                    columns={[
+                      { header: '#', accessor: a => a.id + 1 },
+                      { header: 'Description', accessor: a => a.anomalie }
+                    ]}
+                  />
+                )}
+
+                {/* Recommandations */}
+                {selectedRapportDetails.recommandations?.length > 0 && (
+                  <TableSection
+                    title={`Recommandations (${selectedRapportDetails.recommandations.length})`}
+                    data={selectedRapportDetails.recommandations.map((r, i) => ({ id: i, recommandation: r }))}
+                    columns={[
+                      { header: '#', accessor: r => r.id + 1 },
+                      { header: 'Description', accessor: r => r.recommandation }
+                    ]}
+                  />
+                )}
+
+                {/* Actions */}
+                <div className="mt-6">
+                  <h4 className="text-sm font-medium text-gray-500 mb-3">Actions</h4>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                    <button
+                      onClick={() => {
+                        setShowDetailsModal(false);
+                        navigate(`/dashboardcomptable/modif_rapport/${selectedRapportDetails.id}`);
+                      }}
+                      className="flex items-center justify-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                    >
+                      <FaEdit className="mr-2" />
+                      Modifier
+                    </button>
+                    <button
+                      onClick={() => handleExport(selectedRapportDetails.id, 'pdf')}
+                      className="flex items-center justify-center px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
+                    >
+                      <FaFilePdf className="mr-2" />
+                      Export PDF
+                    </button>
+                    <button
+                      onClick={() => handleExport(selectedRapportDetails.id, 'excel')}
+                      className="flex items-center justify-center px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
+                    >
+                      <FaFileExcel className="mr-2" />
+                      Export Excel
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="p-6 text-center text-red-500">
+                Impossible de charger les détails du rapport.
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Modal de confirmation de suppression */}
+      {showDeleteConfirmModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-sm">
+            <div className="p-6 text-center">
+              <FaTrash className="text-red-500 text-4xl mx-auto mb-4" />
+              <h3 className="text-lg font-semibold text-gray-900 mb-2">Confirmer la suppression</h3>
+              <p className="text-sm text-gray-500 mb-6">
+                Êtes-vous sûr de vouloir supprimer ce rapport ? Cette action est irréversible.
+              </p>
+              <div className="flex justify-center space-x-4">
+                <button
+                  onClick={() => setShowDeleteConfirmModal(false)}
+                  className="px-5 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
+                >
+                  Annuler
+                </button>
+                <button
+                  onClick={handleDeleteRapport}
+                  className="px-5 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
+                >
+                  Supprimer
+                </button>
               </div>
             </div>
           </div>
@@ -494,48 +633,5 @@ const RapportsList = ({ onSelectRapport }) => {
     </div>
   );
 };
-
-// Composants utilitaires
-const StatCard = ({ title, value, color, icon }) => {
-  const colorClasses = {
-    green: 'bg-green-50 border-green-200 text-green-800',
-    yellow: 'bg-yellow-50 border-yellow-200 text-yellow-800',
-    red: 'bg-red-50 border-red-200 text-red-800',
-    indigo: 'bg-indigo-50 border-indigo-200 text-indigo-800'
-  };
-
-  return (
-    <div className={`p-4 rounded-lg border-l-4 ${colorClasses[color]}`}>
-      <div className="flex items-center justify-between">
-        <div>
-          <h3 className="text-sm font-medium">{title}</h3>
-          <p className="text-2xl font-bold">{value}</p>
-        </div>
-        <div className="text-2xl">
-          {icon}
-        </div>
-      </div>
-    </div>
-  );
-};
-
-const ActionButton = ({ icon, color, onClick, tooltip }) => (
-  <button
-    onClick={onClick}
-    className={`p-2 rounded-lg hover:bg-gray-100 ${color}`}
-    title={tooltip}
-  >
-    {icon}
-  </button>
-);
-
-const DetailItem = ({ label, value }) => (
-  <div className="mb-3">
-    <p className="text-xs text-gray-500">{label}</p>
-    <p className="text-sm font-medium text-gray-900">
-      {typeof value === 'string' || typeof value === 'number' ? value : value}
-    </p>
-  </div>
-);
 
 export default RapportsList;

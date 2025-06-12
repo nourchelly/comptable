@@ -1,111 +1,70 @@
-import React, { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { useEffect } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import axios from 'axios';
 import { toast } from 'react-toastify';
-import 'react-toastify/dist/ReactToastify.css';
-import { FaSpinner } from 'react-icons/fa';
 
 const Callback = () => {
   const navigate = useNavigate();
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-  
+  const [searchParams] = useSearchParams();
+
   useEffect(() => {
     const authenticateWithGoogle = async () => {
+      const code = searchParams.get('code');
+      const state = searchParams.get('state');
+      const error = searchParams.get('error');
+
+      if (error) {
+        toast.error(`Erreur Google: ${error}`);
+        return navigate('/connexion');
+      }
+
+      if (!code) {
+        toast.error("Code d'autorisation manquant");
+        return navigate('/connexion');
+      }
+
       try {
-        const urlParams = new URLSearchParams(window.location.search);
-        const code = urlParams.get('code');
-        const state = urlParams.get('state');
-        
-        if (!code) {
-          throw new Error("Code d'autorisation manquant");
-        }
-        
-        // Vérification CSRF basique
-        const storedState = localStorage.getItem('oauth_state');
-        if (state !== storedState) {
-          throw new Error("Erreur de sécurité: état invalide");
-        }
-        
         const response = await axios.post(
           'http://127.0.0.1:8000/api/auth/google/callback/',
           { code, state },
           {
-            headers: {
-              'Content-Type': 'application/json',
-            },
+            headers: { 'Content-Type': 'application/json' },
             withCredentials: true
           }
         );
-        
-        const { token, role, user_id, email } = response.data;
-        
-        // Stockage sécurisé des tokens
-        localStorage.setItem("token", token);
-        localStorage.setItem("userRole", role);
-        localStorage.setItem("userId", user_id);
-        localStorage.setItem("userEmail", email);
-        
-        console.log("Rôle reçu:", role); // Pour débogage
-        
+
+        // Stockage des informations utilisateur
+        localStorage.setItem("auth_token", response.data.token);
+        localStorage.setItem("userRole", response.data.role);
+        localStorage.setItem("userId", response.data.user_id);
+
         // Redirection basée sur le rôle
-        switch(role.toLowerCase()) {
-          case 'admin':
-            navigate('/dashboard');
-            break;
-          case 'comptable':
-            navigate('/dashboardcomptable');
-            break;
-          case 'directeur':
-            navigate('/dashboarddirecteur');
-            break;
-            
-          default:
-            console.log("Rôle non reconnu:", role);
-            navigate('/'); // Redirection par défaut
-            break;
-        }
-        
-        toast.success(`Connexion réussie en tant que ${role}`);
+        const redirectPath = {
+          admin: '/dashboard',
+          comptable: '/dashboardcomptable',
+          directeur: '/dashboarddirecteur'
+        }[response.data.role.toLowerCase()] || '/';
+
+        navigate(redirectPath);
+        toast.success(`Connecté en tant que ${response.data.role}`);
+
       } catch (err) {
-        console.error("Erreur d'authentification Google:", err);
-        setError(err.response?.data?.error || err.message);
-        toast.error("Échec de la connexion avec Google");
+        console.error("Erreur d'authentification:", err);
+        toast.error(err.response?.data?.error || "Échec de la connexion");
         navigate('/connexion');
-      } finally {
-        setLoading(false);
       }
     };
-    
+
     authenticateWithGoogle();
-  }, [navigate]);
-  
-  if (loading) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-screen">
-        <FaSpinner className="animate-spin text-4xl text-blue-500 mb-4" />
-        <p className="text-lg">Connexion en cours...</p>
+  }, [navigate, searchParams]);
+
+  return (
+    <div className="flex items-center justify-center min-h-screen">
+      <div className="text-center">
+        <p className="text-lg">Traitement de la connexion Google...</p>
       </div>
-    );
-  }
-  
-  if (error) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-screen">
-        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
-          <p>Erreur: {error}</p>
-        </div>
-        <button 
-          onClick={() => navigate('/connexion')}
-          className="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded"
-        >
-          Retour à la page de connexion
-        </button>
-      </div>
-    );
-  }
-  
-  return null;
+    </div>
+  );
 };
 
 export default Callback;

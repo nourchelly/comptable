@@ -20,8 +20,5 @@ urlpatterns = [
     # Inclusion des URLs de l'application 'api' qui inclut l'inscription, le login, etc.
     path('api/', include('api.urls', namespace='api')),
     
-    # Inclure d'autres applications spécifiques
-    path('api/comptable/', include('comptable.urls')),
-    path('directeur/', include('directeur.urls')),
-    path('admin/', include('admin_app.urls')),  # Assurez-vous que c'est nécessaire
+     # Assurez-vous que c'est nécessaire
 ]

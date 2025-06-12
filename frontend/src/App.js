@@ -17,7 +17,7 @@ import ForgotPassword from './Components/ForgotPassword';
 import Validation from './Components/Validation';
 import Profil from './Components/Profil';
 import PrivateRoute from './Components/PrivateRoute';
-import SignalerCompte from './Components/SignalerCompte';
+import PendingUsers from './Components/PendingUsers';
 import ModifProfil from './Components/ModifProfil';
 import DashboardComptable from './Components/DashboardComptable';
 import DashboardDirecteur from './Components/DashboardDirecteur';
@@ -42,11 +42,12 @@ import { GoogleOAuthProvider } from '@react-oauth/google';
 import { UserProvider } from './Components/UserContext';
 import Banque from './Components/Banque';
 import Rapprochement from './Components/Rapprochement';
-import FacebookCallback from './Components/FacebookCallback';
+
 import RapportDetail from './Components/RapportDetail';
 import RapportDirecteur from './Components/RapportDirecteur';
 import RapportPage from './Components/RapportPage';
-import FacebookLoginButton from './Components/FacebookLoginButton'; // Importez le bouton de connexion Facebook
+
+import RapportAdmin from './Components/RapportAdmin'; // Importez le bouton de connexion Facebook
 
 function App() {
   return (
@@ -60,13 +61,13 @@ function App() {
             <Route path="/services" element={<Services />} />
             <Route path="/connexion" element={<Login />}>
               {/* Ajoutez le bouton de connexion Facebook ici ou dans le composant Login */}
-              <Route path="facebook" element={<FacebookLoginButton />} />
+             
             </Route>
             <Route path="/signup" element={<Signup />} />
             <Route path="/forgot-password" element={<ForgotPassword />} />
             <Route path="/reset-password/:token" element={<ResetPassword />} />
             <Route path="/auth/google/callback" element={<Callback />} />
-            <Route path="/auth/facebook/callback" element={<FacebookCallback />} />
+            
             <Route path="/activate/:token" element={<Activatecompte />} />
 
             {/* Routes Dashboard (admin ou général) */}
@@ -81,9 +82,11 @@ function App() {
               <Route path="comptes" element={<Compte />} />
               <Route path="profile" element={<Profil />} />
               <Route path="validation" element={<Validation />} />
-              <Route path="signalercompte/:userId" element={<SignalerCompte />} />
+              <Route path="rapports" element={<RapportAdmin />} />
               <Route path="edit-profile" element={<ModifProfil />} />
-            </Route>
+              <Route path="pending-users" element={<PendingUsers />} />
+              </Route>
+           
 
             {/* Routes Comptable */}
             <Route

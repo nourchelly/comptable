@@ -28,7 +28,7 @@ const AdminActionsList = () => {
     { value: 'modification', label: 'Modifications', icon: <FaUserEdit className="mr-2" /> },
     { value: 'suppression', label: 'Suppressions', icon: <FaTrashAlt className="mr-2" /> },
     { value: 'connexion', label: 'Connexions', icon: <FaSignInAlt className="mr-2" /> },
-    { value: 'deconnexion', label: 'Déconnexions', icon: <FaSignInAlt className="mr-2 transform rotate-180" /> }
+    { value: 'déconnexion', label: 'Déconnexions', icon: <FaSignInAlt className="mr-2 transform rotate-180" /> }
   ], []);
 
   const USER_ROLES = useMemo(() => [
@@ -56,7 +56,7 @@ const AdminActionsList = () => {
       class: 'bg-blue-100 text-blue-800',
       icon: <FaSignInAlt className="mr-1" />
     },
-    'deconnexion': { 
+    'déconnexion': { 
       class: 'bg-gray-100 text-gray-800',
       icon: <FaSignInAlt className="mr-1 transform rotate-180" />
     },

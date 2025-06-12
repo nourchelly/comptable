@@ -9,19 +9,7 @@ const Home = () => {
   const [error, setError] = useState(null);
   const [showModal, setShowModal] = useState(false);
 
-  useEffect(() => {
-    axios
-      .get("http://127.0.0.1:8000/api/home/")
-      .then((response) => {
-        setHomeData(response.data);
-        setShowModal(true);
-      })
-      .catch((err) => {
-        setError("Erreur lors de la récupération des données.");
-        console.error("Erreur Axios : ", err);
-        setShowModal(true);
-      });
-  }, []);
+
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">

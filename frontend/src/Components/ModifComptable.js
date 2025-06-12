@@ -9,7 +9,6 @@ import {
   FaEnvelope, 
   FaPhoneAlt, 
   FaUserEdit,
-  FaIdCard,
   FaBuilding
 } from "react-icons/fa";
 import { motion } from "framer-motion";
@@ -21,7 +20,6 @@ const ModifierProfilComptable = () => {
     email: "",
     nom_complet: "",
     telephone: "",
-    matricule: "",
     departement: ""
   });
   const [loading, setLoading] = useState(true);
@@ -47,7 +45,6 @@ const ModifierProfilComptable = () => {
           email: response.data.email,
           nom_complet: response.data.nom_complet,
           telephone: response.data.telephone,
-          matricule: response.data.matricule,
           departement: response.data.departement
         });
         setLoading(false);
@@ -205,25 +202,6 @@ const ModifierProfilComptable = () => {
                     onChange={handleChange}
                     className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 transition duration-200"
                     placeholder="+212 6 00 00 00 00"
-                  />
-                </motion.div>
-
-                {/* Matricule */}
-                <motion.div 
-                  whileHover={{ scale: 1.02 }}
-                  className="space-y-2"
-                >
-                  <label className="flex items-center text-sm font-medium text-gray-700">
-                    <FaIdCard className="mr-2 text-purple-500" />
-                    Matricule
-                  </label>
-                  <input
-                    type="text"
-                    name="matricule"
-                    value={formData.matricule}
-                    onChange={handleChange}
-                    className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition duration-200"
-                    placeholder="Votre matricule"
                   />
                 </motion.div>
                 
