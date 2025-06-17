@@ -1,29 +1,56 @@
-import React, { useState, useEffect, useContext } from "react";
-import { 
-  FiHome, FiFileText, FiDollarSign, FiPieChart, FiUser, 
-  FiLogOut, FiChevronRight, FiChevronDown, FiZap, 
-  FiBell, FiSearch, FiSettings, FiDatabase, FiClipboard
+import React, { useState, useEffect, Fragment } from 'react';
+import {
+  FiHome, FiFileText, FiUser, FiLogOut, FiSearch, FiDollarSign, FiPieChart, FiChevronDown, FiChevronRight
 } from "react-icons/fi";
 import { 
-  FaFileInvoice, FaUniversity, FaFileInvoiceDollar, 
-  FaFileAlt, FaUserCircle, FaRobot, FaClipboardCheck, 
-  FaUserTie, FaCheckCircle, FaSpinner, FaQrcode,
-  FaSignOutAlt, FaBell as FaBellSolid, FaArrowRight,FaChevronRight
+  FaFileInvoice, FaUniversity, FaClipboardCheck, FaUserTie, FaSignOutAlt, FaQrcode,
+  FaFileAlt, FaRobot, FaFileInvoiceDollar
 } from "react-icons/fa";
 import { Link, Outlet, useLocation, useNavigate } from "react-router-dom";
 import axios from "axios";
 import Notification from './Notification';
-import { useUser } from './UserContext'; // Import du contexte utilisateur
+import { useUser } from './UserContext';
+
+// Importations spécifiques pour Chart.js
+import { Bar, Doughnut } from 'react-chartjs-2'; // Importe Doughnut
+import {
+  Chart as ChartJS,
+  CategoryScale,
+  LinearScale,
+  BarElement,
+  ArcElement, // Importe ArcElement pour les graphiques en secteur/anneau
+  Title,
+  Tooltip,
+  Legend,
+} from 'chart.js';
+
+// Enregistrez les composants nécessaires de Chart.js
+ChartJS.register(
+  CategoryScale,
+  LinearScale,
+  BarElement,
+  ArcElement, // Enregistre ArcElement
+  Title,
+  Tooltip,
+  Legend
+);
+
 
 const DashboardComptable = () => {
   const navigate = useNavigate();
   const location = useLocation();
- const { user } = useUser(); // Récupération de l'utilisateur depuis le contexte
+  const { user } = useUser();
   const [showConfirm, setShowConfirm] = useState(false);
   const [usersStats, setUsersStats] = useState({
     facture: 0,
     releve: 0,
     rapport: 0,
+    taches_automatisees: 0,
+    economie_heures: 0,
+    validated_items: 0,  // Nouveau champ pour les éléments validés
+    adjusted_items: 0,   // Nouveau champ pour les éléments ajustés
+    recent_activities: [],
+    months_stats: []
   });
   const [loadingStats, setLoadingStats] = useState(true);
   const [sidebarOpen, setSidebarOpen] = useState(true);
@@ -38,14 +65,37 @@ const DashboardComptable = () => {
         
         if (response.data.status && response.data.data?.stats) {
           setUsersStats(response.data.data.stats);
+          console.log("Stats reçues:", response.data.data.stats);
         } else {
-          console.error('Structure inattendue:', response.data);
+          console.error('Structure inattendue des données:', response.data);
+          setUsersStats({
+            facture: 0,
+            releve: 0,
+            rapport: 0,
+            taches_automatisees: 0,
+            economie_heures: 0,
+            validated_items: 0,
+            adjusted_items: 0,
+            recent_activities: [],
+            months_stats: []
+          });
         }
       } catch (err) {
-        console.error('Erreur API:', err);
+        console.error('Erreur API lors du chargement des statistiques:', err);
         if (err.response?.status === 401) {
           navigate('/connexion');
         }
+        setUsersStats({
+            facture: 0,
+            releve: 0,
+            rapport: 0,
+            taches_automatisees: 0,
+            economie_heures: 0,
+            validated_items: 0,
+            adjusted_items: 0,
+            recent_activities: [],
+            months_stats: []
+        });
       } finally {
         setLoadingStats(false);
       }
@@ -54,36 +104,32 @@ const DashboardComptable = () => {
   }, [navigate]);
 
   const handleLogout = () => {
-  // Récupérer le token d'authentification stocké
-  const token = localStorage.getItem('auth_token');
-  
-  axios.post("http://127.0.0.1:8000/api/log/", {}, {
-    headers: {
-      'Authorization': `Bearer ${token}`
-    }
-  })
-    .then(result => {
-      if (result.data.status === 'success' || result.data.Status) {
-        // Nettoyer toutes les données d'authentification stockées
+    const token = localStorage.getItem('auth_token');
+    
+    axios.post("http://127.0.0.1:8000/api/log/", {}, {
+      headers: {
+        'Authorization': `Bearer ${token}`
+      }
+    })
+      .then(result => {
+        if (result.data.status === 'success' || result.data.Status) {
+          localStorage.removeItem("valid");
+          localStorage.removeItem("auth_token");
+          localStorage.removeItem("userId");
+          localStorage.removeItem("userRole");
+          navigate('/connexion');
+        }
+      })
+      .catch(err => {
+        console.error("Erreur lors de la déconnexion:", err);
         localStorage.removeItem("valid");
         localStorage.removeItem("auth_token");
         localStorage.removeItem("userId");
         localStorage.removeItem("userRole");
-        
-        // Rediriger vers la page de connexion
         navigate('/connexion');
-      }
-    })
-    .catch(err => {
-      console.error("Erreur lors de la déconnexion:", err);
-      // En cas d'erreur, nettoyer quand même les données locales
-      localStorage.removeItem("valid");
-      localStorage.removeItem("auth_token");
-      localStorage.removeItem("userId");
-      localStorage.removeItem("userRole");
-      navigate('/connexion');
-    });
-};
+      });
+  };
+
   const isActive = (path) => location.pathname === path;
 
   const titleConfig = {
@@ -129,6 +175,137 @@ const DashboardComptable = () => {
   };
 
   const { title, icon, color } = getActiveTitle();
+
+  // Préparation des données pour le graphique à barres (Statistiques Mensuelles)
+  const barChartData = {
+    labels: usersStats.months_stats.map(stat => stat.month),
+    datasets: [
+      {
+        label: 'Factures',
+        data: usersStats.months_stats.map(stat => stat.factures),
+        backgroundColor: 'rgba(59, 130, 246, 0.6)', // blue-500 avec opacité
+        borderColor: 'rgba(59, 130, 246, 1)',
+        borderWidth: 1,
+      },
+      {
+        label: 'Rapprochements',
+        data: usersStats.months_stats.map(stat => stat.rapprochements),
+        backgroundColor: 'rgba(16, 185, 129, 0.6)', // green-500 avec opacité
+        borderColor: 'rgba(16, 185, 129, 1)',
+        borderWidth: 1,
+      },
+    ],
+  };
+
+  const barChartOptions = {
+    responsive: true,
+    plugins: {
+      legend: {
+        position: 'top',
+        labels: {
+            font: {
+                size: 14
+            }
+        }
+      },
+      title: {
+        display: true,
+        text: 'Activités Mensuelles (Factures & Rapprochements)',
+        font: {
+            size: 18
+        },
+        color: '#334155'
+      },
+      tooltip: {
+        callbacks: {
+          label: function(context) {
+            let label = context.dataset.label || '';
+            if (label) {
+              label += ': ';
+            }
+            if (context.parsed.y !== null) {
+              label += context.parsed.y;
+            }
+            return label;
+          }
+        }
+      }
+    },
+    scales: {
+        x: {
+            grid: {
+                display: false
+            },
+            ticks: {
+                color: '#64748B'
+            }
+        },
+        y: {
+            beginAtZero: true,
+            grid: {
+                color: '#e2e8f0'
+            },
+            ticks: {
+                color: '#64748B'
+            }
+        }
+    }
+  };
+
+  // Préparation des données pour le graphique en anneau (Validé/Ajusté)
+  const doughnutData = {
+    labels: ['Validé', 'Ajusté'],
+    datasets: [
+      {
+        data: [usersStats.validated_items, usersStats.adjusted_items],
+        backgroundColor: [
+          'rgba(34, 197, 94, 0.8)', // green-500 avec opacité
+          'rgba(234, 88, 12, 0.8)', // orange-600 avec opacité
+        ],
+        borderColor: [
+          'rgba(34, 197, 94, 1)',
+          'rgba(234, 88, 12, 1)',
+        ],
+        borderWidth: 1,
+      },
+    ],
+  };
+
+  const doughnutOptions = {
+    responsive: true,
+    maintainAspectRatio: false, // Important pour contrôler la taille
+    plugins: {
+      legend: {
+        position: 'right', // Positionne la légende à droite
+        labels: {
+          font: {
+            size: 14
+          }
+        }
+      },
+      title: {
+        display: true,
+        text: 'Statut des éléments',
+        font: {
+          size: 18
+        },
+        color: '#334155'
+      },
+      tooltip: {
+        callbacks: {
+          label: function(context) {
+            const label = context.label || '';
+            const value = context.parsed;
+            const total = context.dataset.data.reduce((sum, val) => sum + val, 0);
+            const percentage = total > 0 ? ((value / total) * 100).toFixed(2) : 0;
+            return `${label}: ${value} (${percentage}%)`;
+          }
+        }
+      }
+    },
+    cutout: '70%', // Crée un anneau (doughnut) au lieu d'un secteur (pie)
+  };
+
 
   return (
     <div className="flex h-screen bg-gray-50 font-sans text-gray-800">
@@ -341,7 +518,6 @@ const DashboardComptable = () => {
               {title}
             </h1>
           </div>
-
           <div className="flex items-center space-x-4">
             <div className="relative hidden md:block">
               <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
@@ -353,8 +529,6 @@ const DashboardComptable = () => {
                 className="pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent w-64"
               />
             </div>
-            
-           
             
             <div className="flex items-center space-x-2">
               <div className="h-10 w-10 rounded-full bg-gradient-to-r from-indigo-500 to-purple-500 flex items-center justify-center text-white font-medium">
@@ -374,7 +548,6 @@ const DashboardComptable = () => {
         {/* Content */}
         <main className="flex-1 overflow-y-auto p-6 bg-gray-50">
           <Outlet />
-
           {/* Default Dashboard Content */}
           {isActive("/dashboardcomptable") && (
             <div className="space-y-6">
@@ -407,7 +580,7 @@ const DashboardComptable = () => {
                       )}
                       <p className="text-xs text-blue-500 mt-2 flex items-center">
                         <span className="inline-block w-2 h-2 bg-blue-500 rounded-full mr-1"></span>
-                        {usersStats.newFactures || 0} nouvelles ce mois
+                        {usersStats.months_stats.length > 0 ? usersStats.months_stats[usersStats.months_stats.length - 1].factures : 0} nouvelles ce mois 
                       </p>
                     </div>
                     <div className="p-3 bg-blue-50 rounded-lg text-blue-600">
@@ -437,15 +610,19 @@ const DashboardComptable = () => {
                   </div>
                 </div>
 
-                {/* Tâches Card */}
+                {/* Tâches Automatisées Card (Rapprochements) */}
                 <div className="bg-white p-6 rounded-xl shadow-sm hover:shadow-md transition-all border border-gray-100">
                   <div className="flex justify-between items-start">
                     <div>
                       <p className="text-sm text-gray-500 mb-1">Tâches Automatisées</p>
-                      <p className="text-2xl font-bold text-gray-800">28</p>
+                      {loadingStats ? (
+                        <div className="h-8 w-3/4 bg-gray-200 rounded animate-pulse"></div>
+                      ) : (
+                        <p className="text-2xl font-bold text-gray-800">{usersStats.taches_automatisees}</p>
+                      )}
                       <p className="text-xs text-purple-500 mt-2 flex items-center">
                         <span className="inline-block w-2 h-2 bg-purple-500 rounded-full mr-1"></span>
-                        Économie de 42h/mois
+                        Économie de {usersStats.economie_heures}h/mois
                       </p>
                     </div>
                     <div className="p-3 bg-purple-50 rounded-lg text-purple-600">
@@ -454,7 +631,7 @@ const DashboardComptable = () => {
                   </div>
                 </div>
 
-                {/* Rapports Card */}
+                {/* Rapports Générés Card */}
                 <div className="bg-white p-6 rounded-xl shadow-sm hover:shadow-md transition-all border border-gray-100">
                   <div className="flex justify-between items-start">
                     <div>
@@ -476,109 +653,97 @@ const DashboardComptable = () => {
                 </div>
               </div>
 
-              {/* Quick Actions */}
-              <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
-                <div className="flex items-center justify-between mb-6">
-                  <h2 className="text-xl font-semibold text-gray-900 flex items-center gap-2">
-                    <FiZap className="text-indigo-500" />
-                    <span>Actions Rapides</span>
-                  </h2>
-                  <span className="text-xs font-medium px-3 py-1 bg-indigo-50 text-indigo-700 rounded-full">
-                    Fonctions fréquentes
-                  </span>
+              {/* Nouvelle section pour les graphiques Validé/Ajusté */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* Graphique Validé / Ajusté */}
+                <div className="bg-white rounded-xl shadow-md p-6 flex flex-col items-center">
+                  <h3 className="text-xl font-semibold text-gray-800 mb-4 flex items-center">
+                    <FaClipboardCheck className="mr-3 text-red-500 text-2xl" />
+                    Statut des Éléments
+                  </h3>
+                  {loadingStats ? (
+                    <div className="h-64 w-64 bg-gray-200 rounded-full animate-pulse"></div>
+                  ) : usersStats.validated_items + usersStats.adjusted_items > 0 ? (
+                    <div className="relative w-64 h-64"> {/* Conteneur pour le graphique */}
+                      <Doughnut data={doughnutData} options={doughnutOptions} />
+                    </div>
+                  ) : (
+                    <p className="text-gray-500 text-center py-4">Aucune donnée Validé/Ajusté disponible.</p>
+                  )}
                 </div>
-                
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                  {/* Carte Facture */}
-                  <Link 
-                    to="/dashboardcomptable/facture" 
-                    className="group flex flex-col items-center p-5 rounded-xl bg-white border border-gray-200 hover:border-indigo-200 hover:shadow-md transition-all duration-300 hover:-translate-y-1"
-                  >
-                    <div className="p-3 mb-3 rounded-lg bg-blue-50 group-hover:bg-blue-100 transition-all duration-300">
-                      <FaFileInvoice className="text-blue-600 text-2xl" />
-                    </div>
-                    <span className="text-sm font-semibold text-gray-700 group-hover:text-gray-900">Importer Facture</span>
-                    <span className="mt-1 text-xs text-gray-500 group-hover:text-indigo-600 flex items-center">
-                      Nouvelle entrée <FaArrowRight className="ml-1 text-xs opacity-0 group-hover:opacity-100 transition-opacity" />
-                    </span>
-                  </Link>
 
-                  {/* Carte Rapports */}
-                  <Link 
-                    to="/dashboardcomptable/rapport" 
-                    className="group flex flex-col items-center p-5 rounded-xl bg-white border border-gray-200 hover:border-green-200 hover:shadow-md transition-all duration-300 hover:-translate-y-1"
-                  >
-                    <div className="p-3 mb-3 rounded-lg bg-green-50 group-hover:bg-green-100 transition-all duration-300">
-                      <FiFileText className="text-green-600 text-2xl" />
+                {/* Section Activités Récentes (maintenue) */}
+                <div className="bg-white rounded-xl shadow-md p-6">
+                  <h3 className="text-xl font-semibold text-gray-800 mb-4 flex items-center">
+                    <FiFileText className="mr-3 text-indigo-500 text-2xl" />
+                    Activités Récentes
+                  </h3>
+                  {loadingStats ? (
+                    <div className="space-y-4">
+                      {[1, 2, 3].map((_, index) => (
+                        <div key={index} className="flex items-center space-x-4 animate-pulse">
+                          <div className="w-10 h-10 bg-gray-200 rounded-full"></div>
+                          <div className="flex-1 space-y-2">
+                            <div className="h-4 bg-gray-200 rounded w-3/4"></div>
+                            <div className="h-3 bg-gray-200 rounded w-1/2"></div>
+                          </div>
+                        </div>
+                      ))}
                     </div>
-                    <span className="text-sm font-semibold text-gray-700 group-hover:text-gray-900">Rapports</span>
-                    <span className="mt-1 text-xs text-gray-500 group-hover:text-green-600 flex items-center">
-                      Analytiques <FaArrowRight className="ml-1 text-xs opacity-0 group-hover:opacity-100 transition-opacity" />
-                    </span>
-                  </Link>
-
-                  {/* Carte Rapprochements */}
-                  <Link 
-                    to="/dashboardcomptable/rapprochement" 
-                    className="group flex flex-col items-center p-5 rounded-xl bg-white border border-gray-200 hover:border-red-200 hover:shadow-md transition-all duration-300 hover:-translate-y-1"
-                  >
-                    <div className="p-3 mb-3 rounded-lg bg-red-50 group-hover:bg-red-100 transition-all duration-300">
-                      <FaClipboardCheck className="text-red-600 text-2xl" />
-                    </div>
-                    <span className="text-sm font-semibold text-gray-700 group-hover:text-gray-900">Rapprochements</span>
-                    <span className="mt-1 text-xs text-gray-500 group-hover:text-red-600 flex items-center">
-                      Vérification <FaArrowRight className="ml-1 text-xs opacity-0 group-hover:opacity-100 transition-opacity" />
-                    </span>
-                  </Link>
-
-                  {/* Carte Profil */}
-                  <Link 
-                    to="/dashboardcomptable/profilcomptable" 
-                    className="group flex flex-col items-center p-5 rounded-xl bg-white border border-gray-200 hover:border-purple-200 hover:shadow-md transition-all duration-300 hover:-translate-y-1"
-                  >
-                    <div className="p-3 mb-3 rounded-lg bg-purple-50 group-hover:bg-purple-100 transition-all duration-300">
-                      <FiUser className="text-purple-600 text-2xl" />
-                    </div>
-                    <span className="text-sm font-semibold text-gray-700 group-hover:text-gray-900">Profil Comptable</span>
-                    <span className="mt-1 text-xs text-gray-500 group-hover:text-purple-600 flex items-center">
-                      Paramètres <FaArrowRight className="ml-1 text-xs opacity-0 group-hover:opacity-100 transition-opacity" />
-                    </span>
-                  </Link>
+                  ) : usersStats.recent_activities && usersStats.recent_activities.length > 0 ? (
+                    <ul className="divide-y divide-gray-200">
+                      {usersStats.recent_activities.map((activity, index) => (
+                        <li key={index} className="py-3 flex items-center space-x-4">
+                          <div className={`p-2 rounded-full text-white ${activity.color === 'blue' ? 'bg-blue-500' : activity.color === 'green' ? 'bg-green-500' : activity.color === 'purple' ? 'bg-purple-500' : 'bg-gray-500'}`}>
+                            {activity.icon === 'FaFileInvoice' && <FaFileInvoice className="text-lg" />}
+                            {activity.icon === 'FaClipboardCheck' && <FaClipboardCheck className="text-lg" />}
+                            {activity.icon === 'FiFileText' && <FiFileText className="text-lg" />}
+                            {/* Ajoutez d'autres icônes au besoin */}
+                          </div>
+                          <div className="flex-1">
+                            <p className="text-sm font-medium text-gray-900">{activity.title}</p>
+                            <p className="text-xs text-gray-500">{new Date(activity.date).toLocaleString('fr-FR', {
+                              year: 'numeric',
+                              month: 'short',
+                              day: 'numeric',
+                              hour: '2-digit',
+                              minute: '2-digit'
+                            })}</p>
+                          </div>
+                          <span className={`px-2 py-0.5 text-xs font-semibold rounded-full ${
+                            activity.status === 'validé' ? 'bg-green-100 text-green-800' :
+                            activity.status === 'complet' ? 'bg-indigo-100 text-indigo-800' :
+                            activity.status === 'généré' ? 'bg-purple-100 text-purple-800' :
+                            'bg-gray-100 text-gray-800'
+                          }`}>
+                            {activity.status}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="text-gray-500 text-center py-4">Aucune activité récente.</p>
+                  )}
                 </div>
               </div>
 
-              {/* Recent Activities */}
-              <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
-                <h2 className="text-xl font-semibold text-gray-800 mb-4 flex items-center">
-                  <FiClipboard className="text-indigo-500 mr-2" />
-                  Activités Récentes
-                </h2>
-                <div className="space-y-3">
-                  {[1, 2, 3].map((item) => (
-                    <div key={item} className="flex items-center p-4 border border-gray-100 rounded-lg hover:bg-gray-50 transition-colors">
-                      <div className={`p-3 rounded-full mr-4 ${
-                        item % 2 === 0 ? 'bg-green-100 text-green-600' : 'bg-blue-100 text-blue-600'
-                      }`}>
-                        {item % 2 === 0 ? <FaCheckCircle className="text-xl" /> : <FaFileInvoice className="text-xl" />}
-                      </div>
-                      <div className="flex-1">
-                        <p className="text-sm font-medium text-gray-800">
-                          {item % 2 === 0 ? 'Validation comptable' : 'Nouvelle facture'} #{item}
-                        </p>
-                        <p className="text-xs text-gray-500">Il y a {item} heure{item > 1 ? 's' : ''}</p>
-                      </div>
-                      <div className={`text-sm font-medium px-3 py-1 rounded-full ${
-                        item % 2 === 0 ? 'bg-green-50 text-green-600' : 'bg-blue-50 text-blue-600'
-                      }`}>
-                        {item % 2 === 0 ? 'Validé' : 'En attente'}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-                <button className="mt-4 text-sm text-indigo-600 hover:text-indigo-800 font-medium flex items-center">
-                  Voir toutes les activités <FaChevronRight className="ml-1 text-sm" />
-                </button>
+              {/* Section Statistiques Mensuelles (avec Chart.js) */}
+              <div className="bg-white rounded-xl shadow-md p-6">
+                <h3 className="text-xl font-semibold text-gray-800 mb-4 flex items-center">
+                  <FiPieChart className="mr-3 text-orange-500 text-2xl" />
+                  Statistiques Mensuelles
+                </h3>
+                {loadingStats ? (
+                  <div className="h-64 bg-gray-200 rounded animate-pulse"></div>
+                ) : usersStats.months_stats && usersStats.months_stats.length > 0 ? (
+                  <div className="w-full">
+                    <Bar data={barChartData} options={barChartOptions} />
+                  </div>
+                ) : (
+                  <p className="text-gray-500 text-center py-4">Aucune donnée mensuelle disponible pour le graphique.</p>
+                )}
               </div>
+
             </div>
           )}
         </main>

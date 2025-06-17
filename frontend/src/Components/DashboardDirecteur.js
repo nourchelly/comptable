@@ -79,65 +79,61 @@ const DashboardDirecteur = () => {
       });
   };
 
-useEffect(() => {
-  const fetchDashboardData = async () => {
-    try {
-      setLoading(true);
-      const response = await axios.get('http://localhost:5000/api/dashboard/finance', {
-        params: {
-          dateRange,
-          banque_id: bankFilter === 'all' ? 'all' : bankFilter
-        },
-        withCredentials: true,
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json'
-        }
-      });
+  useEffect(() => {
+    const fetchDashboardData = async () => {
+      try {
+        setLoading(true);
+        const response = await axios.get('http://localhost:5000/api/dashboard/finance', {
+          params: {
+            dateRange,
+            banque_id: bankFilter === 'all' ? 'all' : bankFilter
+          },
+          withCredentials: true,
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json'
+          }
+        });
 
-      // Vérification des données reçues
-      if (!response.data || !response.data.metadata) {
-        throw new Error('Données du dashboard invalides');
+        if (!response.data || !response.data.metadata) {
+          throw new Error('Données du dashboard invalides');
+        }
+
+        const normalizedData = {
+          ...response.data,
+          metrics: {
+            taux_completude: response.data.metrics?.taux_completude || 0,
+            taux_anomalies: response.data.metrics?.taux_anomalies || 0,
+            montants_par_statut: response.data.metrics?.montants_par_statut || {
+              complet: 0,
+              anomalie: 0,
+              incomplet: 0
+            }
+          },
+          charts: {
+            ...response.data.charts,
+            statut_distribution: response.data.charts?.statut_distribution || {
+              complet: 0,
+              anomalie: 0,
+              incomplet: 0
+            }
+          }
+        };
+
+        setDashboardData(normalizedData);
+      } catch (error) {
+        console.error('Erreur détaillée:', error.response?.data || error.message);
+        toast.error(`Erreur lors du chargement des données: ${error.message}`);
+        setDashboardData(null);
+      } finally {
+        setLoading(false);
       }
+    };
 
-      // Normalisation des données
-      const normalizedData = {
-        ...response.data,
-        metrics: {
-          taux_completude: response.data.metrics?.taux_completude || 0,
-          taux_anomalies: response.data.metrics?.taux_anomalies || 0,
-          montant_total: response.data.metrics?.montant_total || 0,
-          montant_moyen: response.data.metrics?.montant_moyen || 0,
-          montants_par_statut: response.data.metrics?.montants_par_statut || {
-            complet: 0,
-            anomalie: 0,
-            incomplet: 0
-          }
-        },
-        charts: {
-          ...response.data.charts,
-          statut_distribution: response.data.charts?.statut_distribution || {
-            complet: 0,
-            anomalie: 0,
-            incomplet: 0
-          }
-        }
-      };
-
-      setDashboardData(normalizedData);
-    } catch (error) {
-      console.error('Erreur détaillée:', error.response?.data || error.message);
-      toast.error(`Erreur lors du chargement des données: ${error.message}`);
-      setDashboardData(null);
-    } finally {
-      setLoading(false);
+    if (isActive('/dashboarddirecteur') && !isActive('/dashboarddirecteur/')) {
+      fetchDashboardData();
     }
-  };
-
-  if (isActive('/dashboarddirecteur') && !isActive('/dashboarddirecteur/')) {
-    fetchDashboardData();
-  }
-}, [dateRange, bankFilter, location.pathname]);
+  }, [dateRange, bankFilter, location.pathname]);
 
   const Sidebar = () => (
     <div className="w-64 bg-gradient-to-b from-indigo-700 to-indigo-800 text-white flex flex-col h-full shadow-xl transition-all duration-300">
@@ -247,7 +243,7 @@ useEffect(() => {
         <div className="flex justify-center items-center h-full">
           <div className="flex flex-col items-center">
             <div className="animate-spin rounded-full h-16 w-16 border-t-4 border-b-4 border-indigo-600 mb-4"></div>
-            
+            <p className="text-gray-600">Chargement des données...</p>
           </div>
         </div>
       );
@@ -278,11 +274,6 @@ useEffect(() => {
       total: dashboardData.charts.monthly_trends.datasets[0]?.data[index] || 0,
       complet: dashboardData.charts.monthly_trends.datasets[1]?.data[index] || 0,
       anomalie: dashboardData.charts.monthly_trends.datasets[2]?.data[index] || 0
-    })) || [];
-
-    const amountData = dashboardData.charts?.monthly_amounts?.labels?.map((label, index) => ({
-      name: label,
-      montant: dashboardData.charts.monthly_amounts.datasets[0]?.data[index] || 0
     })) || [];
 
     const statusData = Object.entries(dashboardData.charts?.statut_distribution || {}).map(([name, value]) => ({
@@ -332,7 +323,7 @@ useEffect(() => {
         </div>
 
         {/* KPI Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           <div className="bg-gradient-to-r from-indigo-500 to-indigo-600 p-6 rounded-xl shadow-lg text-white">
             <div className="flex justify-between items-start">
               <div>
@@ -349,26 +340,6 @@ useEffect(() => {
               </div>
               <div className="h-12 w-12 rounded-full bg-white bg-opacity-20 flex items-center justify-center">
                 <FiDollarSign className="text-white text-xl" />
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-gradient-to-r from-emerald-500 to-emerald-600 p-6 rounded-xl shadow-lg text-white">
-            <div className="flex justify-between items-start">
-              <div>
-                <p className="text-sm font-medium text-emerald-100 uppercase tracking-wider">Montant Total</p>
-                <p className="text-3xl font-bold mt-2">
-                  {(dashboardData.metrics?.montant_total || 0).toLocaleString('fr-FR')} €
-                </p>
-                <div className="flex items-center mt-3">
-                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-400 text-white">
-                    <FaMoneyBillWave className="mr-1" />
-                    Moy: {(dashboardData.metrics?.montant_moyen || 0).toFixed(0)} €
-                  </span>
-                </div>
-              </div>
-              <div className="h-12 w-12 rounded-full bg-white bg-opacity-20 flex items-center justify-center">
-                <FiActivity className="text-white text-xl" />
               </div>
             </div>
           </div>
@@ -403,7 +374,7 @@ useEffect(() => {
                 <div className="flex items-center mt-3">
                   <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-400 text-white">
                     <FiCheckCircle className="mr-1" />
-                    {(dashboardData.metrics?.montants_par_statut?.complet || 0).toLocaleString('fr-FR')} €
+                    {((dashboardData.charts?.statut_distribution?.complet / dashboardData.metadata?.total_reconciliations) * 100 || 0).toFixed(1)}%
                   </span>
                 </div>
               </div>
@@ -519,56 +490,6 @@ useEffect(() => {
           </div>
         </div>
 
-        {/* Monthly amounts */}
-        <div className="bg-white p-5 rounded-xl shadow-sm border border-gray-100">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-semibold text-gray-800 flex items-center">
-              <FaMoneyBillWave className="text-emerald-500 mr-2" />
-              Évolution des montants mensuels
-            </h2>
-          </div>
-          <div className="h-64">
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={amountData}>
-                <defs>
-                  <linearGradient id="colorMontant" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#10B981" stopOpacity={0.8}/>
-                    <stop offset="95%" stopColor="#10B981" stopOpacity={0.1}/>
-                  </linearGradient>
-                </defs>
-                <XAxis 
-                  dataKey="name" 
-                  tick={{ fill: '#6B7280' }}
-                  axisLine={{ stroke: '#E5E7EB' }}
-                />
-                <YAxis 
-                  tick={{ fill: '#6B7280' }}
-                  axisLine={{ stroke: '#E5E7EB' }}
-                  tickFormatter={(value) => `${value.toLocaleString()} €`}
-                />
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E5E7EB" />
-                <Tooltip 
-                  contentStyle={{
-                    backgroundColor: 'white',
-                    borderRadius: '0.5rem',
-                    boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
-                    border: '1px solid #E5E7EB'
-                  }}
-                  formatter={(value, name) => [`${value.toLocaleString()} €`, 'Montant']}
-                />
-                <Area 
-                  type="monotone" 
-                  dataKey="montant" 
-                  stroke="#10B981" 
-                  strokeWidth={2}
-                  fillOpacity={1} 
-                  fill="url(#colorMontant)" 
-                />
-              </AreaChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-
         {/* Anomalies and Banks */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* Anomalies Chart */}
@@ -617,54 +538,6 @@ useEffect(() => {
               </ResponsiveContainer>
             </div>
           </div>
-
-          {/* Top Banks */}
-          <div className="bg-white p-5 rounded-xl shadow-sm border border-gray-100">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-semibold text-gray-800 flex items-center">
-                <FaBalanceScale className="text-purple-500 mr-2" />
-                Top banques
-              </h2>
-            </div>
-            <div className="space-y-3">
-              {dashboardData.charts?.top_banques?.map((bank, index) => (
-                <div key={index} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                  <div className="flex items-center">
-                    <div className="w-8 h-8 bg-purple-100 rounded-full flex items-center justify-center mr-3">
-  <span className="text-purple-600 font-semibold text-sm">{index + 1}</span>
-</div>
-                      <div className="w-8 h-8 bg-purple-100 rounded-full flex items-center justify-center mr-3">
-                      <span className="text-purple-600 font-semibold text-sm">{index + 1}</span>
-                    </div>
-                    <div>
-                      <h3 className="font-medium text-gray-900">{bank.banque}</h3>
-                      <p className="text-sm text-gray-500">{bank.count} rapprochements</p>
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <div className="flex items-center">
-                      <div className="w-24 bg-gray-200 rounded-full h-2 mr-2">
-                        <div 
-                          className="bg-purple-500 h-2 rounded-full transition-all duration-1000"
-                          style={{ 
-                            width: `${Math.min((bank.count / (dashboardData.charts?.top_banques?.[0]?.count || 1)) * 100, 100)}%` 
-                          }}
-                        ></div>
-                      </div>
-                      <span className="text-sm font-medium text-gray-700">
-                        {((bank.count / dashboardData.metadata?.total_reconciliations) * 100).toFixed(1)}%
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              )) || (
-                <div className="text-center py-8 text-gray-500">
-                  <FaBalanceScale className="mx-auto text-3xl mb-2 opacity-50" />
-                  <p>Aucune donnée bancaire disponible</p>
-                </div>
-              )}
-            </div>
-          </div>
         </div>
 
         {/* Recent Activity Section */}
@@ -696,7 +569,7 @@ useEffect(() => {
                   </div>
                   <div className="text-right">
                     <p className="font-semibold text-gray-900">
-                      {activity.montant.toLocaleString('fr-FR')} €
+                      {activity.montant?.toLocaleString('fr-FR') || '0'} €
                     </p>
                     <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
                       activity.statut === 'complet' ? 'bg-green-100 text-green-800' :
@@ -772,15 +645,12 @@ useEffect(() => {
             </div>
             
             <div className="flex items-center space-x-4">
-              
-              
               <div className="flex items-center space-x-2">
                 <div className="w-8 h-8 bg-indigo-600 rounded-full flex items-center justify-center">
                   <span className="text-white text-sm font-medium">D</span>
                 </div>
                 <div className="hidden md:block">
                   <p className="text-sm font-medium text-gray-900">Directeur</p>
-                  <p className="text-xs text-gray-600">Administrateur</p>
                 </div>
               </div>
             </div>
@@ -801,4 +671,5 @@ useEffect(() => {
     </div>
   );
 };
+
 export default DashboardDirecteur;

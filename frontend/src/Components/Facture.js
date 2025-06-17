@@ -54,8 +54,9 @@ export default function ModernFactureList() {
   const formatDate = (dateString) => {
     if (!dateString) return 'N/A';
 
-    const parts = dateString.split('/');
+    const parts = String(dateString).split('/'); // Assurez-vous que c'est une chaîne
     if (parts.length === 3) {
+      // Si DD/MM/YYYY
       const [day, month, year] = parts;
       const dateObj = new Date(year, month - 1, day);
       if (!isNaN(dateObj.getTime())) {
@@ -64,6 +65,7 @@ export default function ModernFactureList() {
     }
 
     try {
+      // Essayer de parser comme YYYY-MM-DD ou autre format standard
       const dateObj = new Date(dateString);
       if (!isNaN(dateObj.getTime())) {
         return dateObj.toLocaleDateString('fr-FR');
@@ -140,7 +142,8 @@ export default function ModernFactureList() {
         setExtractedData({
           // Identifiants essentiels
           numero: data.data.numero || null,
-          date: data.data.date || null,
+          // La date de l'IA est nommée 'date', votre backend attend 'date_emission'
+          date: data.data.date || null, // Gardez 'date' ici pour le moment pour l'IA
           date_echeance: data.data.date_echeance || null,
           
           // Parties
@@ -190,6 +193,7 @@ export default function ModernFactureList() {
       setUploadStatus('uploading');
       const formData = new FormData();
       formData.append('fichier', selectedFile);
+      // Appliquez cleanExtractedData avant d'envoyer les métadonnées
       formData.append('metadata', JSON.stringify(cleanExtractedData(extractedData)));
 
       const response = await axios.post('http://localhost:8000/api/factures/', formData, {
@@ -232,72 +236,82 @@ export default function ModernFactureList() {
     }
   };
 
-const cleanExtractedData = (data) => {
- const cleaned = {};
- Object.entries(data).forEach(([key, value]) => {
-if (value === null || value === undefined || (typeof value === 'string' && value.trim() === '')) {
- if (key.includes('date')) {
-cleaned[key] = null;
- }
-  return;
- }
+  const cleanExtractedData = (data) => {
+    const cleaned = {};
+    Object.entries(data).forEach(([key, value]) => {
+      // Ignorer les valeurs nulles, indéfinies ou chaînes vides (sauf pour les dates si elles doivent être explicitement nulles)
+      if (value === null || value === undefined || (typeof value === 'string' && value.trim() === '')) {
+        // Pour les dates, assurez-vous qu'elles restent nulles si elles sont vides
+        if (key.includes('date')) {
+          cleaned[key] = null;
+        }
+        return; // Passer au champ suivant
+      }
 
-if (key.includes('montant') || key.includes('total') || key.includes('tva') || key.includes('net_a_payer')) {
- const numValue = parseFloat(String(value).replace(/[^\d.,]/g, '').replace(',', '.'));
- cleaned[key] = isNaN(numValue) ? 0 : numValue;
- } else if (key.includes('date')) {
-try {
-const parts = String(value).split('/');
- let dateObj;
- if (parts.length === 3) {
- // Assurez-vous que l'année est dans le bon ordre (YYYY-MM-DD)
- dateObj = new Date(parts[2], parts[1] - 1, parts[0]);
-} else {
-dateObj = new Date(value);
- }
+      if (key.includes('montant') || key.includes('total') || key.includes('tva') || key.includes('net_a_payer')) {
+        const numValue = parseFloat(String(value).replace(/[^\d.,]/g, '').replace(',', '.'));
+        cleaned[key] = isNaN(numValue) ? 0 : numValue;
+      } else if (key.includes('date')) {
+        try {
+          const parts = String(value).split('/');
+          let dateObj;
+          if (parts.length === 3) {
+            // Format DD/MM/YYYY
+            dateObj = new Date(parts[2], parts[1] - 1, parts[0]);
+          } else {
+            // Tenter de parser d'autres formats ou YYYY-MM-DD
+            dateObj = new Date(value);
+          }
 
- if (!isNaN(dateObj.getTime())) {
-                // IMPORTANT: Utiliser toLocaleDateString avec des options pour obtenir YYYY-MM-DD
-                // Ou construire manuellement la chaîne YYYY-MM-DD
-                const year = dateObj.getFullYear();
-                const month = (dateObj.getMonth() + 1).toString().padStart(2, '0'); // Mois est basé sur 0
-                const day = dateObj.getDate().toString().padStart(2, '0');
-                cleaned[key] = `${year}-${month}-${day}`;
-} else {
-cleaned[key] = null;
- }
- } catch (e) {
- cleaned[key] = null;
- }
- } else {
- cleaned[key] = String(value).trim();
- }
- });
+          if (!isNaN(dateObj.getTime())) {
+            // Formater en YYYY-MM-DD pour le backend
+            const year = dateObj.getFullYear();
+            const month = (dateObj.getMonth() + 1).toString().padStart(2, '0'); // Mois est basé sur 0
+            const day = dateObj.getDate().toString().padStart(2, '0');
+            cleaned[key] = `${year}-${month}-${day}`;
+          } else {
+            cleaned[key] = null; // Si la date est invalide, la définir à null
+          }
+        } catch (e) {
+          cleaned[key] = null; // En cas d'erreur de parsing, la définir à null
+        }
+      } else {
+        cleaned[key] = String(value).trim();
+      }
+    });
 
-const defaultFields = {
- numero: '',
- date_emission: null, // Ce champ sera rempli par le backend si 'date' existe
- date_echeance: null,
- mode_reglement: '',
- emetteur: '',
- client: '',
- montant_total: 0,
-montant_ht: 0,
- montant_tva: 0,
-net_a_payer: 0
- };
+    const finalData = { ...cleaned }; // Commencer avec les champs nettoyés
 
-    // Assurez-vous que date_emission est correctement assigné à partir de 'date'
-    // avant d'envoyer les métadonnées au backend.
-    // L'IA fournit 'date' et 'date_echeance'. On veut que 'date' devienne 'date_emission'.
-    if (cleaned.date) {
-        cleaned.date_emission = cleaned.date;
+    // Logique pour s'assurer que 'date_emission' est correctement défini
+    // L'IA renvoie 'date', le backend attend 'date_emission'.
+    // Si 'date' existe, il devient 'date_emission'.
+    if (finalData.date) {
+      finalData.date_emission = finalData.date;
+    } else if (!finalData.date_emission) {
+      // Si 'date' n'existe pas ET 'date_emission' n'a pas été défini (par exemple, si la facture venait déjà de la DB sans date)
+      // Assurez-vous qu'il est explicitement null.
+      finalData.date_emission = null;
     }
-    // Supprimez le champ 'date' car le backend attend 'date_emission'
-    delete cleaned.date;
 
-return { ...defaultFields, ...cleaned };
- };
+    // Supprimer le champ 'date' si votre backend n'attend que 'date_emission'
+    delete finalData.date;
+
+    const defaultFields = {
+      numero: '',
+      date_emission: null,
+      date_echeance: null,
+      mode_reglement: '',
+      emetteur: '',
+      client: '',
+      montant_total: 0,
+      montant_ht: 0,
+      montant_tva: 0,
+      net_a_payer: 0
+    };
+
+    // Fusionner avec les valeurs par défaut, en s'assurant que les valeurs nettoyées ont priorité
+    return { ...defaultFields, ...finalData };
+  };
 
   // Composants réutilisables optimisés
   const DataField = ({ label, value, isCurrency = false, isDate = false, icon: Icon }) => (
@@ -333,7 +347,7 @@ return { ...defaultFields, ...cleaned };
     }
 
     // Vérification des champs critiques pour le rapprochement
-    const criticalFields = ['numero', 'date', 'montant_total', 'net_a_payer', 'emetteur'];
+    const criticalFields = ['numero', 'date_emission', 'montant_total', 'net_a_payer', 'emetteur']; // Modifié 'date' en 'date_emission'
     const missingCritical = criticalFields.filter(field => !data[field]);
     const hasCriticalIssues = missingCritical.length > 0;
 
@@ -372,7 +386,8 @@ return { ...defaultFields, ...cleaned };
           {/* Identifiants essentiels */}
           <DataSection title="Identifiants Critiques" icon={FaHashtag}>
             <DataField label="Numéro facture" value={data.numero} icon={FaFileInvoice} />
-            <DataField label="Date émission" value={data.date} isDate icon={FaCalendarAlt} />
+            {/* CORRECTED LINE: Already correct with data.date_emission || data.date */}
+            <DataField label="Date émission" value={data.date_emission || data.date} isDate icon={FaCalendarAlt} /> 
             <DataField label="Date échéance" value={data.date_echeance} isDate icon={FaRegClock} />
             <DataField label="Référence paiement" value={data.reference_paiement} icon={FaHashtag} />
           </DataSection>
@@ -420,7 +435,8 @@ return { ...defaultFields, ...cleaned };
             </div>
             <div className="text-center">
               <p className="text-gray-600">Date émission</p>
-              <p className="font-medium text-gray-800">{formatDate(data.date)}</p>
+              {/* CORRECTED LINE: Already correct with data.date_emission || data.date */}
+              <p className="font-medium text-gray-800">{formatDate(data.date_emission || data.date)}</p>
             </div>
             <div className="text-center">
               <p className="text-gray-600">Référence</p>
@@ -670,7 +686,7 @@ return { ...defaultFields, ...cleaned };
               <div className="flex justify-between items-center mb-4">
                    <h2 className="text-xl font-semibold">Détails de la facture: {selectedFacture.numero || 'N/A'}</h2>
                    <button onClick={() => setShowDetailsModal(false)} className="text-gray-500 hover:text-gray-700">
-                     <FaTimesCircle className="text-2xl" />
+                    <FaTimesCircle className="text-2xl" />
                    </button>
               </div>
 
@@ -678,7 +694,7 @@ return { ...defaultFields, ...cleaned };
               {renderExtractedData(selectedFacture)}
 
               <div className="mt-6 flex justify-end space-x-3">
-               
+                
                 <a
                   href={selectedFacture.previewUrl}
                   target="_blank"
@@ -687,6 +703,9 @@ return { ...defaultFields, ...cleaned };
                 >
                   <FaEye className="mr-2" /> Prévisualiser
                 </a>
+                <button onClick={() => setShowDetailsModal(false)} className="px-4 py-2 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300 transition duration-200">
+                  Fermer
+                </button>
               </div>
             </div>
           </div>

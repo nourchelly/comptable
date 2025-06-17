@@ -523,10 +523,10 @@ const confirmDelete = async () => {
     }
 };
 
-const formatCurrency = (amount, currency = 'EUR') => {
+const formatCurrency = (amount, currency = 'DH') => {
     if (amount === null || amount === undefined || isNaN(amount)) return 'N/A';
     
-    // Pour les DH (Dirhams marocains), on utilise un format spécifique
+    // Pour les DH (Dirhams marocains)
     if (currency === 'DH') {
         return new Intl.NumberFormat('fr-FR', {
             minimumFractionDigits: 2,
@@ -534,7 +534,7 @@ const formatCurrency = (amount, currency = 'EUR') => {
         }).format(amount) + ' DH';
     }
     
-    // Pour les euros (par défaut)
+    // Pour les euros
     return new Intl.NumberFormat('fr-FR', { 
         style: 'currency', 
         currency: 'EUR',
@@ -782,7 +782,7 @@ const formatCurrency = (amount, currency = 'EUR') => {
                                                 <td className="px-6 py-4 whitespace-nowrap">
                                                     <div className="text-sm font-medium">
                                                         {releve.metadata?.solde_final 
-                                                            ? formatCurrency(releve.metadata.solde_final) 
+                                                            ? formatCurrency(releve.metadata.solde_final, 'DH') 
                                                             : 'N/A'}
                                                     </div>
                                                     {releve.metadata?.solde_initial && (
@@ -809,17 +809,7 @@ const formatCurrency = (amount, currency = 'EUR') => {
                                                             <FaInfoCircle className="text-sm" />
                                                         </button>
                                                         {/* Bouton pour voir le PDF (si vous avez un viewer) */}
-                                                        {releve.downloadUrl && (
-                                                            <a 
-                                                                href={releve.downloadUrl} 
-                                                                target="_blank" 
-                                                                rel="noopener noreferrer"
-                                                                className="h-9 w-9 flex items-center justify-center bg-purple-50 text-purple-600 rounded-lg hover:bg-purple-100 transition-colors"
-                                                                title="Voir le PDF"
-                                                            >
-                                                                <FaEye className="text-sm" />
-                                                            </a>
-                                                        )}
+                                                       
                                                         {/* Bouton pour télécharger le PDF */}
                                                         
                                                         <button

@@ -1,12 +1,15 @@
 
-from flask import Flask, request, jsonify,make_response
+from flask import Flask, request, jsonify,make_response,current_app
 import google.generativeai as genai
 from flask_mongoengine import MongoEngine
+from mongoengine import Document, StringField, ListField, EmbeddedDocumentListField, ReferenceField, DictField, DateTimeField # Include all necessary MongoEngine field types you might use or check against
 from mongoengine import connect
 import sys
 import traceback
+import openpyxl
 import PyPDF2
 import numpy as np
+from mongoengine.queryset.visitor import Q
 import cv2
 import pytesseract
 from pdf2image import convert_from_path
@@ -34,7 +37,7 @@ import threading
 import time
 import PyPDF2
 import re
-from datetime import datetime, timedelta  # Ajout de l'import manquant
+from datetime import datetime, timedelta, date, timezone  # Ajout de l'import manquant
 import pytesseract  # Pour l'OCR
 from pdf2image import convert_from_path  # Pour convertir PDF en images
 from PIL import Image  # Pour manipuler les images
@@ -398,69 +401,149 @@ def is_bank_statement(text):
     print(f"[DEBUG] RÉSULTAT FINAL: {is_bank}")
     
     return is_bank
+logging.basicConfig(level=logging.DEBUG)
+
 def clean_amount(amount_str):
     """
-    Nettoie et convertit une chaîne de caractères représentant un montant en float.
-    Gère les espaces, les virgules comme séparateur décimal, et les parenthèses/signes négatifs.
-    Gère également les symboles comme '–' forçant les montants nuls.
+    Nettoie une chaîne de caractères représentant un montant pour la convertir en float.
+    Gère les différents formats de séparateurs décimaux (virgule, point), les espaces,
+    les parenthèses pour les négatifs et les caractères non numériques.
     """
     if not amount_str:
-        return 0.0 # Default to 0.0 for truly empty/None
+        return 0.0
     
     amount_str = amount_str.strip()
     
-    # Explicitly handle common non-numeric placeholders for zero amounts
     if amount_str in ('–', '-', '', ' ', 'N/A', 'n/a'):
         return 0.0
 
     is_negative = False
-    # Gérer les parenthèses pour les montants négatifs (convention comptable)
     if amount_str.startswith('(') and amount_str.endswith(')'):
         is_negative = True
         amount_str = amount_str[1:-1]
     
-    # Détecter si c'est un montant négatif avec signe
-    # Process leading '-' or '–' as negative indicators
     if amount_str.startswith('-'):
         is_negative = True
         amount_str = amount_str[1:]
-    elif amount_str.startswith('–'): # U+2013
+    elif amount_str.startswith('–'): # U+2013 (tiret cadratin)
         is_negative = True
         amount_str = amount_str[1:]
             
-    # Supprimer les caractères non numériques sauf virgule et point (après gestion du signe)
-    amount_str = amount_str.replace(' ', '') # Remove all spaces first
-    amount_str = re.sub(r'[^\d,\.]', '', amount_str) # Keep only digits, comma, dot
+    amount_str = amount_str.replace(' ', '') 
+    # Supprime tous les caractères qui ne sont ni chiffres, ni virgules, ni points
+    amount_str = re.sub(r'[^\d,\.]', '', amount_str) 
 
-    if not amount_str: # If all characters were removed, it was not a valid number
-        return 0.0 # Return 0.0 if cleaned string is empty
+    if not amount_str: 
+        return 0.0
 
-    # Gérer le format français/allemand (point comme séparateur de milliers, virgule comme décimal)
+    # Gère les cas où les milliers sont séparés par des points et les décimales par une virgule
+    # ou l'inverse, en normalisant toujours vers le point comme séparateur décimal.
     if ',' in amount_str and '.' in amount_str:
+        # Si la dernière virgule apparaît après le dernier point, la virgule est le séparateur décimal
         if amount_str.rfind(',') > amount_str.rfind('.'):
-            amount_str = amount_str.replace('.', '')
-            amount_str = amount_str.replace(',', '.')
-        else:
-            amount_str = amount_str.replace(',', '')
-    elif ',' in amount_str:
+            amount_str = amount_str.replace('.', '') # Supprime les séparateurs de milliers
+            amount_str = amount_str.replace(',', '.') # Remplace la virgule décimale par un point
+        else: # Sinon, le point est le séparateur décimal
+            amount_str = amount_str.replace(',', '') # Supprime les séparateurs de milliers
+    elif ',' in amount_str: # S'il n'y a qu'une virgule, c'est le séparateur décimal
         amount_str = amount_str.replace(',', '.')
     
     try:
         amount = float(amount_str)
         if is_negative:
             amount *= -1
-        return amount
+        return round(amount, 2)
     except ValueError:
-        logger.warning(f"Impossible de convertir le montant '{amount_str}' en float. Retourne 0.0.")
-        return 0.0 # Return 0.0 on conversion failure
+        logging.warning(f"Impossible de convertir le montant '{amount_str}' en float. Retourne 0.0.")
+        return 0.0
+
+def parse_date(date_input):
+    """
+    Analyse une entrée de date (chaîne ou objet datetime) en un objet datetime standardisé.
+    Gère gracieusement l'entrée None en renvoyant None.
+    Lève TypeError si l'entrée n'est pas une chaîne ou un datetime.
+    Lève ValueError pour les chaînes de date non parsables.
+    """
+    if date_input is None:
+        return None
+    if isinstance(date_input, datetime):
+        return date_input
+    elif isinstance(date_input, str):
+        cleaned_date_input = date_input.strip()
+        
+        # Cas spécifique pour "00/00/0000" ou des dates invalides
+        if re.match(r'^\d{1,2}[/\-\.]\d{1,2}[/\-\.]0{2,4}$', cleaned_date_input):
+            logging.warning(f"Invalid 'zero' date string encountered: '{cleaned_date_input}'. Returning None.")
+            return None
+
+        formats_to_try = [
+            lambda s: datetime.fromisoformat(s.replace('Z', '+00:00')) if s.endswith('Z') else datetime.fromisoformat(s) if 'T' in s else None, # ISO format with/without Z
+            lambda s: datetime.strptime(s, '%Y-%m-%d'), # YYYY-MM-DD
+            lambda s: datetime.strptime(s, '%d/%m/%Y'), # DD/MM/YYYY
+            lambda s: datetime.strptime(s, '%m/%d/%Y'), # MM/DD/YYYY
+            lambda s: datetime.strptime(s, '%d-%m-%Y'), # DD-MM-YYYY
+            lambda s: datetime.strptime(s, '%d.%m.%Y'), # DD.MM.YYYY
+            # Pour gérer les années à 2 chiffres si nécessaire, mais soyez prudent
+            # lambda s: datetime.strptime(s, '%d/%m/%y'), # DD/MM/YY
+        ]
+        for parser_func in formats_to_try:
+            try:
+                result = parser_func(cleaned_date_input)
+                if result is not None:
+                    return result
+            except ValueError:
+                continue
+        logging.warning(f"Could not parse date string: '{date_input}'. Returning None.")
+        return None # Ou raise ValueError si vous préférez une erreur explicite
+    else:
+        logging.warning(f"Date input must be a string, datetime object, or None. Got type: {type(date_input)} with value: {date_input!r}. Returning None.")
+        return None # Ou raise TypeError
+
+# La fonction parse_periode_to_dates reste la même si elle est utilisée ailleurs
+def parse_periode_to_dates(periode_str):
+    """
+    Tente d'extraire la date de début et la date de fin d'une chaîne de période.
+    Gère les formats courants comme 'DD/MM/YYYY - DD/MM/YYYY' ou 'YYYY-MM-DD to/fromYYYY-MM-DD'.
+    Retourne un tuple (date_debut, date_fin) en tant qu'objets datetime, ou (None, None) si échec.
+    """
+    if not isinstance(periode_str, str) or not periode_str.strip():
+        return None, None
+
+    periode_str = periode_str.strip()
+
+    # Regex pour DD/MM/YYYY - DD/MM/YYYY ou DD.MM.YYYY - DD.MM.YYYY
+    match = re.search(r'(\d{1,2}[/.]\d{1,2}[/.]\d{2,4})\s*-\s*(\d{1,2}[/.]\d{1,2}[/.]\d{2,4})', periode_str)
+    if match:
+        date_str1, date_str2 = match.groups()
+        # Important : appeler la version améliorée de parse_date ici
+        date_debut = parse_date(date_str1.replace('.', '/'))
+        date_fin = parse_date(date_str2.replace('.', '/'))
+        return date_debut, date_fin
+
+    # Regex pour YYYY-MM-DD to/from YYYY-MM-DD
+    match = re.search(r'(\d{4}-\d{2}-\d{2})\s*(?:to|-|à|au)?\s*(\d{4}-\d{2}-\d{2})', periode_str, re.IGNORECASE)
+    if match:
+        date_str1, date_str2 = match.groups()
+        # Important : appeler la version améliorée de parse_date ici
+        date_debut = parse_date(date_str1)
+        date_fin = parse_date(date_str2)
+        return date_debut, date_fin
+        
+    return None, None
 
 def extract_bank_statement_data(text):
+    """
+    Extrait les métadonnées et les opérations d'un relevé bancaire à partir de son texte OCR.
+    """
     operations = []
     metadata = {}
     
+    # Normalise le texte pour une meilleure extraction des métadonnées (remplace les retours à la ligne/espaces multiples)
     normalized_text_for_metadata = re.sub(r'\s+', ' ', text).strip()
 
     # --- 1. EXTRACTION DES MÉTADONNÉES ---
+
+    # Détection de la banque (laissez tel quel)
     bank_patterns = {
         "Société Générale": [r'SOCIETE\s*GENERALE', r'SOCI[EÉ]T[EÉ]\s*G[EÉ]N[EÉ]RALE', r'\bSG\b'],
         "BNP Paribas": [r'BNP\s*PARIBAS', r'BANQUE\s*NATIONALE\s*DE\s*PARIS'],
@@ -491,11 +574,12 @@ def extract_bank_statement_data(text):
         if bank_match:
             metadata['banque'] = bank_match.group(0).strip()
 
+    # Extraction du numéro de compte / IBAN / BIC (laissez tel quel)
     account_patterns = [
         r'Num[eé]ro\s*de\s*compte\s*:?\s*([\d\s]{10,})',
         r'N[°]?\s*COMPTE\s*:?\s*([\d\s]{10,})',
         r'RIB\s*:?\s*([\d\s]{10,})',
-        r'(\d{5}\s*\d{5}\s*\d{11}\s*\d{2})', # Specific French format
+        r'(\d{5}\s*\d{5}\s*\d{11}\s*\d{2})', # Format français spécifique (Code Banque Code Guichet N° Compte Clé RIB)
         r'\bIBAN\b\s*:?\s*([A-Z]{2}\d{2}(?:\s*\w{4}){4}(?:\s*\w{1,2})?)', # IBAN
         r'Code\s*BIC\s*:?\s*([A-Z0-9]{8,11})' # BIC/SWIFT
     ]
@@ -503,10 +587,11 @@ def extract_bank_statement_data(text):
         account_match = re.search(pattern, normalized_text_for_metadata, re.IGNORECASE)
         if account_match:
             numero_compte = re.sub(r'\s+', '', account_match.group(1))
-            if len(numero_compte) >= 10:
+            if len(numero_compte) >= 10: # S'assurer que c'est un numéro de compte valide, pas juste un petit nombre
                 metadata['numero_compte'] = numero_compte
                 break
     
+    # Extraction de la période du relevé (MODIFIÉE ICI)
     period_patterns = [
         r'P[eé]riode\s*:?\s*(\d{1,2}[/\-\.]\d{1,2}[/\-\.]\d{2,4})\s*-\s*(\d{1,2}[/\-\.]\d{1,2}[/\-\.]\d{2,4})',
         r'du\s+(\d{1,2}[/\-\.]\d{1,2}[/\-\.]\d{2,4})\s+au\s+(\d{1,2}[/\-\.]\d{1,2}[/\-\.]\d{2,4})',
@@ -514,14 +599,27 @@ def extract_bank_statement_data(text):
         r'(\d{1,2}[/\-\.]\d{1,2}[/\-\.]\d{2,4})\s*[aà]\s*(\d{1,2}[/\-\.]\d{1,2}[/\-\.]\d{2,4})',
         r'extraits\s*de\s*compte\s*du\s*(\d{1,2}[/\-\.]\d{1,2}[/\-\.]\d{2,4})\s*au\s*(\d{1,2}[/\-\.]\d{1,2}[/\-\.]\d{2,4})'
     ]
+    
+    found_period_str = None
     for pattern in period_patterns:
         period_match = re.search(pattern, normalized_text_for_metadata, re.IGNORECASE)
         if period_match:
-            metadata['date_debut'] = period_match.group(1)
-            metadata['date_fin'] = period_match.group(2)
-            metadata['periode'] = f"Du {period_match.group(1)} au {period_match.group(2)}"
+            # Reconstruire la chaîne de période complète à passer à parse_periode_to_dates
+            found_period_str = f"{period_match.group(1)} - {period_match.group(2)}"
             break
-    
+
+    if found_period_str:
+        date_debut_dt, date_fin_dt = parse_periode_to_dates(found_period_str)
+        if date_debut_dt:
+            metadata['date_debut'] = date_debut_dt
+        if date_fin_dt:
+            metadata['date_fin'] = date_fin_dt
+        metadata['periode'] = found_period_str # Stocker la chaîne brute pour l'affichage ou une utilisation ultérieure
+    else:
+        logging.warning("Aucun motif de période trouvé ou impossible de l'analyser.")
+
+
+    # Extraction du titulaire du compte (laissez tel quel)
     titulaire_patterns = [
         r'Titulaire\s*:?\s*([A-Z0-9\s.-]+(?:SARL|SA|SAS|EURL)?(?:AUTO)?(?:(?:CLIENT)\s)?(?:[A-Z\s-]+)?)',
         r'(?:Compte\s*de|Client)\s*:?\s*([A-Z][A-Z\s\-\']{2,}(?:\s+\w+){0,3})',
@@ -535,17 +633,31 @@ def extract_bank_statement_data(text):
         titulaire_match = re.search(pattern, normalized_text_for_metadata, re.IGNORECASE)
         if titulaire_match:
             titulaire = titulaire_match.group(1).strip()
-            if titulaire.endswith(' P') and len(titulaire) > 2: # Remove trailing " P" if present
+            # Nettoyage spécifique pour éviter les faux positifs ou les restes d'OCR
+            if titulaire.endswith(' P') and len(titulaire) > 2: 
                 titulaire = titulaire[:-2].strip()
+            # Filtrer les titulaires qui ressemblent à des totaux, adresses, etc.
             if not re.search(r'total|cr[eé]dit|d[eé]bit|\d{4,}|adresse|ville|cp', titulaire, re.IGNORECASE):
                 metadata['titulaire'] = titulaire
                 break
 
-    # --- 2. IDENTIFIER LA SECTION DES OPÉRATIONS ---
+    # Ajout de l'extraction de la devise (DH, EUR, etc.) (laissez tel quel)
+    devise_match = re.search(r'\b(DH|EUR|€)\b', normalized_text_for_metadata, re.IGNORECASE)
+    if devise_match:
+        devise_extracted = devise_match.group(1).upper()
+        if devise_extracted == '€':
+            metadata['devise'] = 'EUR' # Normaliser le symbole € en code ISO
+        else:
+            metadata['devise'] = devise_extracted
+    else:
+        metadata['devise'] = 'DH' # Valeur par défaut si aucune devise n'est trouvée dans le texte
+
+    # --- 2. IDENTIFIER LA SECTION DES OPÉRATIONS --- (laissez tel quel)
     lines = text.split('\n')
     operations_start_line_idx = -1
     operations_end_line_idx = len(lines)
 
+    # Patterns stricts pour l'en-tête des opérations
     header_patterns_strict = [
         r'^\s*Date\s+R[eé]f\.?\s*Facture\s+Libell[eé]\s+D[eé]bit\s+\(DH\)\s+Cr[eé]dit\s+\(DH\)\s+Solde\s+\(DH\)',
         r'"Date\s*\n?"?\s*,\s*"R[eé]f\.?\s*Facture\s*\n?"?\s*,\s*"Libell[eé]\s*\n?"?\s*,\s*"D[eé]bit\s*\(DH\)\s*\n?"?,\s*"?Cr[eé]dit\s*\(DH\)\s*\n?"?,\s*"Solde\s*\(DH\)\s*\n?"?',
@@ -555,27 +667,31 @@ def extract_bank_statement_data(text):
     ]
 
     for i, line in enumerate(lines):
-        processed_line_for_header = line.replace('\xa0', ' ').strip()
+        processed_line_for_header = ' '.join(line.split()).strip()
         for pattern in header_patterns_strict:
             if re.search(pattern, processed_line_for_header, re.IGNORECASE):
                 operations_start_line_idx = i
-                logger.info(f"Operations header found on line {i}: {processed_line_for_header}")
+                logging.info(f"En-tête des opérations trouvé à la ligne {i}: {processed_line_for_header}")
                 break
         if operations_start_line_idx != -1:
             break
     
+    # Si aucun en-tête strict n'est trouvé, tenter de deviner le début des opérations
     if operations_start_line_idx == -1:
-        logger.warning("Could not definitively find a clear header for the operations section. Attempting guess.")
+        logging.warning("Impossible de trouver un en-tête clair pour la section des opérations. Tentative de devinette.")
         for i, line in enumerate(lines):
-            processed_line_for_header = line.replace('\xa0', ' ').strip()
+            processed_line_for_header = ' '.join(line.split()).strip()
+            # Chercher une ligne qui ressemble à une transaction (date + texte + montant)
             if re.search(r'\d{1,2}[/\-\.]\d{1,2}[/\-\.]\d{2,4}\s+.*?\s+[\d,\.\-]+', processed_line_for_header):
-                operations_start_line_idx = i - 1
-                logger.info(f"Guessed operations start line based on first transaction-like line: {operations_start_line_idx}")
+                operations_start_line_idx = i - 1 # Le début des opérations est probablement la ligne juste avant
+                if operations_start_line_idx < 0: operations_start_line_idx = 0 
+                logging.info(f"Ligne de début des opérations devinée basée sur la première ligne de type transaction: {operations_start_line_idx}")
                 break
         if operations_start_line_idx == -1:
-            logger.warning("Could not even guess a starting line for operations.")
+            logging.warning("Impossible même de deviner une ligne de départ pour les opérations. Retourne uniquement les métadonnées.")
             return metadata
 
+    # Patterns de pied de page pour identifier la fin des opérations
     footer_patterns = [
         r'Total\s+des\s+op[eé]rations\s*:',
         r'TOTAL\s*(?:DES\s*)?(?:OP[EÉ]RATIONS|MOUVEMENTS)',
@@ -584,23 +700,25 @@ def extract_bank_statement_data(text):
         r'Signature',
         r'Votre\s*(?:banque|conseiller)',
         r'Page\s*\d+\s*sur\s*\d+',
-        r'Pour\s*toute\s*r[eé]clamation'
+        r'Pour\s*toute\s*r[eé]clamation',
+        r'Date\s+d[eé]\s*d[eé]cembre', 
+        r'Montant\s+des\s*commissions' 
     ]
     
     for i in range(operations_start_line_idx + 1, len(lines)):
-        processed_line_for_footer = lines[i].replace('\xa0', ' ')
+        processed_line_for_footer = ' '.join(lines[i].split()).strip()
         for pattern in footer_patterns:
             if re.search(pattern, processed_line_for_footer, re.IGNORECASE):
                 operations_end_line_idx = i
-                logger.info(f"Operations footer found on line {i}: {processed_line_for_footer.strip()}")
+                logging.info(f"Pied de page des opérations trouvé à la ligne {i}: {processed_line_for_footer}")
                 break
         if operations_end_line_idx != len(lines):
             break
             
     operations_lines = lines[operations_start_line_idx + 1 : operations_end_line_idx]
-    logger.info(f"Processing {len(operations_lines)} lines for operations.")
+    logging.info(f"Traitement de {len(operations_lines)} lignes pour les opérations.")
 
-    # --- 3. EXTRACTION DES SOLDES ---
+    # --- 3. EXTRACTION DES SOLDES (Initial et Final) --- (laissez tel quel)
     solde_initial_patterns = [
         r'SOLDE\s*(?:PR[EÉ]C[EÉ]DENT|INITIAL|ANCIEN)\s*(?:AU\s*\d{1,2}[/\-\.]\d{1,2}[/\-\.]\d{2,4})?\s*:?\s*([\d\s,\.\-\(\)]+)',
         r'ANCIEN\s*SOLDE\s*:?\s*([\d\s,\.\-\(\)]+)',
@@ -609,7 +727,7 @@ def extract_bank_statement_data(text):
         r'REPORT\s*(?:SOLDE|NOUVEAU)\s*:?\s*([\d\s,\.\-\(\)]+)',
         r'SOLDE\s*REPORTE\s*:?\s*([\d\s,\.\-\(\)]+)',
         r'SOLDE\s*EN\s*DEBUT\s*(?:DE\s*PERIODE)?\s*:?\s*([\d\s,\.\-\(\)]+)',
-        r'(?:^|\n)(?!.*(?:NOUVEAU|FINAL|ACTUEL)).*SOLDE.*?([\d\s,\.\-\(\)]+)\s*(?:DH|EUR|€)?',
+        r'(?:^|\n)(?!.*(?:NOUVEAU|FINAL|ACTUEL)).*SOLDE.*?([\d\s,\.\-\(\)]+)\s*(?:DH|EUR|€)?', # capture any "SOLDE" not followed by "NOUVEAU|FINAL|ACTUEL"
     ]
     for pattern in solde_initial_patterns:
         solde_match = re.search(pattern, normalized_text_for_metadata, re.IGNORECASE)
@@ -631,6 +749,7 @@ def extract_bank_statement_data(text):
             metadata['solde_final'] = clean_amount(solde_match.group(1))
             break
 
+    # Extraction des totaux crédits/débits (laissez tel quel)
     total_credits_match = re.search(r'Total\s+cr[eé]dits\s*:\s*([\d\s,\.\-]+)\s*DH', normalized_text_for_metadata, re.IGNORECASE)
     if total_credits_match:
         metadata['total_credits'] = clean_amount(total_credits_match.group(1))
@@ -639,48 +758,40 @@ def extract_bank_statement_data(text):
     if total_debits_match:
         metadata['total_debits'] = clean_amount(total_debits_match.group(1))
 
-    # --- 4. EXTRACTION DES OPÉRATIONS ---
+    # --- 4. EXTRACTION DES OPÉRATIONS --- (laissez tel quel)
 
-    # Pattern 1: Robust CSV-like format for quoted fields and explicit empty fields (e.g., ",,")
-    # This assumes that the OCR process maintains the comma delimiters and quotes.
+    # Pattern 1: Format de type CSV robuste pour les champs entre guillemets (souvent issu de PDF avec structure tabulaire)
     csv_op_pattern = re.compile(r'"(\d{1,2}[/\-\.]\d{1,2}[/\-\.]\d{2,4})","([^"]*)","([^"]*)",([\d\s,\.\-\(\)]*|),\s*"([\d\s,\.\-\(\)]*)","([\d\s,\.\-\(\)]*)"', re.IGNORECASE)
 
-    # Pattern 2: More generic space-separated format (fallback if CSV fails)
-    # This pattern is specifically tuned to handle cases like "Libelle – 3 090,00 3 090,00"
+    # Pattern général pour les lignes d'opérations (plus flexible pour les OCR moins structurés)
     general_op_pattern = re.compile(
-        r'(\d{1,2}[/\-\.]\d{1,2}[/\-\.]\d{2,4})\s+'   # Group 1: Date
-        r'(?:(\w+)\s+)?'   # Group 2: Optional Ref.Facture
-        r'(.+?)'   # Group 3: Libelle (non-greedy, captures text including problematic dashes)
-        r'\s{2,}'   # At least two spaces to separate Libelle from first amount
-        r'([\d\s,\.\-\(\)]+)'   # Group 4: First amount string (e.g., '3 090,00')
-        r'\s+'   # Space separator
-        r'([\d\s,\.\-\(\)]+)'   # Group 5: Second amount string (e.g., '3 090,00')
-        r'(?:\s*([\d\s,\.\-\(\)]*))?', # Group 6: Optional third amount string (solde)
-        re.IGNORECASE # Apply flags here
+        r'(\d{1,2}[/\-\.]\d{1,2}[/\-\.]\d{2,4})\s+'     # Groupe 1: Date (ex: 02/04/2022)
+        r'([\w\d-]*)\s+'                               # Groupe 2: Réf. Facture (optionnel, ex: FA2204001)
+        # Groupe 3: Libellé - Utilise un lookahead pour s'assurer que le libellé ne consomme pas les montants
+        r'(.+?)\s*(?=\s*[\-–]?\s*\d[\d\s]*[,\.]\d{2}|\s*[\-–]\s*[\d\s]*[,\.]\d{2}|\s*[\d\s]*[,\.]\d{2})(.+)$', 
+        # Groupe 4: Reste de la ligne (montants et solde) - Capturé après le lookahead
+        re.IGNORECASE
     )
 
-    for line in operations_lines:
-        processed_line_for_parsing = line.replace('\n', '').replace('\r', '').replace('\xa0', ' ').strip()
-        
-        # --- NOUVEAU: Retirer les guillemets externes si présents ---
-        if processed_line_for_parsing.startswith('"') and processed_line_for_parsing.endswith('"'):
-            processed_line_for_parsing = processed_line_for_parsing[1:-1]
-        # --- FIN NOUVEAU ---
 
+    for line in operations_lines:
+        processed_line_for_parsing = ' '.join(line.split()).strip()
+        
         if not processed_line_for_parsing:
             continue
         
-        match = re.search(csv_op_pattern, processed_line_for_parsing) 
+        # Tenter d'abord le pattern CSV
+        csv_match = re.search(csv_op_pattern, processed_line_for_parsing) 
 
-        if match:
-            logger.debug(f"Matched CSV pattern for line: {processed_line_for_parsing}")
+        if csv_match: 
+            logging.debug(f"Motif CSV trouvé pour la ligne: {processed_line_for_parsing}")
             try:
-                date_op = match.group(1)
-                ref_facture = match.group(2).strip() if match.group(2) else None
-                libelle = match.group(3).strip() if match.group(3) else None
-                debit_str = match.group(4)
-                credit_str = match.group(5)
-                solde_op_str = match.group(6)
+                date_op = csv_match.group(1)
+                ref_facture = csv_match.group(2).strip() if csv_match.group(2) else None
+                libelle = csv_match.group(3).strip() if csv_match.group(3) else None
+                debit_str = csv_match.group(4)
+                credit_str = csv_match.group(5)
+                solde_op_str = csv_match.group(6)
 
                 date_parsed = parse_date(date_op)
                 if not date_parsed: continue
@@ -689,128 +800,195 @@ def extract_bank_statement_data(text):
                 credit = clean_amount(credit_str)
                 solde_op = clean_amount(solde_op_str)
 
-                montant = None
-                if credit is not None and credit != 0:
+                montant = 0.0
+                if credit != 0: 
                     montant = credit
-                    debit = 0.0 # If credit is present, assume debit is zero based on original PDF
-                elif debit is not None and debit != 0:
+                    debit = 0.0 # Assurer que le débit est 0 si c'est un crédit
+                elif debit != 0: 
                     montant = -debit
-                    credit = 0.0 # If debit is present, assume credit is zero
+                    credit = 0.0 # Assurer que le crédit est 0 si c'est un débit
                 
-                if montant is None: continue
+                # Ignorer les lignes sans montants significatifs
+                if montant == 0 and debit == 0 and credit == 0 and solde_op == 0: continue
 
                 operations.append({
                     "date": date_parsed.strftime("%d/%m/%Y"),
                     "ref_facture": ref_facture,
                     "libelle": libelle,
-                    "debit": abs(debit) if debit is not None else 0.0,
-                    "credit": credit if credit is not None else 0.0,
-                    "montant": montant,
+                    "debit": abs(debit), # Le champ 'debit' doit être positif
+                    "credit": credit,
+                    "montant": montant, # Montant avec signe (crédit positif, débit négatif)
                     "solde": solde_op
                 })
             except Exception as e:
-                logger.warning(f"Error parsing CSV operation line: '{processed_line_for_parsing}' - {e}")
-            continue
+                logging.warning(f"Erreur d'analyse de la ligne d'opération CSV: '{processed_line_for_parsing}' - {e}")
+            continue # Passer à la ligne suivante si le motif CSV a correspondu
 
-        # Fallback to general space-separated pattern
+        # Tenter le motif général si le CSV n'a pas correspondu
         match = re.search(general_op_pattern, processed_line_for_parsing)
         
         if match:
-            logger.debug(f"Matched general pattern for line: {processed_line_for_parsing}")
+            logging.debug(f"Motif général trouvé pour la ligne: {processed_line_for_parsing}")
             try:
                 date_op = match.group(1)
-                ref_maybe = match.group(2)
-                libelle_raw = match.group(3)
-                amount1_str = match.group(4) # This will be '3 090,00' from your test
-                amount2_str = match.group(5) # This will be '3 090,00' from your test
-                solde_op_str = match.group(6) # This will be '' from your test
+                ref_facture_maybe = match.group(2)
+                libelle_raw = match.group(3) 
+                amounts_solde_raw_str = match.group(4) 
+
+                logging.debug(f"Libellé (du groupe 3): '{libelle_raw}'")
+                logging.debug(f"Chaîne brute des montants/solde pour sous-analyse: '{amounts_solde_raw_str}'")
+
+                debit_str_raw = ''
+                credit_str_raw = ''
+                solde_op_str = ''
+
+                # Stratégie pour extraire les montants du segment restant
+                amount_pattern_in_segment = re.compile(r'([\-–]?\s*\d[\d\s]*[,\.]\d{2})|([\-–])')
+                
+                extracted_parts = [
+                    item.strip() for group in amount_pattern_in_segment.findall(amounts_solde_raw_str) 
+                    for item in group if item # Filtrer les groupes vides
+                ]
+                
+                logging.debug(f"Parties de montant extraites du segment: {extracted_parts}")
+
+                # Assigner débit, crédit, solde en fonction du nombre de parties extraites
+                if len(extracted_parts) == 3: # Cas idéal : Débit, Crédit, Solde
+                    debit_str_raw = extracted_parts[0]
+                    credit_str_raw = extracted_parts[1]
+                    solde_op_str = extracted_parts[2]
+                elif len(extracted_parts) == 2:
+                    # Cas spécifique rencontré avec Banque.pdf: "– 3 090,00 3 090,00"
+                    # où extracted_parts est ['– 3 090,00', '3 090,00']
+                    # Le premier est le crédit (avec un éventuel tiret de débit OCR), le second est le solde.
+                    if ('–' in extracted_parts[0] or '-' in extracted_parts[0]) and \
+                        any(char.isdigit() for char in extracted_parts[0].replace('–', '').replace('-', '').strip()):
+                        # Cela signifie que extracted_parts[0] contient un nombre précédé d'un signe de débit,
+                        # ce qui est une anomalie OCR pour un crédit.
+                        debit_str_raw = '' # Le débit réel est inexistant ou juste un tiret séparé
+                        credit_str_raw = extracted_parts[0].replace('–', '').replace('-', '').strip() # Le crédit est le nombre
+                        solde_op_str = extracted_parts[1] # Le deuxième est le solde
+                    else: 
+                        # Autre cas à 2 montants: Débit et Crédit (sans solde en fin de ligne)
+                        # Ex: ['100,00', '200,00'] -> Débit 100, Crédit 200
+                        debit_str_raw = extracted_parts[0]
+                        credit_str_raw = extracted_parts[1]
+                        solde_op_str = '' 
+                elif len(extracted_parts) == 1:
+                    # Un seul montant trouvé: déterminer s'il s'agit d'un débit ou d'un crédit
+                    if '–' in extracted_parts[0] or '-' in extracted_parts[0]:
+                        debit_str_raw = extracted_parts[0]
+                    else:
+                        credit_str_raw = extracted_parts[0]
+                    solde_op_str = ''
+                else:
+                    logging.warning(f"Impossible de trouver des montants discernables dans le segment: '{amounts_solde_raw_str}'")
+                    debit_str_raw = ''
+                    credit_str_raw = ''
+                    solde_op_str = ''
 
                 date_parsed = parse_date(date_op)
                 if not date_parsed: continue
 
-                # Based on the original PDF, amount1_str (which was debit in header) was empty
-                # and amount2_str (credit) had value.
-                # Here, with OCR output: '– 3 090,00 3 090,00' -> Libelle 'Paiement client MOHAMED CHKOURI –'
-                # amount1_str '3 090,00', amount2_str '3 090,00', solde_op_str ''
-                # This interpretation means the credit is 3090.0 and solde is 3090.0, which aligns with the PDF.
+                debit = clean_amount(debit_str_raw)
+                credit = clean_amount(credit_str_raw)
+                solde_op = clean_amount(solde_op_str) 
 
-                debit = 0.0 # Assume debit is zero based on PDF structure, unless amount1_str clearly indicates a negative
-                credit = clean_amount(amount1_str) # The first captured amount is likely the credit
-                solde_op = clean_amount(amount2_str) # The second captured amount is likely the solde
+                logging.debug(f"Débit (brut): '{debit_str_raw}'")
+                logging.debug(f"Crédit (brut): '{credit_str_raw}'")
+                logging.debug(f"Solde (brut): '{solde_op_str}'")
+                logging.debug(f"Débit (nettoyé): {debit}")
+                logging.debug(f"Crédit (nettoyé): {credit}")
+                logging.debug(f"Solde (nettoyé): {solde_op}")
 
-                # If amount1_str started with a clear negative sign and is distinct from amount2_str, then it's a debit.
-                # This is a heuristic and might need to be fine-tuned based on more examples.
-                # For the example: '– 3 090,00 3 090,00' -> Libelle 'Paiement client MOHAMED CHKOURI –'
-                # amount1_str '3 090,00', amount2_str '3 090,00', solde_op_str ''
-                # This interpretation means the credit is 3090.0 and solde is 3090.0, which aligns with the PDF.
-
-                montant = None
-                if credit is not None and credit != 0:
+                montant = 0.0
+                if credit != 0: 
                     montant = credit
-                    debit = 0.0 # Force debit to 0 if credit is found
-                elif debit is not None and debit != 0:
+                    debit = 0.0 
+                elif debit != 0: 
                     montant = -debit
-                    credit = 0.0 # Force credit to 0 if debit is found
-
-                if montant is None: continue
+                    credit = 0.0 
+                
+                if montant == 0 and debit == 0 and credit == 0 and solde_op == 0: 
+                    logging.debug(f"Ignorer la ligne d'opération vide (tous zéros): {processed_line_for_parsing}")
+                    continue
 
                 libelle = libelle_raw.strip()
                 ref_facture = None
-                if ref_maybe and re.match(r'^[A-Z0-9]{3,}', ref_maybe):
-                    ref_facture = ref_maybe
-                else:
-                    libelle = (f"{ref_maybe} {libelle}" if ref_maybe else libelle).strip()
+                # Vérifier si la partie ref_facture_maybe est bien une référence de facture
+                if ref_facture_maybe: 
+                    if re.match(r'^[A-Z0-9]{3,}', ref_facture_maybe): # Si elle ressemble à une réf de facture
+                        ref_facture = ref_facture_maybe
+                    else: # Sinon, l'ajouter au libellé
+                        libelle = f"{ref_facture_maybe} {libelle}".strip()
 
                 operations.append({
                     "date": date_parsed.strftime("%d/%m/%Y"),
                     "ref_facture": ref_facture,
                     "libelle": libelle,
-                    "debit": abs(debit) if debit is not None else 0.0,
-                    "credit": credit if credit is not None else 0.0,
-                    "montant": montant,
+                    "debit": abs(debit), 
+                    "credit": credit,
+                    "montant": montant, 
                     "solde": solde_op
                 })
             except Exception as e:
-                logger.warning(f"Error parsing general operation line: '{processed_line_for_parsing}' - {e}")
+                logging.warning(f"Erreur d'analyse de la ligne d'opération générale: '{processed_line_for_parsing}' - {e}")
         else:
-            logger.debug(f"No operation pattern matched for line: {processed_line_for_parsing}")
+            logging.debug(f"Aucun motif d'opération trouvé pour la ligne: {processed_line_for_parsing}")
 
     # --- 5. CALCULS ET MÉTADONNÉES FINALES ---
     if operations:
         try:
+            # Trier les opérations par date pour s'assurer de l'ordre chronologique
             operations.sort(key=lambda x: datetime.strptime(x['date'], "%d/%m/%Y"))
         except ValueError:
-            logger.warning("Could not sort operations by date due to parsing error.")
+            logging.warning("Impossible de trier les opérations par date en raison d'une erreur d'analyse.")
             pass
 
     metadata['operations'] = operations
     metadata['nombre_operations'] = len(operations)
     
-    if 'total_credits' not in metadata and operations:
+    # Si les totaux n'ont pas été trouvés directement, les calculer à partir des opérations
+    if 'total_credits' not in metadata or metadata['total_credits'] == 0.0:
         metadata['total_credits'] = sum(op.get('credit', 0) for op in operations)
-    if 'total_debits' not in metadata and operations:
+    if 'total_debits' not in metadata or metadata['total_debits'] == 0.0:
         metadata['total_debits'] = sum(op.get('debit', 0) for op in operations)
     
+    # Calculer le solde final à partir du solde initial et des totaux
     if metadata.get('solde_initial') is not None and metadata.get('total_credits') is not None and metadata.get('total_debits') is not None:
-        solde_calcule = metadata['solde_initial'] + metadata['total_credits'] - metadata['total_debits']
+        solde_calcule = round(metadata['solde_initial'] + metadata['total_credits'] - metadata['total_debits'], 2)
         metadata['solde_calcule'] = solde_calcule
+        # Comparer avec le solde final extrait, si disponible
         if metadata.get('solde_final') is not None:
-            metadata['difference_solde'] = abs(solde_calcule - metadata['solde_final'])
+            metadata['difference_solde'] = round(abs(solde_calcule - metadata['solde_final']), 2)
+    elif operations: 
+        # Si le solde final n'est pas extrait mais qu'il y a des opérations avec un solde par ligne
+        if 'solde_final' not in metadata and operations and operations[-1].get('solde') is not None:
+            metadata['solde_final'] = operations[-1]['solde']
+            logging.info(f"Solde final estimé d'après la dernière opération: {metadata['solde_final']}")
+
+    logging.info(f"Extraction terminée: {len(operations)} opérations trouvées")
     
-    logger.info(f"Extraction terminée: {len(operations)} opérations trouvées")
-    
-    logger.info(f"DEBUG - Métadonnées extraites:")
-    logger.info(f" - Banque: {metadata.get('banque', 'NON TROUVÉ')}")
-    logger.info(f" - Numéro compte: {metadata.get('numero_compte', 'NON TROUVÉ')}")
-    logger.info(f" - Titulaire: {metadata.get('titulaire', 'NON TROUVÉ')}")
-    logger.info(f" - Période: {metadata.get('periode', 'NON TROUVÉ')}")
-    logger.info(f" - Solde initial: {metadata.get('solde_initial', 'NON TROUVÉ')}")
-    logger.info(f" - Solde final: {metadata.get('solde_final', 'NON TROUVÉ')}")
-    logger.info(f" - Total crédits: {metadata.get('total_credits', 'NON TROUVÉ')}")
-    logger.info(f" - Total débits: {metadata.get('total_debits', 'NON TROUVÉ')}")
-    logger.info(f" - Nombre opérations: {metadata.get('nombre_operations', 'NON TROUVÉ')}")
+    # Logs de débogage pour les métadonnées extraites
+    logging.info(f"DEBUG - Métadonnées extraites:")
+    logging.info(f" - Banque: {metadata.get('banque', 'NON TROUVÉ')}")
+    logging.info(f" - Numéro compte: {metadata.get('numero_compte', 'NON TROUVÉ')}")
+    logging.info(f" - Titulaire: {metadata.get('titulaire', 'NON TROUVÉ')}")
+    # Afficher les objets date analysés pour date_debut et date_fin
+    logging.info(f" - Date Début (analysée): {metadata.get('date_debut', 'NON TROUVÉ')}")
+    logging.info(f" - Date Fin (analysée): {metadata.get('date_fin', 'NON TROUVÉ')}")
+    logging.info(f" - Période (chaîne brute): {metadata.get('periode', 'NON TROUVÉ')}")
+    logging.info(f" - Solde initial: {metadata.get('solde_initial', 'NON TROUVÉ')}")
+    logging.info(f" - Solde final: {metadata.get('solde_final', 'NON TROUVÉ')}")
+    logging.info(f" - Solde calculé: {metadata.get('solde_calcule', 'NON CALCULÉ')}")
+    logging.info(f" - Différence solde: {metadata.get('difference_solde', 'NON CALCULÉ')}")
+    logging.info(f" - Total crédits: {metadata.get('total_credits', 'NON TROUVÉ')}")
+    logging.info(f" - Total débits: {metadata.get('total_debits', 'NON TROUVÉ')}")
+    logging.info(f" - Nombre opérations: {metadata.get('nombre_operations', 'NON TROUVÉ')}")
+    logging.info(f" - Devise: {metadata.get('devise', 'NON TROUVÉ')}") # Ajout de la devise aux logs
     
     return metadata
+
 
 def extract_invoice_data_with_ai(text):
     logger.info("Extraction des données de facture pour rapprochement bancaire")
@@ -826,6 +1004,44 @@ def extract_invoice_data_with_ai(text):
             "devise": "TND", "confiance_extraction": None, "lignes": []
         }
         
+        # Helper function to clean and convert amount strings
+        def clean_and_convert_amount(value_str):
+            if not value_str:
+                return None
+            
+            # Remove any characters that are not digits, comma, or dot
+            cleaned_value = re.sub(r'[^\d,.]', '', value_str)
+            
+            if not cleaned_value:
+                return None
+
+            # Handle cases with both comma and dot (e.g., "1.234,56" or "1,234.56")
+            if ',' in cleaned_value and '.' in cleaned_value:
+                # If comma is the last separator, it's likely the decimal separator
+                if cleaned_value.rfind(',') > cleaned_value.rfind('.'):
+                    # Example: "1.234,56" -> remove thousands dot, replace decimal comma
+                    cleaned_value = cleaned_value.replace('.', '').replace(',', '.')
+                else:
+                    # Example: "1,234.56" -> remove thousands comma
+                    cleaned_value = cleaned_value.replace(',', '')
+            else:
+                # If only comma, assume it's the decimal separator
+                # If only dot, assume it's the decimal separator (default float behavior)
+                cleaned_value = cleaned_value.replace(',', '.') # Normalize to dot as decimal
+
+            try:
+                # Ensure no trailing dots or multiple dots after cleaning
+                if cleaned_value.count('.') > 1:
+                    # Keep only the last dot as decimal, remove others
+                    parts = cleaned_value.split('.')
+                    cleaned_value = "".join(parts[:-1]).replace('.', '') + '.' + parts[-1]
+                
+                return round(float(cleaned_value), 2)
+            except ValueError:
+                logger.warning(f"Failed to convert cleaned amount '{cleaned_value}' from original '{value_str}'")
+                return None
+
+
         # NOTE: L'ordre des patterns est important ! Les plus spécifiques en premier.
         patterns = {
             "numero": [
@@ -870,35 +1086,32 @@ def extract_invoice_data_with_ai(text):
                 r"Facturé\s*à\s*:?\s*([^\n]+)",
                 r"À\s*l'attention\s*de\s*:?\s*([^\n]+)"
             ],
-            # Montant total sera surtout géré par une logique post-extraction plus bas
+            # Use more general patterns for amounts, letting clean_and_convert_amount handle specifics
             "montant_total": [
-                r"Total\s*TTC\s*\n*([\d\s,]+\.\d{2})", # Added for "Total TTC\n13 040,00" 
-                r"Arrêté\s*le\s*présent\s*devis\s*à\s*la\s*somme\s*de\s*:\s*.*?([\d\s,]+\.\d{2})", # Added for the total sum in words 
-                r"([\d\s,]+\.\d{2})\s*(?:DIRHAMS ET \d{2} CTS)", # Capture le montant principal s'il est suivi par "DIRHAMS ET XX CTS"
-                r"Total\s*TTC\s*:?\s*([\d\s,\.]+)",
-                r"Montant\s*total\s*:?\s*([\d\s,\.]+)",
-                r"TOTAL\s*:?\s*([\d\s,\.]+)",
-                r"Total\s*général\s*:?\s*([\d\s,\.]+)",
-                r"Montant\s*TTC\s*:?\s*([\d\s,\.]+)"
+                r"Total\s*TTC\s*[:\s]*([\d\s,.]+)", # More general for any separator combination
+                r"Montant\s*total\s*[:\s]*([\d\s,.]+)",
+                r"TOTAL\s*[:\s]*([\d\s,.]+)",
+                r"Total\s*général\s*[:\s]*([\d\s,.]+)",
+                r"Montant\s*TTC\s*[:\s]*([\d\s,.]+)",
+                r"([\d\s,]+\.\d{2})\s*(?:DIRHAMS ET \d{2} CTS)", # Capture the amount part before "DIRHAMS ET XX CTS"
+                r"Arrêté\s*le\s*présent\s*devis\s*à\s*la\s*somme\s*de\s*:\s*.*?([\d\s,]+\.\d{2})"
             ],
             "montant_ht": [
-                r"Total\s*HT\n*([\d\s,]+\.\d{2})", # Added for "Total HT\n12 100,00" 
-                r"Total\s*HT\s*_?\s*-?\s*([\d\s,\.]+)",
-                r"Montant\s*HT\s*:?\s*([\d\s,\.]+)",
-                r"Base\s*imposable\s*:?\s*([\d\s,\.]+)",
-                r"Sous-total\s*HT\s*:?\s*([\d\s,\.]+)"
+                r"Total\s*HT\s*[:\s]*([\d\s,.]+)", # More general
+                r"Montant\s*HT\s*[:\s]*([\d\s,.]+)",
+                r"Base\s*imposable\s*[:\s]*([\d\s,.]+)",
+                r"Sous-total\s*HT\s*[:\s]*([\d\s,.]+)"
             ],
             "montant_tva": [
-                r"Total\s*TVA\s*20%\n*([\d\s,]+\.\d{2})", # Added for "Total TVA 20%\n940,00" 
-                r"Total\s*TVA\s*\d*%?\s*:?\s*([\d\s,\.]+)",
-                r"Montant\s*TVA\s*:?\s*([\d\s,\.]+)",
-                r"TVA\s*:?\s*([\d\s,\.]+)"
+                r"Total\s*TVA\s*\d*%?\s*[:\s]*([\d\s,.]+)", # More general
+                r"Montant\s*TVA\s*[:\s]*([\d\s,.]+)",
+                r"TVA\s*[:\s]*([\d\s,.]+)"
             ],
             "net_a_payer": [
-                r"Net\s*à\s*payer\s*:?\s*([\d\s,\.]+)",
-                r"À\s*payer\s*:?\s*([\d\s,\.]+)",
-                r"Montant\s*dû\s*:?\s*([\d\s,\.]+)",
-                r"Solde\s*à\s*payer\s*:?\s*([\d\s,\.]+)",
+                r"Net\s*à\s*payer\s*[:\s]*([\d\s,.]+)",
+                r"À\s*payer\s*[:\s]*([\d\s,.]+)",
+                r"Montant\s*dû\s*[:\s]*([\d\s,.]+)",
+                r"Solde\s*à\s*payer\s*[:\s]*([\d\s,.]+)",
                 r"Arrêtée?\s*(?:le\s*présent\s*)?(?:devis\s*)?à\s*(?:la\s*somme\s*de\s*)?:?\s*.*?([\d\s,]+\.\d{2})" # Adjusted for quote phrasing 
             ],
             "mode_reglement": [
@@ -929,25 +1142,12 @@ def extract_invoice_data_with_ai(text):
                     match = re.search(pattern_str, text, re.IGNORECASE | re.MULTILINE | re.DOTALL)
                     if match:
                         if field == "reference_paiement" and len(match.groups()) > 1: # Special handling for bank and account
-                            invoice_data["mode_reglement"] = f"Virement bancaire ({match.group(1).strip()})" [cite: 3]
-                            invoice_data[field] = match.group(2).strip() [cite: 3]
+                            invoice_data["mode_reglement"] = f"Virement bancaire ({match.group(1).strip()})"
+                            invoice_data[field] = match.group(2).strip()
                         else:
                             value = match.group(1).strip() if match.lastindex and match.lastindex >= 1 else match.group(0).strip()
                             if field in ["montant_total", "montant_ht", "montant_tva", "net_a_payer"]:
-                                try:
-                                    cleaned_value = re.sub(r'[^\d,.]', '', value)
-                                    if ',' in cleaned_value and '.' in cleaned_value:
-                                        if cleaned_value.rfind(',') > cleaned_value.rfind('.'):
-                                            cleaned_value = cleaned_value.replace('.', '').replace(',', '.')
-                                        else:
-                                            cleaned_value = cleaned_value.replace(',', '')
-                                    else:
-                                        cleaned_value = cleaned_value.replace(',', '.')
-                                    if cleaned_value and cleaned_value != '.':
-                                        invoice_data[field] = round(float(cleaned_value), 2)
-                                except (ValueError, TypeError):
-                                    logger.warning(f"Impossible de convertir '{value}' en montant pour {field}")
-                                    continue
+                                invoice_data[field] = clean_and_convert_amount(value)
                             elif field in ["date", "date_echeance"]:
                                 try:
                                     date_clean = re.sub(r'[^\d\/\-\.]', '', value)
@@ -972,42 +1172,34 @@ def extract_invoice_data_with_ai(text):
         # --- Logique d'extraction des lignes d'articles ---
         # Refined pattern for table data 
         # It's better to capture the whole table structure if possible
+        # Modified the pattern to be more flexible with quantity and total_ht (allowing spaces before/after comma/dot)
         line_item_rows = re.findall(
-            r"(?P<designation>(?:PARE CHOC AV|CALANDRE|FIXATION PARE CHOC|MASQUE|RENFORT AV|RADIATEUR EAU R|OPTIQUE AVD|OPTIQUE AVG|MAIN D'OEUVRE CARROSSERIE ET PEINTURE|INGREDIENT DE PEINTURE))\s*(?P<montant_exp>\d[\d\s,.]*)\s*(?P<tva>\d+%)?\s*(?P<pu_ht>[\d\s,.]+)\s*(?P<type>\w+)\s*(?P<qte>\d+)\s*(?P<total_ht>[\d\s,.]+)",
+            r"(?P<designation>(?:BAGEUTTE PORTE|MAIN D'OEUVRE PEINTURE|MAIN D'OEUVRE MECANIQUE|MAIN D'OEUVRE CARROSSERIE|INGREDIENTS DE PEINTURE|PARE CHOC AV|CALANDRE|FIXATION PARE CHOC|MASQUE|RENFORT AV|RADIATEUR EAU R|OPTIQUE AVD|OPTIQUE AVG|MAIN D'OEUVRE CARROSSERIE ET PEINTURE|INGREDIENT DE PEINTURE))\s*(?P<tva>\d+%)?\s*(?P<pu_ht>[\d\s,.]+)\s*(?P<qte>\d+)\s*(?P<type>\w+)\s*(?P<total_ht>[\d\s,.]+)",
             text, re.IGNORECASE
         )
         
         for row in line_item_rows:
             try:
                 description = row[0].strip()
-                # pu_ht and total_ht need cleaning
-                pu_ht_str = re.sub(r'[^\d,.]', '', row[3]).replace(',', '.')
-                total_ht_str = re.sub(r'[^\d,.]', '', row[5]).replace(',', '.')
-                
-                # Handling for cases like "4.000.00"
-                if pu_ht_str.count('.') > 1:
-                    pu_ht_str = pu_ht_str.replace('.', '', pu_ht_str.count('.') - 1)
-                if total_ht_str.count('.') > 1:
-                    total_ht_str = total_ht_str.replace('.', '', total_ht_str.count('.') - 1)
+                pu_ht = clean_and_convert_amount(row[2]) # Use the new helper
+                quantity = int(row[3])
+                total_ht_line = clean_and_convert_amount(row[5]) # Use the new helper
 
-                pu_ht = float(pu_ht_str)
-                quantity = int(row[4])
-                total_ht = float(total_ht_str)
-
-                invoice_data["lignes"].append({
-                    "quantite": quantity,
-                    "description": description,
-                    "prix_unitaire_ht": pu_ht,
-                    "total_ht_ligne": total_ht
-                })
-            except ValueError as ve:
+                if pu_ht is not None and total_ht_line is not None:
+                    invoice_data["lignes"].append({
+                        "quantite": quantity,
+                        "description": description,
+                        "prix_unitaire_ht": pu_ht,
+                        "total_ht_ligne": total_ht_line
+                    })
+            except (ValueError, TypeError) as ve:
                 logger.warning(f"Impossible de parser la ligne d'article '{row}': {ve}")
         
         # Fallback for line items if the specific regex fails, try a more general one
         if not invoice_data["lignes"]:
             # This is a general pattern that might work for less structured lines
             line_item_pattern_fallback = re.compile(
-                r"^\s*(\d+|\*)\s*(?:REC|MO|ORG)?\s*(.+?)\s+([\d\s,]+\.\d{2})\s*$",
+                r"^\s*(\d+|\*)\s*(?:REC|MO|ORG)?\s*(.+?)\s+([\d\s,.]+)$", # Changed to be more flexible with amount
                 re.IGNORECASE | re.MULTILINE
             )
             # Find a section where line items typically are
@@ -1034,60 +1226,76 @@ def extract_invoice_data_with_ai(text):
                             
                             quantity = int(quantity_str) if quantity_str.isdigit() else 1 
                             
-                            cleaned_amount = re.sub(r'[^\d,.]', '', amount_str)
-                            if ',' in cleaned_amount and '.' in cleaned_amount:
-                                if cleaned_amount.rfind(',') > cleaned_amount.rfind('.'):
-                                    cleaned_amount = cleaned_amount.replace('.', '').replace(',', '.')
-                                else:
-                                    cleaned_amount = cleaned_amount.replace(',', '')
-                            else:
-                                cleaned_amount = cleaned_amount.replace(',', '.')
+                            amount = clean_and_convert_amount(amount_str) # Use the new helper
                             
-                            amount = round(float(cleaned_amount), 2)
-                            
-                            if len(description) > 3 and not any(kw in description.lower() for kw in ["total", "ht", "tva", "net a payer"]):
+                            if amount is not None and len(description) > 3 and not any(kw in description.lower() for kw in ["total", "ht", "tva", "net a payer"]):
                                 invoice_data["lignes"].append({
                                     "quantite": quantity,
                                     "description": description,
                                     "montant": amount
                                 })
-                        except ValueError as ve:
+                        except (ValueError, TypeError) as ve:
                             logger.warning(f"Impossible de parse fallback line item '{line}': {ve}")
                         except IndexError:
                             logger.warning(f"Fallback line item pattern not fully matched: '{line}'")
 
         # --- Logique de déduction du montant total si non trouvé par pattern explicite ---
-            if invoice_data["montant_total"] is None:
-            # Try to find the total from the explicit "Arrêté le présent devis à la somme de : treize mille quarante Dirham" 
-                total_in_words_match = re.search(r"Arrêté\s*le\s*présent\s*devis\s*à\s*la\s*somme\s*de\s*:\s*treize\s*mille\s*quarante\s*Dirham", text, re.IGNORECASE)
-                invoice_data["montant_total"] = 13040.00 # Manually set based on the text 
-                logger.info(f"Montant total trouvé à partir du texte en toutes lettres: {invoice_data['montant_total']}")
-            
-            # If still not found, try from the explicit table of totals 
-            if invoice_data["montant_total"] is None:
-                total_ttc_table_match = re.search(r"Total TTC\s*\n*([\d\s,]+\.\d{2})", text) [cite: 4]
-                if total_ttc_table_match:
-                    try:
-                        value = total_ttc_table_match.group(1).strip()
-                        cleaned_value = re.sub(r'[^\d,.]', '', value).replace(',', '.')
-                        invoice_data["montant_total"] = round(float(cleaned_value), 2) [cite: 4]
-                        logger.info(f"Montant total trouvé dans la table de totaux: {invoice_data['montant_total']}")
-                    except ValueError:
-                        logger.warning(f"Impossible de convertir le montant total de la table: {value}")
+        # Prioritize explicit numeric extraction from the footer
+        # Reorder these checks to be more robust
+        
+        # 1. Try to find Total TTC directly from the footer first
+        if invoice_data["montant_total"] is None:
+            total_ttc_table_match = re.search(r"Total TTC\s*[:\s]*([\d\s,.]+)", text, re.IGNORECASE)
+            if total_ttc_table_match:
+                invoice_data["montant_total"] = clean_and_convert_amount(total_ttc_table_match.group(1))
+                if invoice_data["montant_total"] is not None:
+                    logger.info(f"Montant total trouvé dans la table de totaux: {invoice_data['montant_total']}")
 
-            if invoice_data["montant_total"] is None and invoice_data["lignes"]:
-                calculated_total_from_lines = sum(item.get("total_ht_ligne", 0) for item in invoice_data["lignes"])
-                if calculated_total_from_lines > 0:
-                    invoice_data["montant_total"] = calculated_total_from_lines
-                    logger.info(f"Montant total déduit de la somme des lignes: {invoice_data['montant_total']}")
-            
+        # 2. Extract HT and TVA explicitly
+        if invoice_data["montant_ht"] is None:
+            total_ht_match = re.search(r"Total\s*HT\s*[:\s]*([\d\s,.]+)", text, re.IGNORECASE)
+            if total_ht_match:
+                invoice_data["montant_ht"] = clean_and_convert_amount(total_ht_match.group(1))
+
+        if invoice_data["montant_tva"] is None:
+            total_tva_match = re.search(r"Total\s*TVA\s*\d*%?\s*[:\s]*([\d\s,.]+)", text, re.IGNORECASE)
+            if total_tva_match:
+                invoice_data["montant_tva"] = clean_and_convert_amount(total_tva_match.group(1))
+
+
+        # 3. If HT and TVA are found, calculate Total
+        if invoice_data["montant_total"] is None and invoice_data["montant_ht"] is not None and invoice_data["montant_tva"] is not None:
+            invoice_data["montant_total"] = round(invoice_data["montant_ht"] + invoice_data["montant_tva"], 2)
+            logger.info(f"Montant total calculé à partir de HT + TVA: {invoice_data['montant_total']}")
+        
+        # 4. If total is still not found, try from sum of line items (less reliable for final total)
+        if invoice_data["montant_total"] is None and invoice_data["lignes"]:
+            calculated_total_from_lines = sum(item.get("total_ht_ligne", item.get("montant", 0)) for item in invoice_data["lignes"])
+            if calculated_total_from_lines > 0:
+                # Add a reasonable default VAT if not extracted to make this sum useful
+                if invoice_data["montant_tva"] is None:
+                    # Assuming a common VAT rate like 20% or 10% for fallback if not found
+                    # This is a heuristic and might need adjustment based on typical invoices
+                    invoice_data["montant_tva"] = round(calculated_total_from_lines * 0.20, 2) # Default 20% VAT
+                invoice_data["montant_total"] = round(calculated_total_from_lines + invoice_data["montant_tva"], 2)
+                logger.info(f"Montant total déduit de la somme des lignes (avec TVA estimée): {invoice_data['montant_total']}")
+
+        # 5. Extract "net_a_payer" (can be a standalone field often identical to Total TTC)
+        if invoice_data["net_a_payer"] is None:
+            net_a_payer_match = re.search(r"Net\s*à\s*payer\s*[:\s]*([\d\s,.]+)", text, re.IGNORECASE)
+            if net_a_payer_match:
+                invoice_data["net_a_payer"] = clean_and_convert_amount(net_a_payer_match.group(1))
+        
         # Ensure net_a_payer is defined if there is a total amount
         if invoice_data["net_a_payer"] is None and invoice_data["montant_total"] is not None:
             invoice_data["net_a_payer"] = invoice_data["montant_total"]
 
-        # Logic to calculate HT/TVA if elements are missing
+        # 6. Fallback if montant_total is not found, but HT and TVA are
         if invoice_data["montant_total"] is None and invoice_data["montant_ht"] is not None and invoice_data["montant_tva"] is not None:
             invoice_data["montant_total"] = round(invoice_data["montant_ht"] + invoice_data["montant_tva"], 2)
+            logger.info(f"Montant total recalculé: {invoice_data['montant_total']} (HT + TVA)")
+
+        # 7. Fallback if montant_ht is missing but total and tva are present
         if invoice_data["montant_ht"] is None and invoice_data["montant_total"] is not None and invoice_data["montant_tva"] is not None:
             invoice_data["montant_ht"] = round(invoice_data["montant_total"] - invoice_data["montant_tva"], 2)
             logger.info(f"Montant HT calculé: {invoice_data['montant_ht']} (Total - TVA)")
@@ -1097,9 +1305,12 @@ def extract_invoice_data_with_ai(text):
             invoice_data["montant_tva"] is not None and 
             invoice_data["montant_total"] is not None):
             calculated_total = round(invoice_data["montant_ht"] + invoice_data["montant_tva"], 2)
-            if abs(calculated_total - invoice_data["montant_total"]) > 0.1:
+            if abs(calculated_total - invoice_data["montant_total"]) > 0.1: # Allow a small tolerance for floating point
                 logger.warning(f"Incohérence montants: HT({invoice_data['montant_ht']}) + TVA({invoice_data['montant_tva']}) ≠ Total({invoice_data['montant_total']})")
-                
+                # If inconsistency, prefer calculated total if it's more likely correct based on HT/TVA
+                # Or log and keep the directly extracted total, depending on business rules.
+                # For now, we'll just log the warning.
+
     except Exception as e:
         logger.error(f"Erreur validation ou extraction dans extract_invoice_data_with_ai: {e}", exc_info=True)
 
@@ -1129,7 +1340,7 @@ def extract_invoice_data_with_ai(text):
     print(f"Nombre de lignes: {len(cleaned_data.get('lignes', []))}")
     if cleaned_data.get('lignes'):
         for i, line in enumerate(cleaned_data['lignes'][:3]): # Display the first 3 lines for verification
-            print(f"   Ligne {i+1}: Qte={line.get('quantite')}, Desc='{line.get('description')}', Montant={line.get('montant')}")
+            print(f"    Ligne {i+1}: Qte={line.get('quantite')}, Desc='{line.get('description')}', PU_HT={line.get('prix_unitaire_ht')}, Total_HT_Ligne={line.get('total_ht_ligne')}") # Added PU_HT and Total_HT_Ligne
     print(f"--- Fin de l'extraction IA ---")
     
     return cleaned_data
@@ -1165,110 +1376,156 @@ def process_document(text):
 # --- Votre code pour la détection des anomalies et le rapprochement (inchangé) ---
 # ... (incluez detect_anomalies, match_invoice_with_statement, batch_reconciliation ici)
 
+
+# --- Fonction detect_anomalies (Inchangée, car l'erreur n'est pas ici) ---
 def detect_anomalies(document_data, doc_type):
-    """Détecte les anomalies dans les données extraites"""
+    """Détecte les anomalies dans les données extraites."""
     anomalies = []
-    
+    now = datetime.now() # Utilise l'heure actuelle du serveur (Tunisie)
+    logging.info(f"\nDEBUG_DETECT_ANOMALIES: Début de detect_anomalies pour {doc_type}. Heure actuelle 'now': {now!r}")
+
     if doc_type == "invoice":
-        # Vérifications de base (champs manquants)
+        logging.info("DEBUG_DETECT_ANOMALIES: Traitement de la facture.")
+        # Vérifications de présence des champs essentiels
         if not document_data.get("montant_total"):
-            anomalies.append("Montant total manquant")
+            anomalies.append("Facture: Montant total manquant.")
         if not document_data.get("date"):
-            anomalies.append("Date de facturation manquante")
+            anomalies.append("Facture: Date de facturation manquante.")
         if not document_data.get("numero"):
-            anomalies.append("Numéro de facture manquant")
+            anomalies.append("Facture: Numéro de facture manquant.")
         if not document_data.get("emetteur"):
-            anomalies.append("Émetteur de la facture manquant")
+            anomalies.append("Facture: Émetteur de la facture manquant.")
         if not document_data.get("client"):
-            anomalies.append("Client destinataire manquant")
-        
-        # Vérification des montants incohérents
-        if document_data.get("montant_total") and document_data.get("lignes"):
-            total_calculé = sum(ligne.get("montant", 0) for ligne in document_data["lignes"])
-            if abs(document_data["montant_total"] - total_calculé) > 0.01:  # Tolérance de 0.01
-                anomalies.append(f"Montant total incohérent: {document_data['montant_total']} vs somme des lignes {total_calculé}")
-        
-        # Vérification des doublons dans les numéros de ligne/référence
+            anomalies.append("Facture: Client destinataire manquant.")
+
+        # Vérification de cohérence du montant total vs lignes
+        if document_data.get("montant_total") is not None and document_data.get("lignes"):
+            total_calcule = sum(ligne.get("montant", 0) for ligne in document_data["lignes"])
+            if abs(document_data["montant_total"] - total_calcule) > 0.01: # Tolérance pour les erreurs de virgule flottante
+                anomalies.append(f"Facture: Montant total incohérent: {document_data['montant_total']} vs somme des lignes {total_calcule}.")
+
+        # Vérification des doublons dans les lignes (références ou numéros)
         if document_data.get("lignes"):
             refs = [ligne.get("reference") for ligne in document_data["lignes"] if ligne.get("reference")]
             nums = [ligne.get("numero") for ligne in document_data["lignes"] if ligne.get("numero")]
-            
-            # Vérification des références en double
+
             refs_count = Counter(refs)
             for ref, count in refs_count.items():
                 if count > 1:
-                    anomalies.append(f"Référence produit en double: {ref} ({count} occurrences)")
-            
-            # Vérification des numéros de ligne en double
+                    anomalies.append(f"Facture: Référence produit en double: '{ref}' ({count} occurrences).")
+
             nums_count = Counter(nums)
             for num, count in nums_count.items():
                 if count > 1:
-                    anomalies.append(f"Numéro de ligne en double: {num} ({count} occurrences)")
-        
-        # Vérification de date incohérente (date dans le futur ou trop ancienne)
-        if document_data.get("date"):
-            try:
-                date_facture = parse_date(document_data["date"])
-                if date_facture:
-                    now = datetime.now()
-                    if date_facture > now:
-                        anomalies.append(f"Date de facture dans le futur: {document_data['date']}")
-                    if date_facture < now - timedelta(days=365*2):  # Plus de 2 ans
-                        anomalies.append(f"Date de facture très ancienne: {document_data['date']}")
-            except Exception:
-                pass  # Erreur de parsing déjà traitée ailleurs
-    
+                    anomalies.append(f"Facture: Numéro de ligne en double: '{num}' ({count} occurrences).")
+
+        # Vérification des dates de facture (dans le futur, trop anciennes)
+        # La date de facture est supposée être un objet datetime ou None ici.
+        date_facture = document_data.get("date")
+        if date_facture: # S'il y a une date et qu'elle a été parsée avec succès
+            if isinstance(date_facture, datetime):
+                if date_facture > now:
+                    anomalies.append(f"Facture: Date dans le futur: {date_facture.strftime('%d/%m/%Y')}.")
+                # Définir une limite raisonnable pour les dates très anciennes, par exemple 10 ans
+                if date_facture < now - timedelta(days=365 * 10): 
+                    anomalies.append(f"Facture: Date très ancienne: {date_facture.strftime('%d/%m/%Y')}.")
+            else:
+                anomalies.append(f"Facture: Date de facture a un type inattendu après parsage: '{date_facture}' (Type: {type(date_facture)}).")
+        else:
+            anomalies.append("Facture: Date de facturation manquante ou non parsable.")
+
+
     elif doc_type == "bank_statement":
-        # Vérifications de base
-        if not document_data.get("solde_final"):
-            anomalies.append("Solde final manquant")
+        logging.info("DEBUG_DETECT_ANOMALIES: Traitement du relevé bancaire.")
+        # Vérifications de présence des champs essentiels
+        if document_data.get("solde_final") is None: # Peut être 0.0 donc vérifier None
+            anomalies.append("Relevé Bancaire: Solde final manquant.")
         if not document_data.get("operations"):
-            anomalies.append("Aucune opération trouvée")
-        
-        # Vérification des soldes incohérents
-        if document_data.get("solde_initial") is not None and document_data.get("solde_final") is not None and document_data.get("operations"):
-            total_operations = sum(op.get("montant", 0) for op in document_data["operations"])
-            solde_calculé = document_data.get("solde_initial", 0) + total_operations
-            if abs(document_data["solde_final"] - solde_calculé) > 0.1:  # Tolérance plus large pour les écarts bancaires
-                anomalies.append(f"Solde final incohérent: {document_data['solde_final']} vs calculé {solde_calculé}")
-        
-        # Vérification des opérations en double
-        if document_data.get("operations"):
-            # On crée une signature pour chaque opération (date + montant + début de la description)
+            anomalies.append("Relevé Bancaire: Aucune opération trouvée.")
+        if not document_data.get("banque"):
+            anomalies.append("Relevé Bancaire: Nom de la banque manquant.")
+        if not document_data.get("numero_compte"):
+            anomalies.append("Relevé Bancaire: Numéro de compte manquant.")
+
+        # Vérification de cohérence des soldes (initial + opérations = final)
+        # S'assurer que solde_initial et solde_final sont bien des nombres
+        solde_initial = document_data.get("solde_initial")
+        solde_final = document_data.get("solde_final")
+        operations = document_data.get("operations")
+
+        if solde_initial is not None and solde_final is not None and operations is not None:
+            total_operations_net = sum(op.get("montant", 0) for op in operations)
+            solde_calcule = solde_initial + total_operations_net
+            if abs(solde_final - solde_calcule) > 0.1: # Tolérance de 0.1 pour d'éventuels arrondis bancaires
+                anomalies.append(f"Relevé Bancaire: Solde final ({solde_final}) incohérent avec le calcul (initial {solde_initial} + opérations {total_operations_net} = {solde_calcule}).")
+
+        # Vérification des doublons d'opérations
+        if operations:
             signatures = []
-            for op in document_data["operations"]:
-                if op.get("date") and op.get("montant") and op.get("description"):
-                    # Signature simplifiée pour détecter les doublons potentiels
-                    signature = f"{op['date']}_{op['montant']}_{op['description'][:20]}"
+            for op in operations:
+                # Créer une "signature" unique pour chaque opération
+                if op.get("date") and op.get("montant") is not None and op.get("libelle"):
+                    signature = f"{op['date']}_{op['montant']:.2f}_{op['libelle'].strip().lower()[:50]}" # Libellé tronqué pour éviter des signatures trop longues
                     signatures.append(signature)
-            
-            # Vérification des signatures en double
+
             sig_count = Counter(signatures)
             for sig, count in sig_count.items():
                 if count > 1:
-                    anomalies.append(f"Possible opération en double: {sig} ({count} occurrences)")
-        
-        # Vérification des dates incohérentes ou non chronologiques
-        if document_data.get("operations") and len(document_data["operations"]) > 0:
-            dates = []
-            for op in document_data["operations"]:
+                    anomalies.append(f"Relevé Bancaire: Possible opération en double: '{sig}' ({count} occurrences).")
+
+        # Vérification des dates d'opérations (dans le futur, ordre chronologique, dans la période du relevé)
+        if operations and len(operations) > 0:
+            dates_operations_parsees_avec_strings_originales = []
+            for i, op in enumerate(operations):
                 if op.get("date"):
-                    date_op = parse_date(op["date"])
-                    if date_op:
-                        dates.append((date_op, op["date"]))
+                    try:
+                        # Assurez-vous que op["date"] est une chaîne et la parser en datetime
+                        date_op_obj = parse_date(op["date"]) 
+                        if date_op_obj:
+                            dates_operations_parsees_avec_strings_originales.append((date_op_obj, op["date"]))
+                        else:
+                            anomalies.append(f"Relevé Bancaire: Date d'opération non parsable (résultat None): '{op['date']}'. Opération n°{i+1}.")
+                    except Exception as e:
+                        anomalies.append(f"Relevé Bancaire: Erreur lors du parsage de la date d'opération {i+1}: '{op['date']}' - Erreur: {e}.")
+                else:
+                    anomalies.append(f"Relevé Bancaire: Opération {i+1}: Date manquante.")
             
-            if dates:
-                # Vérification des dates dans le futur
-                now = datetime.now()
-                future_dates = [date_str for date_obj, date_str in dates if date_obj > now]
+            if dates_operations_parsees_avec_strings_originales:
+                # Vérifier les dates d'opérations futures
+                future_dates = [date_str for date_obj, date_str in dates_operations_parsees_avec_strings_originales if date_obj and date_obj > now]
                 if future_dates:
-                    anomalies.append(f"Dates d'opérations dans le futur: {', '.join(future_dates[:3])}")
+                    anomalies.append(f"Relevé Bancaire: Dates d'opérations dans le futur: {', '.join(future_dates[:3])}{'...' if len(future_dates) > 3 else ''}.")
                 
-                # Vérification de l'ordre chronologique
-                sorted_dates = sorted(dates, key=lambda x: x[0])
-                if sorted_dates != dates:
-                    anomalies.append("Opérations non triées par ordre chronologique")
-    
+                # Vérifier l'ordre chronologique des opérations
+                # Tri des tuples (datetime_obj, original_string) par datetime_obj
+                sorted_dates_tuples = sorted(dates_operations_parsees_avec_strings_originales, key=lambda x: x[0])
+                # Comparer l'ordre original des datetimes (sans les strings originales) avec l'ordre trié
+                original_order_dates_only = [item[0] for item in dates_operations_parsees_avec_strings_originales]
+                sorted_order_dates_only = [item[0] for item in sorted_dates_tuples]
+
+                if original_order_dates_only != sorted_order_dates_only:
+                    anomalies.append("Relevé Bancaire: Opérations non triées par ordre chronologique.")
+
+                # Vérification des opérations en dehors de la période du relevé
+                # Ces champs (date_debut, date_fin) sont supposés être des objets datetime ou None
+                date_debut_releve = document_data.get("date_debut") 
+                date_fin_releve = document_data.get("date_fin")     
+
+                if date_debut_releve and date_fin_releve and isinstance(date_debut_releve, datetime) and isinstance(date_fin_releve, datetime):
+                    if date_fin_releve < date_debut_releve:
+                        anomalies.append(f"Relevé Bancaire: Date de fin ({date_fin_releve.strftime('%Y-%m-%d')}) antérieure à la date de début ({date_debut_releve.strftime('%Y-%m-%d')}).")
+                    
+                    for date_op_obj, op_original_date_str in dates_operations_parsees_avec_strings_originales:
+                        if date_op_obj and not (date_debut_releve <= date_op_obj <= date_fin_releve):
+                            anomalies.append(f"Relevé Bancaire: Opération avec date '{op_original_date_str}' en dehors de la période du relevé ({date_debut_releve.strftime('%Y-%m-%d')} - {date_fin_releve.strftime('%Y-%m-%d')}).")
+                else:
+                    # Ajouter des anomalies si les dates de début/fin du relevé sont manquantes ou invalides
+                    if not date_debut_releve or not isinstance(date_debut_releve, datetime):
+                        anomalies.append("Relevé Bancaire: Date de début de relevé manquante ou invalide (non datetime).")
+                    if not date_fin_releve or not isinstance(date_fin_releve, datetime):
+                        anomalies.append("Relevé Bancaire: Date de fin de relevé manquante ou invalide (non datetime).")
+                        
+    logging.info(f"DEBUG_DETECT_ANOMALIES: Fin de detect_anomalies. Anomalies détectées: {len(anomalies)}")
     return anomalies
 
 def match_invoice_with_statement(invoice_data, statement_data):
@@ -1291,7 +1548,7 @@ def match_invoice_with_statement(invoice_data, statement_data):
     
     # Extraction des données de la facture
     invoice_amount = invoice_data.get("net_a_payer") or invoice_data.get("montant_total")
-    invoice_date = invoice_data.get("date")
+    invoice_date = invoice_data.get("date") # C'est ici que le fix doit faire effet
     invoice_num = invoice_data.get("numero")
     invoice_client = invoice_data.get("client", "").lower() if invoice_data.get("client") else ""
     invoice_emetteur = invoice_data.get("emetteur", "").lower() if invoice_data.get("emetteur") else ""
@@ -1318,9 +1575,10 @@ def match_invoice_with_statement(invoice_data, statement_data):
             
             print(f"📅 Phase 1 - Filtrage date: {len(date_filtered_operations)} opérations dans la plage")
         else:
-            # Si pas de date de facture, prendre toutes les opérations
+            # Si pas de date de facture valide parsée, prendre toutes les opérations
             date_filtered_operations = statement_data.get("operations", [])
     else:
+        # Si pas de date de facture, prendre toutes les opérations
         date_filtered_operations = statement_data.get("operations", [])
     
     if not date_filtered_operations:
@@ -1329,15 +1587,30 @@ def match_invoice_with_statement(invoice_data, statement_data):
     
     # Phase 2: Filtrage par MONTANT (tolérance 2%)
     amount_filtered_operations = []
+    print(f"DEBUG: Montant de la facture à rechercher: {invoice_amount}") # NOUVEL AFFICHAGE DE DÉBOGAGE
     for op in date_filtered_operations:
         op_amount = op.get("montant")
-        if op_amount is not None and abs(op_amount) > 0.01:
-            op_amount_abs = abs(op_amount)
-            difference_pct = abs((op_amount_abs - invoice_amount) / invoice_amount * 100) if invoice_amount > 0 else 100
-            
-            if difference_pct <= 2.0:  # Tolérance de 2%
-                op["_amount_diff_pct"] = difference_pct
-                amount_filtered_operations.append(op)
+        
+        # NOUVEAUX AFFICHAGES DE DÉBOGAGE POUR LA PHASE 2
+        print(f"DEBUG: Vérification de l'opération: Date={op.get('date')}, Montant={op_amount}, Description={op.get('description')}")
+        
+        if op_amount is None:
+            print("DEBUG: op_amount est None, on ignore l'opération.")
+            continue
+        if abs(op_amount) <= 0.01: # Si le montant de l'opération est négligeable
+            print(f"DEBUG: op_amount ({op_amount}) est trop petit (<= 0.01), on ignore l'opération.")
+            continue
+
+        op_amount_abs = abs(float(op_amount)) # S'assurer que c'est un flottant pour la comparaison
+        difference_pct = abs((op_amount_abs - invoice_amount) / invoice_amount * 100) if invoice_amount > 0 else 100
+        
+        print(f"DEBUG: Montant de l'opération (abs): {op_amount_abs}, Pourcentage de différence: {difference_pct:.2f}%")
+        
+        if difference_pct <= 2.0:
+            op["_amount_diff_pct"] = difference_pct
+            amount_filtered_operations.append(op)
+        else:
+            print(f"DEBUG: La différence de montant ({difference_pct:.2f}%) est > 2.0%, on ignore l'opération.")
     
     print(f"💰 Phase 2 - Filtrage montant: {len(amount_filtered_operations)} opérations avec montant correspondant")
     
@@ -1508,6 +1781,8 @@ def match_invoice_with_statement(invoice_data, statement_data):
     
     return verification
 
+# Fin de la fonction match_invoice_with_statement
+
 
 def batch_reconciliation(invoices_data, statement_data):
     """
@@ -1543,7 +1818,9 @@ def batch_reconciliation(invoices_data, statement_data):
             
             if best_operation:
                 # Créer une signature unique pour l'opération
-                op_signature = f"{best_operation['date']}_{best_operation['montant']}_{best_operation['description'][:20]}"
+                # Assurez-vous que la date est toujours une chaîne ou un type hachable pour la signature
+                op_date_str = str(best_operation['date']) if isinstance(best_operation['date'], datetime) else best_operation['date']
+                op_signature = f"{op_date_str}_{best_operation['montant']}_{best_operation['description'][:20]}"
                 
                 if op_signature in used_operations:
                     # Conflit détecté
@@ -1575,141 +1852,75 @@ def batch_reconciliation(invoices_data, statement_data):
     # Identification des opérations non rapprochées
     all_operations = statement_data.get("operations", [])
     for op in all_operations:
-        op_signature = f"{op.get('date')}_{op.get('montant')}_{op.get('description', '')[:20]}"
+        # Assurez-vous que la date est toujours une chaîne ou un type hachable pour la signature
+        op_date_str = str(op.get('date')) if isinstance(op.get('date'), datetime) else op.get('date')
+        op_signature = f"{op_date_str}_{op.get('montant')}_{op.get('description', '')[:20]}"
         if op_signature not in used_operations:
             results["unmatched_operations"].append(op)
     
     print(f"\n📊 Résultats du rapprochement:")
-    print(f"   Factures rapprochées: {results['stats']['matched']}/{results['stats']['total_invoices']}")
-    print(f"   Matches exacts: {results['stats']['exact_matches']}")
-    print(f"   Matches probables: {results['stats']['probable_matches']}")
-    print(f"   Conflits: {results['stats']['conflicts']}")
-    print(f"   Opérations non rapprochées: {len(results['unmatched_operations'])}")
+    print(f"    Factures rapprochées: {results['stats']['matched']}/{results['stats']['total_invoices']}")
+    print(f"    Matches exacts: {results['stats']['exact_matches']}")
+    print(f"    Matches probables: {results['stats']['probable_matches']}")
+    print(f"    Conflits: {results['stats']['conflicts']}")
+    print(f"    Opérations non rapprochées: {len(results['unmatched_operations'])}")
     
     return results
-def parse_date(date_str):
-    """Tente de parser une date dans différents formats courants"""
-    formats = [
-        "%d/%m/%Y", "%Y-%m-%d", "%d-%m-%Y", "%d.%m.%Y",
-        "%d/%m/%y", "%Y/%m/%d", "%m/%d/%Y", "%d %b %Y",
-        "%d %B %Y", "%d-%b-%Y", "%d-%B-%Y"
-    ]
-    
-    for fmt in formats:
-        try:
-            return datetime.strptime(date_str, fmt)
-        except ValueError:
-            continue
-    
-    return None
-def analyze_with_ai(invoice_text, statement_text, invoice_data, statement_data, verification_result):
-    """Utilise l'IA pour analyser la comparaison entre facture et relevé"""
-    
-    structured_data = {
-        "facture": invoice_data,
-        "releve": statement_data,
-        "verification": verification_result
-    }
-    
-    prompt = f"""Analyse la comparaison entre cette facture et ce relevé bancaire:
 
-DONNÉES STRUCTURÉES EXTRAITES:
-{json.dumps(structured_data, indent=2, ensure_ascii=False)}
 
-TEXTE ORIGINAL DE LA FACTURE:
-{invoice_text[:1500]}
+def convert_datetime_to_isoformat(obj):
+    """
+    Recursively converts datetime and date objects within a dictionary or list
+    to their ISO 8601 string representation.
+    """
+    if isinstance(obj, dict):
+        return {k: convert_datetime_to_isoformat(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [convert_datetime_to_isoformat(elem) for elem in obj]
+    elif isinstance(obj, (datetime, date)):
+        return obj.isoformat()
+    return obj
 
-TEXTE ORIGINAL DU RELEVÉ BANCAIRE:
-{statement_text[:1500]}
-
-Fais une analyse détaillée en 4 parties:
-1. Résumé de la facture (émetteur, montant, date)
-2. Vérification du paiement dans le relevé bancaire
-3. Anomalies éventuelles (écarts,doublons,montants différents, dates incohérentes)
-4. Conclusion: La facture est-elle correctement payée? Faut-il faire une action?
-
-Formate ta réponse en sections clairement délimitées et reste factuel.
-"""
-
-    try:
-        response = model.generate_content(prompt)
-        return response.text
-    except Exception as e:
-        return f"Erreur lors de l'analyse AI: {str(e)}"
-def generate_reconciliation_report(invoice_data, statement_data, verification_result, analysis, invoice_anomalies=None, statement_anomalies=None):
-    """Génère un rapport structuré de rapprochement"""
-    # Trouver l'opération correspondante avant de générer le rapport
-    matching_operation = verification_result.get("paiements_potentiels", [{}])[0] if verification_result.get("paiements_potentiels") else None
-    
+def generate_reconciliation_report(invoice_data, statement_data, verification_result, analysis, invoice_anomalies, statement_anomalies):
+    """Génère un rapport de réconciliation détaillé."""
     report = {
-        "metadata": {
-            "date_generation": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            "statut": "complet" if verification_result.get("paiement_trouve", False) and not verification_result.get("anomalies") else "incomplet",
-            "niveau_confiance": verification_result.get("niveau_correspondance", "INCONNU"),
-            "score": verification_result.get("score_final", 0)
-        },
         "facture": {
-            "emetteur": invoice_data.get("emetteur"),
-            "client": invoice_data.get("client"),
             "numero": invoice_data.get("numero"),
-            "date": invoice_data.get("date"),
             "montant_total": invoice_data.get("montant_total"),
-            "net_a_payer": invoice_data.get("net_a_payer"),
-            "echeance": invoice_data.get("echeance"),
-            "devise": invoice_data.get("devise", "EUR"),
-            "anomalies": invoice_anomalies if invoice_anomalies else [],
-            "statut_paiement": "payé" if verification_result.get("paiement_trouve") else "non payé"
+            "date": str(invoice_data.get("date")), # Convertir en string pour le rapport JSON
+            "client": invoice_data.get("client"),
+            "emetteur": invoice_data.get("emetteur"),
+            "anomalies": invoice_anomalies
         },
-        "releve": {
-            "banque": statement_data.get("banque"),
-            "compte": statement_data.get("compte"),
-            "periode_debut": statement_data.get("periode_debut"),
-            "periode_fin": statement_data.get("periode_fin"),
-            "solde_initial": statement_data.get("solde_initial"),
-            "solde_final": statement_data.get("solde_final"),  # Correction: faute de frappe ici
-            "devise": statement_data.get("devise", "EUR"),
-            "anomalies": statement_anomalies if statement_anomalies else []
+        "releve_bancaire": {
+            "operations_count": len(statement_data.get("operations", [])),
+            "solde_final": statement_data.get("solde_final"),
+            "anomalies": statement_anomalies
         },
-        "rapprochement": {
-            "paiement_trouve": verification_result.get("paiement_trouve", False),
-            "niveau_correspondance": verification_result.get("niveau_correspondance"),
-            "montant_correspond": verification_result.get("montant_correspond", False),
-            "date_correspond": verification_result.get("date_correspond", False),
-            "client_correspond": verification_result.get("client_correspond", False),
-            "numero_correspond": verification_result.get("numero_correspond", False),
-            "operation_correspondante": matching_operation,
-            "ecart_montant": matching_operation.get("ecart_montant_pct") if matching_operation else None,
-            "ecart_jours": matching_operation.get("jours_ecart") if matching_operation else None,
-            "anomalies": verification_result.get("anomalies", []),
-            "paiements_potentiels": verification_result.get("paiements_potentiels", [])
-        },
+        "resultats_rapprochement": verification_result,
         "analyse_ia": analysis,
-        "recommandations": generate_recommendations(verification_result)
+        "date_generation": datetime.now().isoformat()
     }
     return report
+
+# Fonction factice pour l'analyse AI (à remplacer par votre vraie logique AI)
+def analyze_with_ai(invoice_text, statement_text, invoice_data, statement_data, verification_result):
+    """Simule une analyse par IA."""
+    return "Analyse IA : Aucune information supplémentaire significative trouvée (simulée)."
+
+# Fonction factice pour les recommandations (à remplacer par votre vraie logique)
 def generate_recommendations(verification_result):
-    recos = []
-    
+    """Génère des recommandations basées sur le résultat de la vérification."""
+    recs = []
     if not verification_result.get("paiement_trouve"):
-        recos.append("Aucun paiement correspondant n'a été trouvé dans le relevé bancaire")
-        return recos
-    
-    # Exemple simplifié pour la démo, adapte selon ta logique
-    if verification_result.get("montant_correspond"):
-        montant_facture = ...  # à définir
-        montant_paye = ...     # à définir
-        if abs(montant_facture - montant_paye) > 0.01:
-            recos.append(f"Écart de {abs(montant_facture - montant_paye):.2f}€ entre le montant facturé et le montant payé")
-    
-    if verification_result.get("date_correspond"):
-        jours_ecart = verification_result.get("ecart_jours", 0)
-        if jours_ecart > 30:
-            recos.append(f"Paiement effectué avec {jours_ecart} jours de retard")
-    
-    if not recos:
-        recos.append("Le paiement correspond exactement à la facture")
-    
-    return recos
+        recs.append("Vérifiez manuellement le relevé bancaire pour un paiement correspondant à la facture.")
+        recs.append("Assurez-vous que le montant et la date de la facture sont corrects.")
+    if verification_result.get("anomalies"):
+        recs.append("Examinez les anomalies détectées pour la facture et/ou le relevé.")
+    if verification_result.get("score_final", 0) < 50 and verification_result.get("paiement_trouve"):
+        recs.append("Le niveau de correspondance est faible, une vérification manuelle est recommandée.")
+    return recs
+
 
 
 @lru_cache(maxsize=32)
@@ -1860,138 +2071,114 @@ def is_invoice_document(text):
 
 @app.route('/api/compare-documents', methods=['POST'])
 def compare_documents():
-    """Compare une facture et un relevé bancaire"""
-    print("\n----- DÉBUT COMPARE DOCUMENTS -----")
+    """Compare une facture et un relevé bancaire via leurs IDs stockés."""
+    print("\n----- DÉBUT COMPARE DOCUMENTS (par IDs) -----")
     print("Headers reçus:", request.headers)
     print("Méthode:", request.method)
-    print("Clés des fichiers:", list(request.files.keys()) if request.files else "Aucun fichier")
-    print("Données du formulaire:", request.form) # Utile pour voir facture_id et banque_id
+    print("Données du formulaire:", request.form)
 
-    # Vérification des fichiers
-    # ATTENTION : Si le frontend envoie 'invoice_file' et 'statement_file',
-    # il faut changer 'invoice' et 'statement' ci-dessous.
-    # Vérifiez votre frontend: `formData.append('invoice', invoiceFile);`
-    # ou `formData.append('invoice_file', invoiceFile);`
-    
-    if 'invoice' not in request.files:
-        print("ERREUR: Fichier 'invoice' manquant dans request.files")
-        return jsonify({"error": "Fichier facture manquant"}), 400
+    facture_id = request.form.get('facture_id')
+    banque_id = request.form.get('banque_id')
 
-    if 'statement' not in request.files:
-        print("ERREUR: Fichier 'statement' manquant dans request.files")
-        return jsonify({"error": "Fichier relevé bancaire manquant"}), 400
+    if not facture_id:
+        print("ERREUR: 'facture_id' manquant dans les données du formulaire")
+        return jsonify({"error": "ID de facture requis"}), 400
+    if not banque_id:
+        print("ERREUR: 'banque_id' manquant dans les données du formulaire")
+        return jsonify({"error": "ID de relevé bancaire requis"}), 400
 
-    invoice_file = request.files['invoice']
-    statement_file = request.files['statement']
-
-    # Validation des noms de fichiers
-    if invoice_file.filename == '':
-        print("ERREUR: Nom de facture vide après réception")
-        return jsonify({"error": "Nom de facture vide"}), 400
-
-    if statement_file.filename == '':
-        print("ERREUR: Nom de relevé vide après réception")
-        return jsonify({"error": "Nom de relevé vide"}), 400
-     # --- AJOUTEZ CES PRINTS ---
-    print(f"Facture - Nom de fichier: '{invoice_file.filename}'")
-    print(f"Facture - Vérification PDF (lower().endswith('.pdf')): {invoice_file.filename.lower().endswith('.pdf')}")
-    print(f"Relevé - Nom de fichier: '{statement_file.filename}'")
-    print(f"Relevé - Vérification PDF (lower().endswith('.pdf')): {statement_file.filename.lower().endswith('.pdf')}")
-    # --- FIN DES AJOUTS ---
-    # Validation de l'extension (avant secure_filename si nécessaire, mais secure_filename est sûr)
-    if not invoice_file.filename.lower().endswith('.pdf'):
-        print(f"ERREUR: Fichier facture n'est pas un PDF: {invoice_file.filename}")
-        return jsonify({"error": "La facture doit être un fichier PDF"}), 400
-    if not statement_file.filename.lower().endswith('.pdf'):
-        print(f"ERREUR: Fichier relevé n'est pas un PDF: {statement_file.filename}")
-        return jsonify({"error": "Le relevé doit être un fichier PDF"}), 400
-
-    invoice_path = None
-    statement_path = None
+    print(f"IDs reçus: Facture ID='{facture_id}', Banque ID='{banque_id}'")
 
     try:
-        # Génération de noms de fichiers uniques pour éviter les collisions et faciliter le nettoyage
-        invoice_filename_unique = f"{uuid.uuid4()}_{secure_filename(invoice_file.filename)}"
-        statement_filename_unique = f"{uuid.uuid4()}_{secure_filename(statement_file.filename)}"
+        # Récupération des objets Facture et Banque depuis la base de données
+        facture_obj = Facture.objects(id=facture_id).first()
+        banque_obj = Banque.objects(id=banque_id).first()
 
-        invoice_path = os.path.join(app.config['UPLOAD_FOLDER'], invoice_filename_unique)
-        statement_path = os.path.join(app.config['UPLOAD_FOLDER'], statement_filename_unique)
+        if not facture_obj:
+            print(f"ERREUR: Facture avec ID {facture_id} non trouvée.")
+            return jsonify({"error": f"Facture non trouvée pour l'ID: {facture_id}"}), 404
+        if not banque_obj:
+            print(f"ERREUR: Relevé bancaire avec ID {banque_id} non trouvé.")
+            return jsonify({"error": f"Relevé bancaire non trouvé pour l'ID: {banque_id}"}), 404
 
-        print(f"Tentative de sauvegarde de la facture vers: {invoice_path}")
-        print(f"Tentative de sauvegarde du relevé vers: {statement_path}")
+        # --- Construction de invoice_data_for_matching ---
+        # La date de facture est déjà correctement parsée ici.
+        invoice_data_for_matching = {
+            "numero": facture_obj.numero,
+            "montant_total": facture_obj.montant_total,
+            "montant_ht": facture_obj.montant_ht,
+            "montant_tva": facture_obj.montant_tva,
+            "net_a_payer": facture_obj.net_a_payer,
+            "date": parse_date(facture_obj.date_emission),
+            "client": facture_obj.client,
+            "emetteur": facture_obj.emetteur,
+            "devise": facture_obj.devise,
+            "extracted_data_raw": facture_obj.extracted_data
+        }
 
-        # Sauvegarde temporaire des fichiers
-        invoice_file.save(invoice_path)
-        statement_file.save(statement_path)
+        # --- Traitement CRITIQUE pour statement_data_for_matching ---
+        # On copie les données extraites pour les manipuler.
+        # Note: banque_obj.extracted_data pourrait être un dictionnaire ou une chaîne JSON
+        # Si c'est une chaîne JSON, il faut la désérialiser en dictionnaire ici.
+        # Pour cet exemple, on suppose que c'est déjà un dictionnaire.
+        statement_data_for_matching = banque_obj.extracted_data.copy()
 
-        # --- DIAGNOSTIC CRUCIAL : VÉRIFICATION DE LA SAUVEGARDE ---
-        invoice_saved_exists = os.path.exists(invoice_path)
-        statement_saved_exists = os.path.exists(statement_path)
-
-        invoice_size = os.path.getsize(invoice_path) if invoice_saved_exists else 0
-        statement_size = os.path.getsize(statement_path) if statement_saved_exists else 0
-
-        print(f"Facture sauvegardée: {'Oui' if invoice_saved_exists else 'Non'}, Taille: {invoice_size} octets")
-        print(f"Relevé sauvegardé: {'Oui' if statement_saved_exists else 'Non'}, Taille: {statement_size} octets")
-
-        if not invoice_saved_exists or invoice_size == 0:
-            print(f"ERREUR: Fichier facture introuvable ou vide après sauvegarde: {invoice_path}")
-            return jsonify({"error": "Le fichier facture est vide ou n'a pas pu être sauvegardé correctement."}), 500
-        if not statement_saved_exists or statement_size == 0:
-            print(f"ERREUR: Fichier relevé introuvable ou vide après sauvegarde: {statement_path}")
-            return jsonify({"error": "Le fichier relevé bancaire est vide ou n'a pas pu être sauvegardé correctement."}), 500
-        # --- FIN DIAGNOSTIC CRUCIAL ---
-
-        # Extraction du texte
-        print(f"Début de l'extraction de texte pour la facture: {invoice_path}")
-        invoice_text = extract_text_from_pdf(invoice_path)
-        print(f"Texte facture extrait (longueur): {len(invoice_text.strip())}")
-
-        print(f"Début de l'extraction de texte pour le relevé: {statement_path}")
-        statement_text = extract_text_from_pdf(statement_path)
-        print(f"Texte relevé extrait (longueur): {len(statement_text.strip())}")
+        # Extraire les dates de début et de fin de la chaîne 'periode' du modèle Banque
+        period_string = banque_obj.periode 
+        date_debut_from_period, date_fin_from_period = parse_periode_to_dates(period_string)
         
-        # Vérification du contenu extrait
-        if len(invoice_text.strip()) < 50: # Ajustez le seuil si nécessaire
-            print(f"AVERTISSEMENT: Texte extrait de la facture insuffisant ({len(invoice_text.strip())} chars)")
-            return jsonify({"error": "Impossible d'extraire suffisamment de texte de la facture. Le fichier est-il un PDF lisible ou scanné de bonne qualité ?"}), 400
-        if len(statement_text.strip()) < 50: # Ajustez le seuil si nécessaire
-            print(f"AVERTISSEMENT: Texte extrait du relevé insuffisant ({len(statement_text.strip())} chars)")
-            return jsonify({"error": "Impossible d'extraire suffisamment de texte du relevé bancaire. Le fichier est-il un PDF lisible ou scanné de bonne qualité ?"}), 400
+        # Assigner les dates parsées (qui peuvent être None si le parsing a échoué)
+        # Ces clés 'date_debut' et 'date_fin' sont attendues par detect_anomalies.
+        statement_data_for_matching["date_debut"] = date_debut_from_period
+        statement_data_for_matching["date_fin"] = date_fin_from_period
+        
+        if date_debut_from_period is None or date_fin_from_period is None:
+            print(f"AVERTISSEMENT: Impossible de parser les dates de début/fin depuis la période '{period_string}'. Les dates seront considérées comme manquantes pour la détection d'anomalies du relevé bancaire.")
 
+        # Vérifier et convertir les dates de chaque opération si elles ne sont pas déjà au bon format
+        # Ceci est essentiel car les dates d'opération peuvent aussi être des chaînes.
+        if "operations" in statement_data_for_matching and isinstance(statement_data_for_matching["operations"], list):
+            for op in statement_data_for_matching["operations"]:
+                if isinstance(op, dict) and "date" in op and not isinstance(op["date"], datetime):
+                    op["date"] = parse_date(op["date"])
+        else:
+            print("AVERTISSEMENT: 'operations' manquant ou n'est pas une liste dans statement_data_for_matching.")
 
-        # Extraction des données structurées
-        print("Début extraction données facture...")
-        invoice_data = extract_invoice_data_with_ai(invoice_text)
-        print("Fin extraction données facture.")
+        # --- Vérifications avant le rapprochement ---
+        if not statement_data_for_matching or not statement_data_for_matching.get('operations'):
+            print(f"ERREUR: Aucune opération trouvée dans les données du relevé avec l'ID {banque_id}.")
+            return jsonify({"error": "Les données du relevé bancaire sont incomplètes (pas d'opérations)."}), 400
+        
+        if not invoice_data_for_matching.get('montant_total') and not invoice_data_for_matching.get('net_a_payer'):
+            print(f"ERREUR: Données de facture incomplètes (montant manquant) pour l'ID {facture_id}.")
+            return jsonify({"error": "Les données de la facture sont incomplètes (montant manquant)."}), 400
 
-        print("Début extraction données relevé...")
-        statement_data = extract_bank_statement_data(statement_text)
-        print("Fin extraction données relevé.")
+        print(f"DEBUG: invoice_data_for_matching sent to matching function: {invoice_data_for_matching}")
 
-        # Détection des anomalies
+        # Les appels aux fonctions restent les mêmes, mais les données sont maintenant préparées
         print("Début détection anomalies facture...")
-        invoice_anomalies = detect_anomalies(invoice_data, "invoice")
+        invoice_anomalies = detect_anomalies(invoice_data_for_matching, "invoice")
         print("Fin détection anomalies facture.")
 
         print("Début détection anomalies relevé...")
-        statement_anomalies = detect_anomalies(statement_data, "bank_statement")
+        # À ce stade, statement_data_for_matching devrait avoir 'date_debut' et 'date_fin' au format datetime.
+        statement_anomalies = detect_anomalies(statement_data_for_matching, "bank_statement")
         print("Fin détection anomalies relevé.")
 
-        # Rapprochement
         print("Début rapprochement...")
-        verification_result = match_invoice_with_statement(invoice_data, statement_data)
+        verification_result = match_invoice_with_statement(invoice_data_for_matching, statement_data_for_matching)
         print("Fin rapprochement.")
 
         print("Début analyse AI...")
-        analysis = analyze_with_ai(invoice_text, statement_text, invoice_data, statement_data, verification_result)
+        invoice_text_stored = facture_obj.full_text if hasattr(facture_obj, 'full_text') else ""
+        statement_text_stored = banque_obj.full_text if hasattr(banque_obj, 'full_text') else ""
+        analysis = analyze_with_ai(invoice_text_stored, statement_text_stored, invoice_data_for_matching, statement_data_for_matching, verification_result)
         print("Fin analyse AI.")
 
-        # Génération du rapport complet
         print("Génération du rapport de réconciliation...")
         full_report = generate_reconciliation_report(
-            invoice_data,
-            statement_data,
+            invoice_data_for_matching,
+            statement_data_for_matching,
             verification_result,
             analysis,
             invoice_anomalies,
@@ -1999,98 +2186,69 @@ def compare_documents():
         )
         print("Rapport généré.")
 
-        # Récupération des IDs et validation
-        facture_id = request.form.get('facture_id')
-        banque_id = request.form.get('banque_id')
-
-        if not facture_id or not banque_id:
-            print("ERREUR: IDs de facture ou de banque manquants dans les données du formulaire")
-            return jsonify({"error": "IDs de facture et de banque requis"}), 400
-
-        # Vérification des objets Facture et Banque (assurez-vous que Facture et Banque sont des modèles MongoEngine ou équivalents)
-        try:
-            # Assurez-vous que ces appels sont corrects pour votre ORM (ex: MongoEngine)
-            facture_obj = Facture.objects(id=facture_id).first()
-            banque_obj = Banque.objects(id=banque_id).first()
-        except Exception as db_error:
-            print(f"ERREUR BASE DE DONNÉES lors de la récupération des objets: {str(db_error)}")
-            return jsonify({"error": "Erreur lors de la récupération des informations de base de données."}), 500
-
-        if not facture_obj:
-            print(f"ERREUR: Facture avec ID {facture_id} non trouvée dans la base de données.")
-            return jsonify({"error": f"Facture non trouvée pour l'ID: {facture_id}"}), 404
-        if not banque_obj:
-            print(f"ERREUR: Relevé bancaire avec ID {banque_id} non trouvé dans la base de données.")
-            return jsonify({"error": f"Relevé bancaire non trouvé pour l'ID: {banque_id}"}), 404
-
         # Détermination du statut
         statut_rapport = "complet" if verification_result.get("paiement_trouve", False) else "incomplet"
-        if verification_result.get("anomalies") and len(verification_result["anomalies"]) > 0:
+        # Le rapport est en "anomalie" si des anomalies sont détectées à n'importe quelle étape.
+        if (verification_result.get("anomalies") and len(verification_result["anomalies"]) > 0) or \
+           invoice_anomalies or statement_anomalies:
             statut_rapport = "anomalie"
-        if invoice_anomalies or statement_anomalies:
-            statut_rapport = "anomalie" # Si des anomalies sont détectées en dehors de la vérification
-
 
         # Création et sauvegarde du rapport
         print("Sauvegarde du rapport dans la base de données...")
-        try:
-            rapport = Rapport(
-                facture=facture_obj,
-                banque=banque_obj,
-                titre=f"Rapprochement {facture_obj.numero if facture_obj else 'N/A'} - {banque_obj.numero if banque_obj else 'N/A'}",
-                statut=statut_rapport,
-                
-                invoice_data=invoice_data,
-                statement_data=statement_data,
-                verification_result=verification_result,
-                
-                resume_facture={
-                    "emetteur": invoice_data.get("emetteur"),
-                    "numero": invoice_data.get("numero"),
-                    "date": invoice_data.get("date"),
-                    "montant_total": invoice_data.get("montant_total"),
-                    "devise": invoice_data.get("devise", "EUR")
-                },
-                resume_releve={
-                    "banque": statement_data.get("banque"),
-                    "compte": statement_data.get("compte"),
-                    "periode": statement_data.get("periode"),
-                    "solde_final": statement_data.get("solde_final"),
-                    "devise": statement_data.get("devise", "EUR")
-                },
-                
-                resultat_verification={
-                    "paiement_trouve": verification_result.get("paiement_trouve", False),
-                    "niveau_correspondance": verification_result.get("niveau_correspondance"),
-                    "montant_correspond": verification_result.get("montant_correspond", False),
-                    "date_correspond": verification_result.get("date_correspond", False),
-                    "operation_correspondante": verification_result.get("paiements_potentiels", [{}])[0] if verification_result.get("paiements_potentiels") else None
-                },
-                
-                anomalies=invoice_anomalies + statement_anomalies + verification_result.get("anomalies", []),
-                recommendations=generate_recommendations(verification_result),
-                
-                analyse_texte=analysis,
-                rapport_complet=full_report,
-                
-                date_creation=datetime.now(),
-                derniere_maj=datetime.now()
-            )
-            rapport.save()
-            print(f"Rapport ID {rapport.id} sauvegardé avec succès.")
+        rapport = Rapport(
+            facture=facture_obj,
+            banque=banque_obj,
+            titre=f"Rapprochement {facture_obj.numero if facture_obj else 'N/A'} - {banque_obj.nom if banque_obj else 'N/A'}",
+            statut=statut_rapport,
+            
+            invoice_data=invoice_data_for_matching,
+            statement_data=statement_data_for_matching,
+            verification_result=verification_result,
+            
+            resume_facture={
+                "emetteur": invoice_data_for_matching.get("emetteur"),
+                "numero": invoice_data_for_matching.get("numero"),
+                "date": invoice_data_for_matching.get("date"),
+                "montant_total": invoice_data_for_matching.get("montant_total"),
+                "devise": invoice_data_for_matching.get("devise", "TND")
+            },
+            resume_releve={
+                "banque": statement_data_for_matching.get("banque"),
+                "compte": statement_data_for_matching.get("numero_compte"),
+                # Afficher la période sous forme JJ/MM/AAAA - JJ/MM/AAAA si les dates sont valides, sinon la chaîne brute.
+                "periode": f"{statement_data_for_matching['date_debut'].strftime('%d/%m/%Y')} - {statement_data_for_matching['date_fin'].strftime('%d/%m/%Y')}" 
+                           if statement_data_for_matching.get("date_debut") and statement_data_for_matching.get("date_fin") 
+                           else (banque_obj.periode if banque_obj and banque_obj.periode else None), # Fallback à l'original ou None
+                "solde_final": statement_data_for_matching.get("solde_final"),
+                "devise": statement_data_for_matching.get("devise", "TND")
+            },
+            
+            resultat_verification={
+                "paiement_trouve": verification_result.get("paiement_trouve", False),
+                "niveau_correspondance": verification_result.get("niveau_correspondance"),
+                "montant_correspond": verification_result.get("montant_correspond", False),
+                "date_correspond": verification_result.get("date_correspond", False),
+                "operation_correspondante": verification_result.get("paiements_potentiels", [{}])[0] if verification_result.get("paiements_potentiels") else None
+            },
+            
+            anomalies=invoice_anomalies + statement_anomalies + verification_result.get("anomalies", []),
+            recommendations=generate_recommendations(verification_result),
+            
+            analyse_texte=analysis,
+            rapport_complet=full_report,
+            
+            date_creation=datetime.now(),
+            derniere_maj=datetime.now()
+        )
+        rapport.save()
+        print(f"Rapport ID {rapport.id} sauvegardé avec succès.")
 
-        except Exception as db_save_error:
-            print(f"ERREUR lors de la sauvegarde du rapport: {str(db_save_error)}")
-            traceback.print_exc()
-            return jsonify({"error": f"Erreur lors de la sauvegarde du rapport: {str(db_save_error)}"}), 500
-
-        # Réponse
         response_data = {
             "status": "success",
             "rapport_id": str(rapport.id),
             "statut": statut_rapport,
             "paiement_trouve": verification_result.get("paiement_trouve", False),
-            "anomalies_count": len(rapport.anomalies), # Utiliser le rapport sauvegardé
+            "anomalies_count": len(rapport.anomalies),
             "resume": {
                 "facture": rapport.resume_facture,
                 "releve": rapport.resume_releve
@@ -2101,19 +2259,11 @@ def compare_documents():
 
     except Exception as e:
         print(f"ERREUR GÉNÉRALE DANS COMPARE DOCUMENTS: {str(e)}")
-        traceback.print_exc() # Cela affichera la trace complète de l'erreur
+        import traceback
+        traceback.print_exc() # Cela affichera la pile d'appels pour le débogage
         return jsonify({"error": f"Erreur lors du traitement des documents: {str(e)}"}), 500
 
-    finally:
-        # Nettoyage des fichiers temporaires, même en cas d'erreur
-        if invoice_path and os.path.exists(invoice_path):
-            os.remove(invoice_path)
-            print(f"Fichier temporaire supprimé: {invoice_path}")
-        if statement_path and os.path.exists(statement_path):
-            os.remove(statement_path)
-            print(f"Fichier temporaire supprimé: {statement_path}")
-        print("----- FIN NETTOYAGE DES FICHIERS TEMPORAIRES -----")
-# Route pour l'interface utilisateur
+# Fonction generate_reconciliation_report (si elle n'est pas déjà définie)
 
 @app.route('/api/fichiers-importes', methods=['GET'])
 def get_imported_files():
@@ -2491,159 +2641,288 @@ def correct_reconciliation(reconciliation_id):
             "error": "Erreur interne du serveur",
             "details": str(e)
         }), 500
-      
+
 @app.route('/api/rapports/<rapport_id>', methods=['GET'])
 def get_rapport(rapport_id):
     """Récupère un rapport spécifique par son ID avec tous les détails."""
     try:
-        # 1. Validation de l'ID et conversion en ObjectId
         if not rapport_id:
             return jsonify({"success": False, "error": "ID de rapport manquant"}), 400
-        
+
         try:
             object_id = ObjectId(rapport_id)
         except Exception:
             return jsonify({"success": False, "error": "ID de rapport invalide. Doit être un ObjectId valide."}), 400
-            
-        # 2. Récupération du rapport
-        # Utilisez l'ObjectId pour la recherche dans la base de données
+
         rapport = Rapport.objects(id=object_id).first()
-        
+
         if not rapport:
             return jsonify({"success": False, "error": f"Rapport non trouvé avec l'ID: {rapport_id}"}), 404
-        
-        # 3. Construction des données de la facture (plus robuste)
-        facture_data = None
-        if rapport.facture: # Vérifie si l'objet facture existe
-            facture_data = {
-                "id": str(rapport.facture.id) if rapport.facture.id else None,
-                "numero": getattr(rapport.facture, 'numero', 'Non spécifié'),
-                "emetteur": getattr(rapport.facture, 'emetteur', 'Non spécifié'),
-                # Ajoutez d'autres champs de votre modèle Facture ici, en utilisant getattr pour éviter les erreurs
-                "date_emission": rapport.facture.date_emission.isoformat() if getattr(rapport.facture, 'date_emission', None) else None,
-                "montant_total": getattr(rapport.facture, 'montant_total', None),
-                "devise": getattr(rapport.facture, 'devise', None),
-                "statut_paiement": getattr(rapport.facture, 'statut_paiement', None),
-            }
 
-        # 4. Construction des données de la banque (plus robuste)
-        banque_data = None
-        if rapport.banque: # Vérifie si l'objet banque existe
-            banque_data = {
-                "id": str(rapport.banque.id) if rapport.banque.id else None,
-                "numero": getattr(rapport.banque, 'numero', 'Non spécifié'),
-                "nom": getattr(rapport.banque, 'nom', 'Non spécifié'), # Vous aviez 'nom' dans votre frontend, ajoutons-le ici
-                # Ajoutez d'autres champs de votre modèle Banque ici, en utilisant getattr
-                "date_debut": rapport.banque.date_debut.isoformat() if getattr(rapport.banque, 'date_debut', None) else None,
-                "date_fin": rapport.banque.date_fin.isoformat() if getattr(rapport.banque, 'date_fin', None) else None,
-                "solde_initial": getattr(rapport.banque, 'solde_initial', None),
-                "solde_final": getattr(rapport.banque, 'solde_final', None),
-                "type_compte": getattr(rapport.banque, 'type_compte', None),
-            }
-        
-        # 5. Construction de la réponse complète pour le rapport
+        # --- Données de la facture ---
+        facture_display_data = {
+            "id": str(rapport.facture.id) if rapport.facture else None,
+            "numero": getattr(rapport.facture, 'numero', "N/A") if rapport.facture else "N/A",
+            "emetteur": getattr(rapport.facture, 'emetteur', "N/A") if rapport.facture else "N/A",
+            "client": getattr(rapport.facture, 'client', "N/A") if rapport.facture else "N/A",
+            # Traiter les dates: appeler parse_date, puis formater pour JSON ou "N/A"
+            "date_emission": (parse_date(getattr(rapport.facture, 'date_emission', None)).isoformat()
+                              if rapport.facture and parse_date(getattr(rapport.facture, 'date_emission', None)) else "N/A"),
+            "montant_total": getattr(rapport.facture, 'montant_total', "N/A") if rapport.facture else "N/A",
+            "devise": getattr(rapport.facture, 'devise', "N/A") if rapport.facture else "N/A",
+            "statut_paiement": "N/A",
+            "montant_ht": getattr(rapport.facture, 'montant_ht', "N/A") if rapport.facture else "N/A",
+            "montant_tva": getattr(rapport.facture, 'montant_tva', "N/A") if rapport.facture else "N/A",
+            "montant_ttc": getattr(rapport.facture, 'montant_ttc', "N/A") if rapport.facture else "N/A",
+            "net_a_payer": getattr(rapport.facture, 'net_a_payer', "N/A") if rapport.facture else "N/A",
+            "date_echeance": (parse_date(getattr(rapport.facture, 'date_echeance', None)).isoformat()
+                               if rapport.facture and parse_date(getattr(rapport.facture, 'date_echeance', None)) else "N/A"),
+            "reference_paiement": getattr(rapport.facture, 'reference_paiement', "N/A") if rapport.facture else "N/A",
+            "mode_reglement": getattr(rapport.facture, 'mode_reglement', "N/A") if rapport.facture else "N/A",
+            "ligne_details": getattr(rapport.facture, 'ligne_details', []) if rapport.facture else [],
+        }
+
+        if rapport.resume_facture:
+            # Pour les dates du resume_facture, récupérer la valeur, la parser, puis la formater
+            date_emission_resume = parse_date(rapport.resume_facture.get("date_emission"))
+            date_echeance_resume = parse_date(rapport.resume_facture.get("date_echeance"))
+
+            facture_display_data.update({
+                "numero": rapport.resume_facture.get("numero", facture_display_data["numero"]),
+                "emetteur": rapport.resume_facture.get("emetteur", facture_display_data["emetteur"]),
+                "client": rapport.resume_facture.get("client", facture_display_data["client"]),
+                "date_emission": date_emission_resume.isoformat() if date_emission_resume else facture_display_data["date_emission"],
+                "montant_total": rapport.resume_facture.get("montant_total", facture_display_data["montant_total"]),
+                "devise": rapport.resume_facture.get("devise", facture_display_data["devise"]),
+                "montant_ht": rapport.resume_facture.get("montant_ht", facture_display_data["montant_ht"]),
+                "montant_tva": rapport.resume_facture.get("montant_tva", facture_display_data["montant_tva"]),
+                "montant_ttc": rapport.resume_facture.get("montant_ttc", facture_display_data["montant_ttc"]),
+                "net_a_payer": rapport.resume_facture.get("net_a_payer", facture_display_data["net_a_payer"]),
+                "date_echeance": date_echeance_resume.isoformat() if date_echeance_resume else facture_display_data["date_echeance"],
+                "reference_paiement": rapport.resume_facture.get("reference_paiement", facture_display_data["reference_paiement"]),
+                "mode_reglement": rapport.resume_facture.get("mode_reglement", facture_display_data["mode_reglement"]),
+                "ligne_details": rapport.resume_facture.get("ligne_details", facture_display_data["ligne_details"]),
+            })
+
+
+        # --- Données du relevé bancaire (Banque) ---
+        banque_display_data = {
+            "id": str(rapport.banque.id) if rapport.banque else None,
+            "nom_banque": getattr(rapport.banque, 'nom', "N/A") if rapport.banque else "N/A",
+            "numero_compte": getattr(rapport.banque, 'numero_compte', "N/A") if rapport.banque else "N/A",
+            "titulaire": getattr(rapport.banque, 'titulaire', "N/A") if rapport.banque else "N/A",
+            "bic": getattr(rapport.banque, 'bic', "N/A") if rapport.banque else "N/A",
+            "iban": getattr(rapport.banque, 'iban', "N/A") if rapport.banque else "N/A",
+            "numero_releve": getattr(rapport.banque, 'numero', "N/A") if rapport.banque else "N/A",
+            "periode": getattr(rapport.banque, 'periode', "N/A") if rapport.banque else "N/A",
+            # Traiter les dates de relevé
+            "date_debut": (parse_date(getattr(rapport.banque, 'date_debut', None)).isoformat()
+                           if rapport.banque and parse_date(getattr(rapport.banque, 'date_debut', None)) else "N/A"),
+            "date_fin": (parse_date(getattr(rapport.banque, 'date_fin', None)).isoformat()
+                         if rapport.banque and parse_date(getattr(rapport.banque, 'date_fin', None)) else "N/A"),
+            "solde_initial": getattr(rapport.banque, 'solde_initial', "N/A") if rapport.banque else "N/A",
+            "solde_final": getattr(rapport.banque, 'solde_final', "N/A") if rapport.banque else "N/A",
+            "total_credits": getattr(rapport.banque, 'total_credits', "N/A") if rapport.banque else "N/A",
+            "total_debits": getattr(rapport.banque, 'total_debits', "N/A") if rapport.banque else "N/A",
+            "operations": [],
+        }
+
+        if rapport.resume_releve:
+            date_debut_resume = parse_date(rapport.resume_releve.get("date_debut"))
+            date_fin_resume = parse_date(rapport.resume_releve.get("date_fin"))
+
+            banque_display_data.update({
+                "nom_banque": rapport.resume_releve.get("nom", banque_display_data["nom_banque"]),
+                "numero_compte": rapport.resume_releve.get("numero_compte", banque_display_data["numero_compte"]),
+                "titulaire": rapport.resume_releve.get("titulaire", banque_display_data["titulaire"]),
+                "bic": rapport.resume_releve.get("bic", banque_display_data["bic"]),
+                "iban": rapport.resume_releve.get("iban", banque_display_data["iban"]),
+                "numero_releve": rapport.resume_releve.get("numero", banque_display_data["numero_releve"]),
+                "periode": rapport.resume_releve.get("periode", banque_display_data["periode"]),
+                "date_debut": date_debut_resume.isoformat() if date_debut_resume else banque_display_data["date_debut"],
+                "date_fin": date_fin_resume.isoformat() if date_fin_resume else banque_display_data["date_fin"],
+                "solde_initial": rapport.resume_releve.get("solde_initial", banque_display_data["solde_initial"]),
+                "solde_final": rapport.resume_releve.get("solde_final", banque_display_data["solde_final"]),
+                "total_credits": rapport.resume_releve.get("total_credits", banque_display_data["total_credits"]),
+                "total_debits": rapport.resume_releve.get("total_debits", banque_display_data["total_debits"]),
+            })
+
+        if rapport.banque and rapport.banque.operations:
+            banque_display_data["operations"] = [
+                {
+                    "date": parse_date(op.date).isoformat() if parse_date(op.date) else "N/A", # Formatage direct ici
+                    "libelle": op.libelle,
+                    "debit": op.debit,
+                    "credit": op.credit,
+                    "solde": op.solde,
+                    "montant": op.montant,
+                    "ref_facture": op.ref_facture,
+                    "reference": op.reference,
+                    "numero_piece": op.numero_piece,
+                    "type_operation": op.type_operation,
+                } for op in rapport.banque.operations
+            ]
+
+        # --- Construction de la réponse complète pour le rapport ---
         response_data = {
             "id": str(rapport.id),
             "titre": rapport.titre,
-            # Utilisez isoformat() pour les dates, c'est un format standard et facile à parser en JS
             "date_generation": rapport.date_generation.isoformat() if rapport.date_generation else None,
+            "date_creation": rapport.date_creation.isoformat() if rapport.date_creation else None,
+            "derniere_maj": rapport.derniere_maj.isoformat() if rapport.derniere_maj else None,
             "statut": rapport.statut,
-            "facture": facture_data,
-            "banque": banque_data,
-            "resume_facture": getattr(rapport, 'resume_facture', 'Non spécifié'),
-            "resume_releve": getattr(rapport, 'resume_releve', 'Non spécifié'),
-            "resultat_verification": getattr(rapport, 'resultat_verification', 'Non spécifié'),
-            # Assurez-vous que les anomalies et recommandations sont des listes, même si vides
-            "anomalies": [str(a) for a in getattr(rapport, 'anomalies', [])],
-            "recommendations": [str(r) for r in getattr(rapport, 'recommendations', [])],
-            "analyse_texte": getattr(rapport, 'analyse_texte', 'Non spécifié'), # Nouveau champ inclus
-            "rapport_complet": getattr(rapport, 'rapport_complet', 'Non spécifié'),
+            "facture": facture_display_data,
+            "banque": banque_display_data,
+            "resume_facture": rapport.resume_facture,
+            "resume_releve": rapport.resume_releve,
+            "resultat_verification": rapport.resultat_verification,
+            "invoice_data": rapport.invoice_data,
+            "statement_data": rapport.statement_data,
+            "verification_result": rapport.verification_result,
+            "anomalies": rapport.anomalies,
+            "recommendations": rapport.recommendations,
+            "analyse_texte": rapport.analyse_texte,
+            "rapport_complet": rapport.rapport_complet,
         }
-        
-        return jsonify(response_data), 200 # Toujours bon de spécifier le statut 200 OK
-        
+
+        return jsonify(response_data), 200
+
     except Exception as e:
         print(f"Erreur lors de la récupération du rapport: {str(e)}")
         import traceback
-        traceback.print_exc() # Cela affichera la pile d'appels en cas d'erreur
+        traceback.print_exc()
         return jsonify({"success": False, "error": f"Erreur serveur: {str(e)}"}), 500
 
+
+# --- VOTRE FONCTION get_rapports CORRIGÉE ---
 @app.route('/api/rapports', methods=['GET'])
 def get_rapports():
     """Récupère la liste des rapports avec filtres"""
     try:
-        # Paramètres de filtrage
         statut = request.args.get('statut')
         facture_id = request.args.get('facture_id')
         banque_id = request.args.get('banque_id')
+        client_name = request.args.get('client_name')
+        emetteur_name = request.args.get('emetteur_name')
+        banque_name = request.args.get('banque_name')
         
-        # Construction de la requête de base
-        query = {}
-        
+        query = Q()
+
         if statut:
-            query['statut'] = statut
+            query = query & Q(statut=statut)
+        
         if facture_id:
             try:
-                query['facture'] = ObjectId(facture_id)
-            except:
+                query = query & Q(facture=ObjectId(facture_id))
+            except Exception:
                 return jsonify({"success": False, "error": "ID facture invalide"}), 400
+        
         if banque_id:
             try:
-                query['banque'] = ObjectId(banque_id)
-            except:
-                return jsonify({"success": False, "error": "ID banque invalide"}), 400
+                query = query & Q(banque=ObjectId(banque_id))
+            except Exception:
+                return jsonify({"success": False, "error": "ID relevé bancaire (Banque) invalide"}), 400
 
-        # Récupération des rapports avec gestion des références
-        rapports = Rapport.objects(**query).order_by('-date_generation')
+        if client_name:
+            query = query & (Q(facture__client__icontains=client_name) | Q(resume_facture__client__icontains=client_name))
         
-        # Formatage des résultats
+        if emetteur_name:
+            query = query & (Q(facture__emetteur__icontains=emetteur_name) | Q(resume_facture__emetteur__icontains=emetteur_name))
+
+        if banque_name:
+            query = query & (Q(banque__nom__icontains=banque_name) | Q(resume_releve__nom__icontains=banque_name))
+
+
+        rapports = Rapport.objects(query).order_by('-date_generation')
+
         results = []
         for rapport in rapports:
             try:
-                # Récupération des données liées
-                facture_data = {
-                    "id": str(rapport.facture.id),
-                    "numero": rapport.facture.numero,
-                    "emetteur": getattr(rapport.facture, 'emetteur', 'Inconnu')
-                } if rapport.facture else None
-                
-                banque_data = {
-                    "id": str(rapport.banque.id),
-                    "numero": rapport.banque.numero,
-                    "nom": getattr(rapport.banque, 'nom', 'Inconnu')
-                } if rapport.banque else None
-                
+                facture_data = None
+                if rapport.facture:
+                    # Traiter les dates de facture pour get_rapports
+                    parsed_date_emission_facture = parse_date(getattr(rapport.facture, 'date_emission', None))
+                    facture_data = {
+                        "id": str(rapport.facture.id),
+                        "numero": getattr(rapport.facture, 'numero', 'N/A'),
+                        "emetteur": getattr(rapport.facture, 'emetteur', 'N/A'),
+                        "client": getattr(rapport.facture, 'client', 'N/A'),
+                        "montant_total": getattr(rapport.facture, 'montant_total', 'N/A'),
+                        "date_emission": parsed_date_emission_facture.isoformat() if parsed_date_emission_facture else "N/A",
+                    }
+                elif rapport.resume_facture:
+                    parsed_date_emission_resume_facture = parse_date(rapport.resume_facture.get("date_emission"))
+                    facture_data = {
+                        "id": rapport.resume_facture.get("id"),
+                        "numero": rapport.resume_facture.get("numero", 'N/A'),
+                        "emetteur": rapport.resume_facture.get("emetteur", 'N/A'),
+                        "client": rapport.resume_facture.get("client", 'N/A'),
+                        "montant_total": rapport.resume_facture.get("montant_total", 'N/A'),
+                        "date_emission": parsed_date_emission_resume_facture.isoformat() if parsed_date_emission_resume_facture else "N/A",
+                    }
+
+
+                banque_data = None
+                if rapport.banque:
+                    # Traiter les dates de relevé bancaire pour get_rapports
+                    parsed_date_fin_banque = parse_date(getattr(rapport.banque, 'date_fin', None))
+                    banque_data = {
+                        "id": str(rapport.banque.id),
+                        "nom_banque": getattr(rapport.banque, 'nom', 'N/A'),
+                        "numero_compte": getattr(rapport.banque, 'numero_compte', 'N/A'),
+                        "titulaire": getattr(rapport.banque, 'titulaire', 'N/A'),
+                        "periode": getattr(rapport.banque, 'periode', 'N/A'),
+                        "solde_final": getattr(rapport.banque, 'solde_final', 'N/A'),
+                        "date_fin": parsed_date_fin_banque.isoformat() if parsed_date_fin_banque else "N/A",
+                    }
+                elif rapport.resume_releve:
+                    parsed_date_fin_resume_releve = parse_date(rapport.resume_releve.get("date_fin"))
+                    banque_data = {
+                        "id": rapport.resume_releve.get("id"),
+                        "nom_banque": rapport.resume_releve.get("nom", 'N/A'),
+                        "numero_compte": rapport.resume_releve.get("numero_compte", 'N/A'),
+                        "titulaire": rapport.resume_releve.get("titulaire", 'N/A'),
+                        "periode": rapport.resume_releve.get("periode", 'N/A'),
+                        "solde_final": rapport.resume_releve.get("solde_final", 'N/A'),
+                        "date_fin": parsed_date_fin_resume_releve.isoformat() if parsed_date_fin_resume_releve else "N/A",
+                    }
+
                 results.append({
                     "id": str(rapport.id),
                     "titre": rapport.titre,
-                    "date_generation": rapport.date_generation.isoformat(),
+                    "date_generation": rapport.date_generation.isoformat() if rapport.date_generation else None,
                     "statut": rapport.statut,
                     "facture": facture_data,
                     "banque": banque_data,
+                    "anomalies": rapport.anomalies, # <-- Nouvelle ligne, directement
                     "anomalies_count": len(rapport.anomalies),
                     "has_anomalies": len(rapport.anomalies) > 0
                 })
-                
+
             except Exception as e:
                 print(f"Erreur de formatage pour le rapport {str(rapport.id)}: {str(e)}")
+                import traceback
+                traceback.print_exc()
                 continue
-        
+
         return jsonify({
             "success": True,
             "count": len(results),
             "data": results
-        })
-        
+        }), 200
+
     except Exception as e:
         print(f"Erreur dans get_rapports: {str(e)}")
+        import traceback
+        traceback.print_exc()
         return jsonify({
             "success": False,
             "error": "Erreur serveur",
             "message": str(e),
-            "data": []  # Retourne un tableau vide en cas d'erreur
-
+            "data": []
         }), 500
-    
+
+
 @app.route('/api/rapports/<rapport_id>/pdf', methods=['GET'])
 def generate_rapport_pdf(rapport_id):
     """Génère un PDF pour un rapport spécifique"""
@@ -2696,16 +2975,17 @@ def generate_rapport_pdf(rapport_id):
         import traceback
         traceback.print_exc()
         return jsonify({"error": f"Erreur lors de la génération du PDF: {str(e)}"}), 500 
-@app.route('/api/rapports/<rapport_id>/excel', methods=['GET'])
+@app.route('/api/rapports/<rapport_id>/excel', methods=['GET']) # Ou @api_bp.route
 def generate_rapport_excel(rapport_id):
-    """Génère un fichier Excel pour un rapport spécifique"""
+    """
+    Génère un fichier Excel pour un rapport spécifique,
+    avec des améliorations de formatage (hauteur de ligne et largeur de colonne).
+    """
     try:
-        # Récupérer le rapport depuis la base de données
         rapport = Rapport.objects(id=rapport_id).first()
         if not rapport:
             return jsonify({"error": f"Rapport non trouvé avec l'ID: {rapport_id}"}), 404
 
-        # Préparer les données pour le DataFrame pandas
         data = {
             'Titre du Rapport': [rapport.titre],
             'Date de Génération': [rapport.date_generation.strftime("%Y-%m-%d %H:%M:%S")],
@@ -2724,23 +3004,88 @@ def generate_rapport_excel(rapport_id):
 
         df = pd.DataFrame(data)
 
-        # Créer un buffer pour stocker le fichier Excel en mémoire
         output = BytesIO()
-        df.to_excel(output, index=False, sheet_name='Rapport')
+        
+        # Utilisez pandas.ExcelWriter pour manipuler la feuille de calcul
+        with pd.ExcelWriter(output, engine='openpyxl') as writer:
+            df.to_excel(writer, index=False, sheet_name='Rapport')
+            
+            # Accéder à la feuille de calcul pour le formatage
+            worksheet = writer.sheets['Rapport']
+
+            # 1. Ajuster la hauteur des lignes
+            # Parcourez toutes les lignes et définissez une hauteur minimale.
+            # Ou vous pouvez itérer sur les cellules si vous voulez une hauteur dynamique basée sur le contenu.
+            # Pour une hauteur fixe pour toutes les lignes de données:
+            # Note: La ligne d'en-tête est la ligne 1 (index 1 dans openpyxl)
+            for row_idx in range(1, len(df) + 2): # +1 pour les en-têtes, +1 pour le range
+                worksheet.row_dimensions[row_idx].height = 50 # Définir une hauteur de 50 points (ajustez selon le besoin)
+
+            # 2. Ajuster la largeur des colonnes
+            # Vous pouvez définir une largeur fixe pour chaque colonne.
+            # Pour une largeur "auto-ajustée" (approximative) basée sur le contenu :
+            for column in worksheet.columns:
+                max_length = 0
+                column_name = column[0].column_letter # 'A', 'B', 'C', etc.
+                
+                # Calcule la longueur maximale du contenu dans la colonne
+                for cell in column:
+                    try: # Évite les erreurs si la cellule est vide
+                        if len(str(cell.value)) > max_length:
+                            max_length = len(cell.value)
+                    except:
+                        pass
+                
+                adjusted_width = (max_length + 2) * 1.2 # Un facteur d'ajustement pour un meilleur rendu
+                if adjusted_width > 75: # Limiter la largeur maximale pour éviter des colonnes trop larges
+                    adjusted_width = 75
+                elif adjusted_width < 15: # Largeur minimale pour la lisibilité
+                    adjusted_width = 15
+                
+                worksheet.column_dimensions[column_name].width = adjusted_width
+
+            # Cas spécifique pour les colonnes 'Anomalies' et 'Recommandations'
+            # Puisqu'elles contiennent des sauts de ligne ('\n'), la largeur automatique ne suffit pas toujours.
+            # Vous devrez peut-être envelopper le texte ou augmenter la hauteur des lignes.
+            # Pour l'habillage du texte (wrap text):
+            from openpyxl.styles import Alignment
+            for col_idx, col_header in enumerate(df.columns):
+                if col_header in ['Anomalies', 'Recommandations']:
+                    # Obtient la lettre de la colonne (ex: 'J' pour la 10ème colonne)
+                    col_letter = openpyxl.utils.get_column_letter(col_idx + 1)
+                    for row in worksheet.iter_rows(min_row=1, min_col=col_idx + 1, max_col=col_idx + 1):
+                        for cell in row:
+                            cell.alignment = Alignment(wrap_text=True, vertical='top') # Habiller le texte et aligner en haut
+                    
+                    # Augmenter spécifiquement la largeur de ces colonnes si nécessaire
+                    worksheet.column_dimensions[col_letter].width = 60 # Ajustez cette valeur
+                    
+                    # Vous pouvez également augmenter la hauteur de ligne pour ces lignes spécifiques
+                    # si le contenu est très long et les sauts de ligne sont fréquents.
+                    # Cependant, mettre une hauteur de ligne fixe pour toutes les lignes (comme fait plus haut)
+                    # ou une hauteur dynamique basée sur le contenu serait plus robuste.
+                    # Pour une hauteur dynamique basée sur les retours à la ligne:
+                    # Il faudrait parcourir chaque cellule, compter les '\n' et ajuster la hauteur de la ligne.
+                    # C'est plus complexe, la hauteur fixe et le wrap text sont un bon début.
+
+
+        # IMPORTANT: output.seek(0) doit être APRES la fermeture de l'ExcelWriter
+        # pour s'assurer que toutes les écritures sont terminées dans le buffer.
         output.seek(0)
 
-        # Préparer la réponse avec le bon type MIME
+        # Préparer la réponse HTTP
         response = make_response(output.getvalue())
-        response.headers['Content-Type'] = 'application/vnd.ms-excel'
+        response.headers['Content-Type'] = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
         response.headers['Content-Disposition'] = f'attachment; filename=rapport-{rapport_id}.xlsx'
 
         return response
 
     except Exception as e:
-        print(f"Erreur lors de la génération de l'Excel: {str(e)}")
+        # current_app.logger.error(f"Erreur lors de la génération de l'Excel pour le rapport {rapport_id}: {str(e)}")
         import traceback
         traceback.print_exc()
-        return jsonify({"error": f"Erreur lors de la génération de l'Excel: {str(e)}"}), 500 
+        return jsonify({"error": f"Erreur lors de la génération de l'Excel: {str(e)}"}), 500
+
 @app.route('/api/rapports/<rapport_id>', methods=['DELETE'])
 def delete_rapport(rapport_id):
     """Supprime un rapport spécifique de la base de données."""
@@ -2755,38 +3100,273 @@ def delete_rapport(rapport_id):
         return jsonify({"error": f"Erreur lors de la suppression du rapport: {str(e)}"}), 500 
 @app.route('/api/rapports/<rapport_id>', methods=['PUT'])
 def update_rapport(rapport_id):
-    """Met à jour les informations d'un rapport spécifique."""
+    """
+    Met à jour les informations modifiables d'un rapport spécifique par son ID.
+    Permet la mise à jour partielle des champs du rapport, en se concentrant
+    sur les données qui peuvent être logiquement éditées manuellement.
+    """
     try:
-        rapport = Rapport.objects.get(id=rapport_id)
-        data = request.get_json()
+        if not rapport_id:
+            return jsonify({"success": False, "error": "ID de rapport manquant"}), 400
 
-        # Valider et mettre à jour les champs du rapport en fonction des données reçues
-        if 'titre' in data:
-            rapport.titre = data['titre']
-        if 'statut' in data:
-            rapport.statut = data['statut']
-        if 'resume_facture' in data:
-            rapport.resume_facture = data['resume_facture']
-        if 'resume_releve' in data:
-            rapport.resume_releve = data['resume_releve']
-        if 'anomalies' in data:
-            rapport.anomalies = data['anomalies']
-        if 'recommendations' in data:
-            rapport.recommendations = data['recommendations']
-        if 'analyse_texte' in data:
-            rapport.analyse_texte = data['analyse_texte']
-        if 'rapport_complet' in data:
-            rapport.rapport_complet = data['rapport_complet']
-        # Vous pouvez ajouter ici la logique pour mettre à jour d'autres champs
-        # y compris potentiellement les objets liés comme 'facture' et 'banque'
+        try:
+            object_id = ObjectId(rapport_id)
+        except Exception:
+            return jsonify({"success": False, "error": "ID de rapport invalide. Doit être un ObjectId valide."}), 400
+
+        rapport = Rapport.objects(id=object_id).first()
+
+        if not rapport:
+            return jsonify({"success": False, "error": f"Rapport non trouvé avec l'ID: {rapport_id}"}), 404
+
+        data = request.get_json()
+        if not data:
+            return jsonify({"success": False, "error": "Données JSON manquantes dans la requête"}), 400
+
+        # Champs autorisés pour une mise à jour directe et logique
+        # Exclure les champs générés automatiquement ou dérivés
+        # 'statut' est inclus car il peut être modifié manuellement (ex: marqué comme résolu)
+        allowed_fields_for_manual_update = [
+            'titre',
+            'statut', # Le statut peut être modifié manuellement (ex: passer de 'anomalie' à 'complet' après correction)
+            'recommendations',
+            'rapport_complet', # Si c'est un flag de finalisation
+            # 'analyse_texte' - à inclure si vous avez un cas d'usage réel pour la modification manuelle
+        ]
+
+        updated_fields = []
+        for field, value in data.items():
+            if field in allowed_fields_for_manual_update:
+                try:
+                    # Traitement spécifique pour le statut si nécessaire (validation des valeurs)
+                    if field == 'statut':
+                        # Optionnel: valider la valeur du statut contre une liste prédéfinie
+                        # Par exemple, si vos statuts possibles sont "complet", "incomplet", "anomalie", "en_revue"
+                        valid_statuts = ["complet", "incomplet", "anomalie", "en_revue"]
+                        if value not in valid_statuts:
+                            return jsonify({
+                                "success": False,
+                                "error": f"Valeur de statut '{value}' invalide. Doit être l'une des suivantes : {', '.join(valid_statuts)}."
+                            }), 400
+                    
+                    setattr(rapport, field, value)
+                    updated_fields.append(field)
+                except ValidationError as ve:
+                    # Erreur de validation de MongoEngine (ex: type de données incorrect)
+                    return jsonify({"success": False, "error": f"Erreur de validation pour le champ '{field}': {str(ve)}"}), 400
+            else:
+                # Log ou ignorer les champs non autorisés pour la mise à jour directe
+                print(f"Avertissement: Tentative de mise à jour du champ '{field}' non autorisé ou non logique. Champ ignoré.")
+                # Ou si vous voulez être strict, décommentez la ligne suivante:
+                # return jsonify({"success": False, "error": f"Le champ '{field}' ne peut pas être mis à jour directement."}), 400
+
+        # Mettre à jour le champ 'derniere_maj' à l'heure actuelle
+        rapport.derniere_maj = datetime.now()
 
         rapport.save()
-        return jsonify({"message": f"Rapport avec l'ID {rapport_id} mis à jour avec succès."}), 200
+
+        if not updated_fields:
+            return jsonify({
+                "success": True,
+                "message": f"Rapport avec l'ID {rapport_id} trouvé, mais aucune mise à jour pertinente n'a été appliquée (aucun champ valide et modifiable fourni).",
+                "updated_fields": []
+            }), 200
+
+        return jsonify({
+            "success": True,
+            "message": f"Rapport avec l'ID {rapport_id} mis à jour avec succès.",
+            "updated_fields": updated_fields
+        }), 200
+
     except DoesNotExist:
-        return jsonify({"error": f"Rapport non trouvé avec l'ID: {rapport_id}"}), 404
+        return jsonify({"success": False, "error": f"Rapport non trouvé avec l'ID: {rapport_id}"}), 404
+    except ValidationError as e:
+        # Attraper les erreurs de validation de MongoEngine qui pourraient survenir lors de l'enregistrement
+        return jsonify({"success": False, "error": f"Erreur de validation des données lors de l'enregistrement: {str(e)}"}), 400
     except Exception as e:
-        print(f"Erreur lors de la mise à jour du rapport: {str(e)}")
-        return jsonify({"error": f"Erreur lors de la mise à jour du rapport: {str(e)}"}), 500  
+        print(f"Erreur inattendue lors de la mise à jour du rapport: {str(e)}")
+        import traceback
+        traceback.print_exc() # Pour le débogage détaillé sur le serveur
+        return jsonify({"success": False, "error": f"Erreur serveur inattendue: {str(e)}"}), 500
+
+@app.route('/api/rapports/<rapport_id>/validate', methods=['POST'])
+def validate_rapport(rapport_id):
+    """
+    Valide un rapport s'il ne contient pas d'anomalies non corrigées
+    et met à jour son statut à 'validé'.
+    """
+    try:
+        if not rapport_id:
+            return jsonify({"success": False, "error": "ID de rapport manquant"}), 400
+
+        try:
+            object_id = ObjectId(rapport_id)
+        except Exception:
+            return jsonify({"success": False, "error": "ID de rapport invalide. Doit être un ObjectId valide."}), 400
+
+        rapport = Rapport.objects(id=object_id).first()
+
+        if not rapport:
+            return jsonify({"success": False, "error": f"Rapport non trouvé avec l'ID: {rapport_id}"}), 404
+
+        # Vérifier si le rapport est déjà validé
+        if rapport.statut and rapport.statut.lower() == "validé":
+            return jsonify({"success": False, "error": "Ce rapport est déjà validé."}), 400
+
+        # Vérifier si le rapport contient des anomalies avant de valider
+        if hasattr(rapport, 'anomalies') and rapport.anomalies and len(rapport.anomalies) > 0:
+            return jsonify({
+                "success": False, 
+                "error": "Impossible de valider un rapport contenant des anomalies non corrigées. Veuillez l'ajuster d'abord."
+            }), 400
+
+        # Mettre à jour le statut du rapport à 'validé' (standardisé)
+        rapport.statut = "Validé"  # Toujours en minuscules
+        rapport.derniere_maj = datetime.now(timezone.utc)
+        rapport.save()
+
+        # IMPORTANT: Recharger l'objet depuis la base pour s'assurer de la cohérence
+        rapport.reload()
+
+        # Construction de la réponse
+        response_data = {
+            "id": str(rapport.id),
+            "titre": rapport.titre,
+            "date_generation": rapport.date_generation.isoformat() if rapport.date_generation else None,
+            "date_creation": rapport.date_creation.isoformat() if rapport.date_creation else None,
+            "derniere_maj": rapport.derniere_maj.isoformat(),
+            "statut": rapport.statut,  # Retourner exactement ce qui est en base
+            "anomalies": getattr(rapport, 'anomalies', []),
+            "anomalies_count": len(getattr(rapport, 'anomalies', [])),
+            "has_anomalies": len(getattr(rapport, 'anomalies', [])) > 0,
+            "facture": {
+                "id": str(rapport.facture.id) if rapport.facture else None,
+                "numero": getattr(rapport.facture, 'numero', 'N/A') if rapport.facture else getattr(rapport, 'resume_facture', {}).get('numero', 'N/A'),
+                "emetteur": getattr(rapport.facture, 'emetteur', 'N/A') if rapport.facture else getattr(rapport, 'resume_facture', {}).get('emetteur', 'N/A'),
+            },
+            "banque": {
+                "id": str(rapport.banque.id) if rapport.banque else None,
+                "nom_banque": getattr(rapport.banque, 'nom', 'N/A') if rapport.banque else getattr(rapport, 'resume_releve', {}).get('nom', 'N/A'),
+                "numero_compte": getattr(rapport.banque, 'numero_compte', 'N/A') if rapport.banque else getattr(rapport, 'resume_releve', {}).get('numero_compte', 'N/A'),
+            }
+        }
+
+        # Log pour debug
+        current_app.logger.info(f"Rapport {rapport_id} validé avec succès. Statut final: {rapport.statut}")
+
+        return jsonify({"success": True, "data": response_data}), 200
+
+    except DoesNotExist:
+        return jsonify({"success": False, "error": "Rapport non trouvé"}), 404
+    except ValidationError as e:
+        return jsonify({"success": False, "error": f"Données de rapport invalides: {str(e)}"}), 400
+    except Exception as e:
+        current_app.logger.error(f"Erreur lors de la validation du rapport {rapport_id}: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({"success": False, "error": f"Erreur interne du serveur lors de la validation: {str(e)}"}), 500
+# --- Route pour Ajuster (Corriger) un Rapport ---
+# Cette route recevra les modifications du frontend pour les anomalies.
+# Le frontend devra envoyer un tableau mis à jour d'anomalies, ou d'autres champs du rapport.
+@app.route('/api/rapports/<rapport_id>/adjust', methods=['PUT'])
+def adjust_rapport(rapport_id):
+    """
+    Ajuste (corrige) un rapport, par exemple en vidant les anomalies
+    ou en mettant à jour d'autres champs suite à une correction manuelle.
+    Le statut du rapport est mis à 'Ajusté'.
+    """
+    try:
+        if not rapport_id:
+            return jsonify({"success": False, "error": "ID de rapport manquant"}), 400
+
+        try:
+            object_id = ObjectId(rapport_id)
+        except Exception:
+            return jsonify({"success": False, "error": "ID de rapport invalide. Doit être un ObjectId valide."}), 400
+
+        rapport = Rapport.objects(id=object_id).first()
+
+        if not rapport:
+            return jsonify({"success": False, "error": f"Rapport non trouvé avec l'ID: {rapport_id}"}), 404
+
+        # Empêcher l'ajustement si le rapport est déjà validé
+        if rapport.statut == "Validé":
+            return jsonify({"success": False, "error": "Impossible d'ajuster un rapport déjà validé."}), 400
+
+        data = request.get_json()
+        if not data:
+            return jsonify({"success": False, "error": "Aucune donnée fournie pour l'ajustement."}), 400
+
+        # --- DEBUGGING START (keep for now, remove after successful fix) ---
+        print(f"DEBUG: Type of rapport.anomalies before update: {type(rapport.anomalies)}")
+        if hasattr(Rapport, '_fields') and 'anomalies' in Rapport._fields:
+            field_type = Rapport._fields['anomalies'].__class__.__name__
+            print(f"DEBUG: Declared type of 'anomalies' in Rapport model: {field_type}")
+            if isinstance(Rapport._fields['anomalies'], ListField):
+                print(f"DEBUG: Inner field type of 'anomalies' (if ListField): {Rapport._fields['anomalies'].field.__class__.__name__}")
+        else:
+            print("DEBUG: 'anomalies' field definition not found or _fields not accessible.")
+
+        new_anomalies = data.get('anomalies', [])
+        print(f"DEBUG: Type of 'new_anomalies' from request: {type(new_anomalies)}")
+        print(f"DEBUG: Value of 'new_anomalies' from request: {new_anomalies}")
+        # --- DEBUGGING END ---
+
+        # Exemple de correction: Vider les anomalies ou les remplacer par des anomalies corrigées
+        # Le frontend enverra le nouveau tableau d'anomalies (qui est maintenant une liste de chaînes)
+        rapport.anomalies = new_anomalies
+
+        # Vous pourriez aussi permettre la modification d'autres champs si nécessaire
+        # rapport.resume_facture = data.get('resume_facture', rapport.resume_facture)
+        # rapport.resume_releve = data.get('resume_releve', rapport.resume_releve)
+        # rapport.resultat_verification = data.get('resultat_verification', rapport.resultat_verification)
+
+        # Mettre à jour le statut à 'Ajusté'
+        rapport.statut = "Ajusté"
+        rapport.derniere_maj = datetime.now(timezone.utc)
+        rapport.save() # This is where the save happens
+
+        # --- RESPONSE DATA DEFINITION - THIS WAS MISSING OR MISPLACED ---
+        # Retourner les données mises à jour du rapport (simplifié pour la table)
+        response_data = {
+            "id": str(rapport.id),
+            "titre": rapport.titre,
+            "date_generation": rapport.date_generation.isoformat() if rapport.date_generation else None,
+            "date_creation": rapport.date_creation.isoformat() if rapport.date_creation else None,
+            "derniere_maj": rapport.derniere_maj.isoformat() if rapport.derniere_maj else None,
+            "statut": rapport.statut,
+            "anomalies": rapport.anomalies, # This will now be the list of strings
+            "anomalies_count": len(rapport.anomalies),
+            "has_anomalies": len(rapport.anomalies) > 0,
+            "facture": { # Pour la table, renvoyer les infos facture/banque nécessaires
+                "id": str(rapport.facture.id) if rapport.facture else None,
+                "numero": getattr(rapport.facture, 'numero', 'N/A') if rapport.facture else getattr(rapport.resume_facture, 'numero', 'N/A'),
+                "emetteur": getattr(rapport.facture, 'emetteur', 'N/A') if rapport.facture else getattr(rapport.resume_facture, 'emetteur', 'N/A'),
+            },
+            "banque": {
+                "id": str(rapport.banque.id) if rapport.banque else None,
+                "nom_banque": getattr(rapport.banque, 'nom', 'N/A') if rapport.banque else getattr(rapport.resume_releve, 'nom', 'N/A'),
+                "numero_compte": getattr(rapport.banque, 'numero_compte', 'N/A') if rapport.banque else getattr(rapport.resume_releve, 'numero_compte', 'N/A'),
+            }
+        }
+        # --- END RESPONSE DATA DEFINITION ---
+
+        return jsonify({"success": True, "data": response_data}), 200
+
+    except DoesNotExist:
+        # This DoesNotExist specifically refers to the rapport not being found by its ID
+        # or a dereference error if a linked document (Facture/Banque) is missing.
+        current_app.logger.error(f"Rapport ou document lié non trouvé pour l'ID: {rapport_id}")
+        return jsonify({"success": False, "error": "Rapport non trouvé ou document lié manquant."}), 404
+    except ValidationError as e:
+        print(f"DEBUG: Caught ValidationError: {str(e)}")
+        current_app.logger.error(f"Données de rapport invalides pour l'ajustement: {str(e)}")
+        return jsonify({"success": False, "error": f"Données de rapport invalides: {str(e)}"}), 400
+    except Exception as e:
+        current_app.logger.error(f"Erreur interne du serveur lors de l'ajustement du rapport {rapport_id}: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({"success": False, "error": f"Erreur interne du serveur lors de l'ajustement: {str(e)}"}), 500
 
 @app.route('/api/dashboard/finance', methods=['GET'])
 def financial_dashboard():

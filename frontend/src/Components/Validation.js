@@ -22,14 +22,30 @@ const AdminActionsList = () => {
   const [viewMode, setViewMode] = useState('table'); // 'table' ou 'cards'
 
   // Configurations
-  const ACTION_TYPES = useMemo(() => [
-    { value: 'Tous', label: 'Toutes les actions' },
-    { value: 'ajout', label: 'Ajouts', icon: <FaUserPlus className="mr-2" /> },
-    { value: 'modification', label: 'Modifications', icon: <FaUserEdit className="mr-2" /> },
-    { value: 'suppression', label: 'Suppressions', icon: <FaTrashAlt className="mr-2" /> },
-    { value: 'connexion', label: 'Connexions', icon: <FaSignInAlt className="mr-2" /> },
-    { value: 'déconnexion', label: 'Déconnexions', icon: <FaSignInAlt className="mr-2 transform rotate-180" /> }
-  ], []);
+const ACTION_TYPES = useMemo(() => [
+ { value: 'Tous', label: 'Toutes les actions' },
+ { value: 'ajout', label: 'Ajouts (Générique)', icon: <FaUserPlus className="mr-2" /> },
+ { value: 'modification', label: 'Modifications (Générique)', icon: <FaUserEdit className="mr-2" /> },
+{ value: 'suppression', label: 'Suppressions (Générique)', icon: <FaTrashAlt className="mr-2" /> },
+ { value: 'connexion', label: 'Connexions', icon: <FaSignInAlt className="mr-2" /> },
+ { value: 'déconnexion', label: 'Déconnexions', icon: <FaSignInAlt className="mr-2 transform rotate-180" /> },
+ { value: 'creation', label: 'Créations (Générique)', icon: <FaUserPlus className="mr-2" /> }, // Ajouté
+
+    // Nouveaux types pour les Factures
+    { value: 'ajout_facture', label: 'Ajout Facture', icon: <FaUserPlus className="mr-2 text-blue-500" /> },
+    { value: 'modification_facture', label: 'Modification Facture', icon: <FaUserEdit className="mr-2 text-blue-500" /> },
+    { value: 'suppression_facture', label: 'Suppression Facture', icon: <FaTrashAlt className="mr-2 text-blue-500" /> },
+    { value: 'consultation_facture', label: 'Consultation Facture', icon: <FaSearch className="mr-2 text-blue-500" /> },
+    { value: 'consultation_liste_factures', label: 'Consultation Liste Factures', icon: <FaSearch className="mr-2 text-blue-500" /> },
+
+    // Nouveaux types pour les Audits (déjà présents dans le backend, mais on les rend explicites ici)
+    { value: 'creation_audit', label: 'Création Audit', icon: <FaChartBar className="mr-2 text-purple-500" /> },
+    { value: 'modification_audit', label: 'Modification Audit', icon: <FaChartBar className="mr-2 text-purple-500" /> },
+    { value: 'suppression_audit', label: 'Suppression Audit', icon: <FaChartBar className="mr-2 text-purple-500" /> },
+    { value: 'consultation_audit', label: 'Consultation Audit', icon: <FaChartBar className="mr-2 text-purple-500" /> },
+    { value: 'consultation_liste_audits', label: 'Consultation Liste Audits', icon: <FaChartBar className="mr-2 text-purple-500" /> }
+
+ ], []);
 
   const USER_ROLES = useMemo(() => [
     { value: 'Tous', label: 'Tous les rôles' },
@@ -39,33 +55,33 @@ const AdminActionsList = () => {
   ], []);
 
   // Classes de type d'action avec icônes
-  const ACTION_TYPE_CONFIG = useMemo(() => ({
-    'ajout': { 
-      class: 'bg-green-100 text-green-800',
-      icon: <FaUserPlus className="mr-1" />
-    },
-    'modification': { 
-      class: 'bg-yellow-100 text-yellow-800',
-      icon: <FaUserEdit className="mr-1" />
-    },
-    'suppression': { 
-      class: 'bg-red-100 text-red-800',
-      icon: <FaTrashAlt className="mr-1" />
-    },
-    'connexion': { 
-      class: 'bg-blue-100 text-blue-800',
-      icon: <FaSignInAlt className="mr-1" />
-    },
-    'déconnexion': { 
-      class: 'bg-gray-100 text-gray-800',
-      icon: <FaSignInAlt className="mr-1 transform rotate-180" />
-    },
-    'default': {
-      class: 'bg-gray-100 text-gray-800',
-      icon: <FaChartBar className="mr-1" />
-    }
-  }), []);
+ const ACTION_TYPE_CONFIG = useMemo(() => ({
+ 'ajout': { class: 'bg-green-100 text-green-800', icon: <FaUserPlus className="mr-1" /> },
+ 'modification': { class: 'bg-yellow-100 text-yellow-800', icon: <FaUserEdit className="mr-1" /> },
+ 'suppression': { class: 'bg-red-100 text-red-800', icon: <FaTrashAlt className="mr-1" /> },
+ 'connexion': { class: 'bg-blue-100 text-blue-800', icon: <FaSignInAlt className="mr-1" /> },
+ 'déconnexion': { class: 'bg-gray-100 text-gray-800', icon: <FaSignInAlt className="mr-1 transform rotate-180" /> },
+    'creation': { class: 'bg-indigo-100 text-indigo-800', icon: <FaUserPlus className="mr-1" /> }, // Ajouté
 
+    // Configurations pour les Factures
+    'ajout_facture': { class: 'bg-green-100 text-green-800', icon: <FaUserPlus className="mr-1 text-blue-500" /> },
+    'modification_facture': { class: 'bg-yellow-100 text-yellow-800', icon: <FaUserEdit className="mr-1 text-blue-500" /> },
+    'suppression_facture': { class: 'bg-red-100 text-red-800', icon: <FaTrashAlt className="mr-1 text-blue-500" /> },
+    'consultation_facture': { class: 'bg-teal-100 text-teal-800', icon: <FaSearch className="mr-1 text-blue-500" /> },
+    'consultation_liste_factures': { class: 'bg-teal-100 text-teal-800', icon: <FaSearch className="mr-1 text-blue-500" /> },
+
+    // Configurations pour les Audits
+    'creation_audit': { class: 'bg-purple-100 text-purple-800', icon: <FaChartBar className="mr-1 text-purple-500" /> },
+    'modification_audit': { class: 'bg-purple-100 text-purple-800', icon: <FaChartBar className="mr-1 text-purple-500" /> },
+    'suppression_audit': { class: 'bg-purple-100 text-purple-800', icon: <FaChartBar className="mr-1 text-purple-500" /> },
+    'consultation_audit': { class: 'bg-purple-100 text-purple-800', icon: <FaChartBar className="mr-1 text-purple-500" /> },
+    'consultation_liste_audits': { class: 'bg-purple-100 text-purple-800', icon: <FaChartBar className="mr-1 text-purple-500" /> },
+
+ 'default': {
+ class: 'bg-gray-100 text-gray-800',
+ icon: <FaChartBar className="mr-1" />
+ }
+}), []);
   // Charger les actions
   const fetchActions = async () => {
     try {
@@ -108,7 +124,7 @@ const AdminActionsList = () => {
     return actions.filter(action => {
       const matchesSearch = 
         (action.description?.toLowerCase().includes(term)) || 
-        (action.audit?.toLowerCase().includes(term)) ||
+        
         (action.username?.toLowerCase().includes(term));
       
       const matchesType = filterType === 'Tous' || 

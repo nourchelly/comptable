@@ -3,12 +3,15 @@ import logging
 from bson.errors import InvalidId
 from decimal import Decimal,InvalidOperation
 from datetime import datetime as dt
+
 from rest_framework.permissions import IsAuthenticated, IsAdminUser
 from rest_framework.decorators import (
     api_view, 
     authentication_classes,  # Ajoutez ceci
     permission_classes
 )
+from mongoengine import errors as mongoengine_errors # Importer spécifiquement les erreurs de mongoengine
+import datetime # Make sure this import is at the top of your file
 import locale
 from django.utils.timezone import localtime
 from rest_framework_simplejwt.authentication import JWTAuthentication
@@ -743,6 +746,33 @@ import json
 
 @csrf_exempt
 def login_view(request):
+    """
+    Handles user login, authenticates credentials, checks account status,
+    and generates JWT tokens upon successful login.
+    """
+
+    # Define log_action function directly within the view or import it
+    def log_action(user, action_type, description, details, statut):
+        # Only log actions for 'comptable' or 'directeur' roles
+        if user and (user.role == 'comptable' or user.role == 'directeur'):
+            try:
+                ActionLog(
+                    user=user,
+                    type_action=action_type,  # This needs to be one of the allowed choices
+                    description=description,
+                    details=details,
+                    statut=statut
+                ).save()
+            except ValidationError as e:
+                logger.error(f"ValidationError when logging action for user {user.id}: {e}")
+            except Exception as e:
+                logger.error(f"Error saving ActionLog for user {user.id}: {e}")
+        else:
+            # Optionally log attempts for other roles if needed for auditing,
+            # but using a different log type/description if preferred.
+            logger.info(f"Attempted to log action for non-comptable/directeur user {getattr(user, 'id', 'N/A')} (Role: {getattr(user, 'role', 'N/A')}). Skipping specific ActionLog entry.")
+
+
     if request.method != 'POST':
         return JsonResponse({'status': 'error', 'message': 'Méthode non autorisée'}, status=405)
 
@@ -752,55 +782,64 @@ def login_view(request):
         password = data.get('password')
 
         if not all([email, password]):
+            logger.warning("Login attempt with missing email or password.")
             return JsonResponse({'status': 'error', 'message': 'Tous les champs sont requis'}, status=400)
 
         try:
             user = CustomUser.objects.get(email=email)
         except DoesNotExist:
+            logger.warning(f"Login attempt for non-existent email: {email}")
             return JsonResponse({'status': 'error', 'message': 'Email ou mot de passe invalide'}, status=401)
 
         if not user.check_password(password):
+            # Corrected action_type: 'connexion' is appropriate for a login attempt
+            log_action(user, 'connexion', "Tentative de connexion échouée (mot de passe invalide)", f"Email: {email}", "Échec")
             return JsonResponse({'status': 'error', 'message': 'Email ou mot de passe invalide'}, status=401)
 
-        # BYPASS POUR LES ADMINS : Les admins peuvent se connecter directement
         user_role = getattr(user, 'role', 'user')
         is_admin = user.is_superuser or user_role == 'admin'
-        
+
         if is_admin:
             logger.info(f"Admin login bypass for user {user.id} - Role: {user_role} - Superuser: {user.is_superuser}")
-            # Les admins passent directement à la génération du token
-            pass
+            # Corrected action_type: 'connexion' for successful login
+            log_action(user, 'connexion', "Connexion réussie (Admin Bypass)", f"Role: {user_role}", "Terminé")
+            pass # Admins skip further checks and proceed to token generation
         else:
             # VÉRIFICATIONS COMPLÈTES POUR LES NON-ADMINS (comptable/directeur)
             if not user.is_active:
                 approval_status = getattr(user, 'approval_status', '')
-                
+
                 if approval_status == 'pending':
-                    # Vérifier si l'utilisateur a un token d'activation (pas encore activé par email)
                     if hasattr(user, 'activation_token') and user.activation_token:
+                        # Corrected action_type: 'connexion' for a failed login due to activation
+                        log_action(user, 'connexion', "Connexion échouée (Compte non activé par email)", f"Email: {email}", "Échec")
                         return JsonResponse({
                             'status': 'error',
                             'message': 'Votre compte n\'est pas encore activé. Veuillez vérifier votre email et cliquer sur le lien d\'activation.',
                             'action_required': 'email_activation'
                         }, status=403)
                     else:
-                        # Email activé mais en attente d'approbation admin
+                        # Corrected action_type: 'connexion' for a failed login due to admin approval
+                        log_action(user, 'connexion', "Connexion échouée (En attente d'approbation administrateur)", f"Email: {email}", "Échec")
                         return JsonResponse({
                             'status': 'error',
                             'message': 'Votre compte est activé mais en attente d\'approbation par un administrateur.',
                             'action_required': 'admin_approval'
                         }, status=403)
-                
+
                 elif approval_status == 'rejected':
                     reason = getattr(user, 'rejection_reason', 'Aucune raison spécifiée.')
+                    # Corrected action_type: 'connexion' for a failed login due to rejection
+                    log_action(user, 'connexion', "Connexion échouée (Compte rejeté)", f"Email: {email}, Raison: {reason}", "Échec")
                     return JsonResponse({
                         'status': 'error',
                         'message': f'Votre demande d\'inscription a été rejetée. Raison : {reason}',
                         'action_required': 'rejected'
                     }, status=403)
-                
+
                 else:
-                    # Cas général de compte inactif
+                    # Corrected action_type: 'connexion' for a general inactive account
+                    log_action(user, 'connexion', "Connexion échouée (Compte inactif)", f"Email: {email}", "Échec")
                     return JsonResponse({
                         'status': 'error',
                         'message': 'Votre compte n\'est pas actif. Veuillez contacter l\'administrateur.',
@@ -809,6 +848,8 @@ def login_view(request):
 
             # Vérification supplémentaire : compte actif mais statut de validation
             if user.is_active and getattr(user, 'approval_status', '') != 'approved':
+                # Corrected action_type: 'connexion' for a login while account is pending processing
+                log_action(user, 'connexion', "Connexion échouée (Compte en cours de traitement)", f"Email: {email}", "Échec")
                 return JsonResponse({
                     'status': 'error',
                     'message': 'Votre compte est en cours de traitement. Veuillez patienter.',
@@ -816,30 +857,28 @@ def login_view(request):
                 }, status=403)
 
         # GÉNÉRATION DU TOKEN (pour tous les utilisateurs autorisés)
-        # Create token with proper expiration timestamp
         exp_time = datetime.datetime.utcnow() + timedelta(hours=24)
         token_payload = {
             'user_id': str(user.id),
             'email': user.email,
-            'role': getattr(user, 'role', 'user'),
-            'is_superuser': getattr(user, 'is_superuser', False),
-            'exp': int(exp_time.timestamp())  # Convert to timestamp
+            'role': user_role, # Use user_role directly here
+            'is_superuser': user.is_superuser, # Use is_superuser directly here
+            'exp': int(exp_time.timestamp())
         }
-        
+
         access_token = jwt.encode(
             token_payload,
             settings.JWT_SECRET_KEY,
             algorithm='HS256'
         )
-        
-        # Refresh token
+
         refresh_exp = datetime.datetime.utcnow() + timedelta(days=7)
         refresh_payload = {
             'user_id': str(user.id),
             'type': 'refresh',
             'exp': int(refresh_exp.timestamp())
         }
-        
+
         refresh_token = jwt.encode(
             refresh_payload,
             getattr(settings, 'JWT_REFRESH_SECRET_KEY', settings.JWT_SECRET_KEY),
@@ -847,7 +886,12 @@ def login_view(request):
         )
 
         login_type = "Admin bypass" if is_admin else "Standard login"
-        logger.info(f"{login_type} successful for user {user.id} - Role: {getattr(user, 'role', 'user')} - Superuser: {getattr(user, 'is_superuser', False)}")
+        logger.info(f"{login_type} successful for user {user.id} - Role: {user_role} - Superuser: {user.is_superuser}")
+
+        # Log successful login for non-admin roles
+        if not is_admin:
+             # Corrected action_type: 'connexion' for successful login
+             log_action(user, 'connexion', "Connexion réussie", f"Role: {user_role}", "Terminé")
 
         response = JsonResponse({
             'status': 'success',
@@ -857,25 +901,26 @@ def login_view(request):
                 'id': str(user.id),
                 'username': user.username,
                 'email': user.email,
-                'role': getattr(user, 'role', 'user'),
-                'is_superuser': getattr(user, 'is_superuser', False),
+                'role': user_role, # Use user_role directly here
+                'is_superuser': user.is_superuser, # Use is_superuser directly here
                 'approval_status': getattr(user, 'approval_status', 'approved')
             }
         })
-        
+
         # Set refresh cookie
         response.set_cookie(
             'refresh_token',
             refresh_token,
-            max_age=7*24*60*60,  # 7 days
+            max_age=7*24*60*60,
             httponly=True,
-            secure=False,  # True in production
+            secure=False,  # True in production (HTTPS)
             samesite='Lax'
         )
-        
+
         return response
 
     except json.JSONDecodeError:
+        logger.error("Invalid JSON data in login request.")
         return JsonResponse({'status': 'error', 'message': 'Données JSON invalides'}, status=400)
     except Exception as e:
         logger.error(f"Login error: {str(e)}", exc_info=True)
@@ -1549,7 +1594,6 @@ def ProfilDirecteurApi(request, id=None):
                     'telephone': getattr(user, 'telephone', None),
                     'date_naissance': user.date_naissance.isoformat() if user.date_naissance else None,
                     'sexe': user.sexe if hasattr(user, 'sexe') and user.sexe else None,
-                    'matricule': getattr(user, 'matricule', None),
                     'is_active_user': user.is_active,
                     'is_staff': user.is_staff,
                     'is_superuser': user.is_superuser,
@@ -1639,14 +1683,6 @@ def ProfilDirecteurApi(request, id=None):
                 except ValueError:
                     return JsonResponse({"error": "Format de date invalide. Utilisez YYYY-MM-DD"}, status=400)
             
-            # Gérer le matricule s'il est fourni
-            if 'matricule' in data and data['matricule'] is not None:
-                # Vérifier l'unicité seulement si une valeur est fournie
-                existing_user = CustomUser.objects(matricule=data['matricule'], id__ne=user.id).first()
-                if existing_user:
-                    return JsonResponse({"error": "Ce matricule est déjà utilisé par un autre utilisateur."}, status=409)
-                user.matricule = data['matricule']
-            
             user.save()
 
             log_action(user, 'creation' if created else 'modification', 
@@ -1685,7 +1721,7 @@ def ProfilDirecteurApi(request, id=None):
 
             try:
                 # Update CustomUser fields
-                for key in ['username', 'email', 'nom_complet', 'telephone', 'sexe', 'matricule']:
+                for key in ['username', 'email', 'nom_complet', 'telephone', 'sexe']:
                     if key in data and data[key] is not None:
                         # Specific validation for 'sexe' during PUT
                         if key == 'sexe' and hasattr(CustomUser.sexe, 'choices') and data['sexe'] not in [choice[0] for choice in CustomUser.sexe.choices]:
@@ -1738,8 +1774,6 @@ def ProfilDirecteurApi(request, id=None):
                     return JsonResponse({"error": "Ce nom d'utilisateur est déjà utilisé."}, status=409)
                 elif 'email' in str(e):
                     return JsonResponse({"error": "Cet email est déjà utilisé."}, status=409)
-                elif 'matricule' in str(e):
-                    return JsonResponse({"error": "Ce matricule est déjà utilisé."}, status=409)
                 return JsonResponse({"error": f"Erreur de duplication: {str(e)}"}, status=409)
             except Exception as e:
                 return JsonResponse({"error": f"Erreur lors de la mise à jour complète du profil: {str(e)}"}, status=500)
@@ -1844,7 +1878,6 @@ class PasswordResetRequestView(APIView):
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
-@csrf_exempt
 @api_view(['POST'])
 @permission_classes([AllowAny])
 def reset_password(request):
@@ -1866,27 +1899,26 @@ def reset_password(request):
             return Response({"detail": "Les mots de passe ne correspondent pas."}, status=400)
 
         try:
-            # Utilisez directement CustomUser.objects.get avec les champs mongoengine
             user = CustomUser.objects.get(reset_token=token)
             print(f"User found: {user.email}, Reset Token Expires (DB): {user.reset_token_expires}")
         except CustomUser.DoesNotExist:
             return Response({"detail": "Lien invalide ou expiré."}, status=404)
 
         # Vérification de l'expiration du token
+        # Obtenir l'heure actuelle comme un datetime naïf, représentant le TIME_ZONE
         current_time = now()
-        token_expires = user.reset_token_expires
+        print(f"Current Time (Naive, TIME_ZONE): {current_time}")
 
-        print(f"Current Time (UTC): {current_time}")
+        token_expires = user.reset_token_expires
 
         if token_expires is None:
             return Response({"detail": "Token invalide (pas de date d'expiration)."}, status=400)
 
-        if is_naive(token_expires):
-            # Interprétez l'heure naive comme étant en UTC
-            token_expires = make_aware(token_expires, utc)
-            print(f"Token Expires (aware, UTC): {token_expires}")
-        else:
-            print(f"Token Expires (already aware): {token_expires}")
+        # S'assurer que token_expires est aussi un datetime naïf pour la comparaison
+        # En supposant que reset_token_expires de la DB est toujours naïf.
+        # S'il pouvait être conscient, vous auriez besoin d'une gestion plus sophistiquée
+        # comme le convertir en naïf dans le fuseau horaire actuel.
+        print(f"Token Expires (from DB, likely Naive): {token_expires}")
 
         if token_expires < current_time:
             return Response({"detail": "Lien expiré."}, status=400)
@@ -1904,6 +1936,7 @@ def reset_password(request):
     except Exception as e:
         print(f"Error during reset password: {e}")
         return Response({"detail": str(e)}, status=500)
+
 # Vue de déconnexion
 
 
@@ -2217,7 +2250,15 @@ class ProtectedExampleView(APIView):
 
 
 #Auditttttttttttttttttttttttttttttt
-
+def parse_date(date_str):
+    """Parse une date depuis différents formats"""
+    try:
+        return datetime.datetime.fromisoformat(date_str)
+    except ValueError:
+        try:
+            return datetime.datetime.strptime(date_str, '%Y-%m-%d')
+        except ValueError:
+            raise ValueError("Format de date invalide. Utilisez YYYY-MM-DD ou YYYY-MM-DDTHH:MM:SS")
 @csrf_exempt
 def AuditApi(request, id=None):
     """
@@ -2226,23 +2267,54 @@ def AuditApi(request, id=None):
     # Fonction pour enregistrer les actions (uniquement pour les directeurs)
     def log_action(user, action_type, description, details, statut="Terminé"):
         """Enregistre une action dans le journal d'audit"""
-        if user and hasattr(user, 'role') and user.role == 'directeur':  # Vérifie que user existe et est directeur
+        # It's crucial that action_type matches one of the allowed choices in ActionLog model
+        # Based on previous errors, common choices include:
+        # 'ajout', 'modification', 'suppression', 'consultation', 'creation_audit', 'modification_audit', 'suppression_audit', 'consultation_audit', 'consultation_liste_audits'
+        
+        # Determine the correct action_type for logging
+        # You've used 'creation', 'modification', 'suppression', 'consultation'
+        # Let's map them to your model's choices for audit-specific actions
+        audit_action_type_map = {
+            'creation': 'creation_audit', # Map 'creation' to 'creation_audit'
+            'modification': 'modification_audit', # Map 'modification' to 'modification_audit'
+            'suppression': 'suppression_audit', # Map 'suppression' to 'suppression_audit'
+            'consultation': 'consultation_audit', # Map 'consultation' to 'consultation_audit' for single GET
+            'consultation_list': 'consultation_liste_audits' # For the list GET
+        }
+        
+        # Use the mapped type, or fall back to the provided action_type if no specific map exists
+        effective_action_type = audit_action_type_map.get(action_type, action_type)
+
+        if user and user.is_authenticated and hasattr(user, 'role') and user.role == 'directeur':
             try:
+                # Ensure effective_action_type is indeed a valid choice from your ActionLog model
                 ActionLog(
                     user=user,
-                    type_action=action_type,
+                    type_action=effective_action_type, # Use the mapped/effective action type
                     description=description,
                     details=details,
                     statut=statut
                 ).save()
+            except ValidationError as e:
+                # Log validation errors from MongoEngine to the error log, not just print
+                logger.error(f"ValidationError when saving ActionLog (AuditApi) for user {user.id}: {e.message} (Value for type_action: '{effective_action_type}')", exc_info=True)
             except Exception as e:
-                print(f"Erreur lors de l'enregistrement du log: {str(e)}")
+                logger.error(f"Error saving ActionLog (AuditApi) for user {user.id}: {e}", exc_info=True)
         else:
-            # Pour le développement, enregistrez au moins dans la console ce qui aurait été journalisé
-            print(f"[LOG] Type: {action_type} | Description: {description} | Détails: {details} | Statut: {statut}")
+            # Log for non-directeurs or unauthenticated users (for debugging/monitoring)
+            # Change print to logger.debug or logger.info for production
+            if user and user.is_authenticated:
+                logger.debug(f"[LOG ATTEMPT - Skipped] User {user.id} (Role: {user.role}) attempted to log action. Type: {effective_action_type} | Description: {description} | Details: {details} | Statut: {statut}")
+            else:
+                logger.debug(f"[LOG ATTEMPT - Skipped] Unauthenticated user attempted to log action. Type: {effective_action_type} | Description: {description} | Details: {details} | Statut: {statut}")
 
-    
+
+    # Get the authenticated user
+    # Ensure request.user is a CustomUser instance and not an AnonymousUser
+    # You might need a custom authentication backend or middleware for request.user to be populated
     user = request.user if request.user.is_authenticated else None
+
+    # --- GET ---
     if request.method == 'GET':
         if id and id != 'undefined':
             try:
@@ -2258,70 +2330,96 @@ def AuditApi(request, id=None):
                     'description': audit.description,
                     'observations': audit.observations
                 }
-                
-                # Log de consultation
+
+                # Log de consultation pour un audit spécifique
                 log_action(
                     user=user,
-                    action_type='consultation',
+                    action_type='consultation', # This will be mapped to 'consultation_audit'
                     description=f"Consultation de l'audit {audit.nom}",
                     details=f"ID: {audit.id}",
                     statut="Terminé"
                 )
-                
+
                 return JsonResponse(audit_data)
             except DoesNotExist:
-                # Log d'erreur
+                # Log d'erreur pour audit non trouvé
                 log_action(
                     user=user,
-                    action_type='consultation',
+                    action_type='consultation', # This will be mapped to 'consultation_audit'
                     description="Tentative de consultation d'un audit inexistant",
                     details=f"ID: {id}",
                     statut="Échoué"
                 )
                 return JsonResponse({"error": "Audit non trouvé"}, status=404)
-            except ValidationError:
-                return JsonResponse({"error": "ID d'audit invalide"}, status=400)
-        else:
-            audits = AuditFinancier.objects.all()
-            audits_list = [{
-                'id': str(audit.id),
-                'nom': audit.nom,
-                'type': audit.type,
-                'statut': audit.statut,
-                'date_debut': audit.date_debut.isoformat(),
-                'responsable': audit.responsable
-            } for audit in audits]
-            
-            # Log de consultation liste (si un utilisateur est connecté)
-            if user:
+            except ValidationError: # MongoEngine ValidationError for invalid ID format
                 log_action(
                     user=user,
-                    action_type='consultation',
-                    description="Consultation de la liste des audits",
-                    details=f"{len(audits_list)} audits trouvés",
-                    statut="Terminé"
+                    action_type='consultation', # This will be mapped to 'consultation_audit'
+                    description="Tentative de consultation avec un ID invalide",
+                    details=f"ID: {id}",
+                    statut="Échoué"
                 )
-            
-            return JsonResponse({'audits': audits_list})
+                return JsonResponse({"error": "ID d'audit invalide"}, status=400)
+            except Exception as e:
+                # Catch any other unexpected errors during GET operation
+                logger.error(f"Error during GET single audit: {e}", exc_info=True)
+                return JsonResponse({"error": f"Erreur serveur lors de la récupération de l'audit: {str(e)}"}, status=500)
+        else:
+            # List all audits
+            try:
+                audits = AuditFinancier.objects.all()
+                audits_list = [{
+                    'id': str(audit.id),
+                    'nom': audit.nom,
+                    'type': audit.type,
+                    'statut': audit.statut,
+                    'date_debut': audit.date_debut.isoformat(),
+                    'date_fin': audit.date_fin.isoformat(), 
+                    'responsable': audit.responsable,
+                    'description': audit.description or "" 
+                } for audit in audits]
 
+                # Log de consultation liste (si un utilisateur est connecté)
+                if user and user.is_authenticated: # Ensure user is authenticated before attempting to log
+                    log_action(
+                        user=user,
+                        action_type='consultation_list', # New action type for listing
+                        description="Consultation de la liste des audits",
+                        details=f"{len(audits_list)} audits trouvés",
+                        statut="Terminé"
+                    )
+
+                return JsonResponse({'audits': audits_list})
+            except Exception as e:
+                logger.error(f"Error during GET all audits: {e}", exc_info=True)
+                return JsonResponse({"error": f"Erreur serveur lors de la récupération de la liste des audits: {str(e)}"}, status=500)
+
+    # --- POST ---
     elif request.method == 'POST':
         try:
             data = json.loads(request.body)
+            logger.debug(f"Données POST reçues: {data}")
+
+            # Validation des champs obligatoires
             required_fields = ['nom', 'type', 'responsable', 'date_debut', 'date_fin']
-            missing_fields = [field for field in required_fields if field not in data]
+            missing_fields = [field for field in required_fields if field not in data or not data[field]]
             
             if missing_fields:
+                log_action(user, 'creation', f"Champs manquants: {missing_fields}", statut="Échoué")
                 return JsonResponse({"error": f"Champs requis manquants: {', '.join(missing_fields)}"}, status=400)
 
+            # Conversion des dates
             try:
-                date_debut = datetime.datetime.fromisoformat(data['date_debut'])
-                date_fin = datetime.datetime.fromisoformat(data['date_fin'])
-            except (ValueError, TypeError):
-                return JsonResponse({"error": "Format de date invalide"}, status=400)
+                date_debut = datetime.datetime.strptime(data['date_debut'], '%Y-%m-%d')
+                date_fin = datetime.datetime.strptime(data['date_fin'], '%Y-%m-%d')
+            except ValueError as e:
+                log_action(
+                    user, 
+                    'creation', 
+                    f"Erreur date: {str(e)}", statut="Échoué")
+                return JsonResponse({"error": str(e)}, status=400)
 
-            if date_debut > date_fin:
-                return JsonResponse({"error": "La date de début ne peut pas être postérieure à la date de fin"}, status=400)
-
+            # Création de l'audit
             audit = AuditFinancier(
                 nom=data['nom'],
                 type=data['type'],
@@ -2329,107 +2427,126 @@ def AuditApi(request, id=None):
                 date_debut=date_debut,
                 date_fin=date_fin,
                 statut=data.get('statut', 'Planifié'),
+                priorite=data.get('priorite', 'Moyenne'),
                 description=data.get('description', ''),
                 observations=data.get('observations', []),
-                user=user if user else None
-            )
-            audit.save()
-
-            # Log de création
-            log_action(
-                user=user,
-                action_type='creation',
-                description=f"Création d'un nouvel audit",
-                details=f"Nom: {audit.nom} | Type: {audit.type} | Statut: {audit.statut}",
-                statut="Terminé"
+                user=user
             )
 
-            return JsonResponse({
-    "status": "success",
-    "message": "Audit créé avec succès",
-    "audit": {  # ← Ajoutez l'objet audit complet
-        "id": str(audit.id),
-        "nom": audit.nom,
-        "type": audit.type,
-        "responsable": audit.responsable,
-        "date_debut": audit.date_debut.isoformat(),
-        "date_fin": audit.date_fin.isoformat(),
-        "statut": audit.statut,
-        "description": audit.description,
-        "observations": audit.observations
-    }
-}, status=201)
+            # Validation et sauvegarde
+            try:
+                audit.clean()
+                audit.save()
+                logger.info(f"Audit créé avec succès: {audit.id}")
+                
+                log_action(
+                    user=user,
+                    action_type='creation',
+                    description=f"Création audit {audit.nom}",
+                    details=f"ID: {audit.id}",
+                    statut="Terminé"
+                )
+
+                return JsonResponse({
+                    "status": "success",
+                    "id": str(audit.id),
+                    "audit": {
+                        "nom": audit.nom,
+                        "description": audit.description,  # Inclus dans la réponse
+                        "date_fin": audit.date_fin.isoformat()  # Inclus dans la réponse
+                    }
+                }, status=201)
+
+            except ValidationError as e:
+                logger.error(f"ValidationError: {str(e)}")
+                return JsonResponse({"error": str(e)}, status=400)
 
         except json.JSONDecodeError:
             return JsonResponse({"error": "Données JSON invalides"}, status=400)
-        except ValidationError as e:
-            # Log d'erreur
-            log_action(
-                user=user,
-                action_type='creation',
-                description="Erreur lors de la création d'un audit",
-                details=str(e),
-                statut="Échoué"
-            )
-            return JsonResponse({"error": str(e)}, status=400)
+        except Exception as e:
+            logger.error(f"Erreur serveur: {str(e)}", exc_info=True)
+            return JsonResponse({"error": f"Erreur serveur: {str(e)}"}, status=500)
 
+    # --- PUT ---
     elif request.method == 'PUT':
         if not id or id == 'undefined':
             return JsonResponse({"error": "ID d'audit requis"}, status=400)
-            
+
         try:
             audit = AuditFinancier.objects.get(id=id)
-            
+
             try:
                 data = json.loads(request.body)
-                
+
                 # Sauvegarde des anciennes valeurs pour le log
                 old_data = {
                     'nom': audit.nom,
                     'type': audit.type,
                     'responsable': audit.responsable,
-                    'statut': audit.statut
+                    'statut': audit.statut,
+                    'date_debut': audit.date_debut.isoformat(),
+                    'date_fin': audit.date_fin.isoformat(),
+                    'description': audit.description,
+                    'observations': audit.observations # Include observations for change detection
                 }
-                
+
                 # Mise à jour des champs
                 for field in ['nom', 'type', 'responsable', 'statut', 'description']:
                     if field in data:
                         setattr(audit, field, data[field])
-                
+
                 # Traitement spécial pour les dates
                 for date_field in ['date_debut', 'date_fin']:
                     if date_field in data:
                         try:
                             setattr(audit, date_field, datetime.datetime.fromisoformat(data[date_field]))
                         except ValueError:
+                            log_action(
+                                user=user,
+                                action_type='modification', # Will map to 'modification_audit'
+                                description=f"Tentative de modification de l'audit {audit.nom}: format de date invalide",
+                                details=f"Champ: {date_field}, Valeur: {data[date_field]}",
+                                statut="Échoué"
+                            )
                             return JsonResponse({"error": f"Format de date invalide pour {date_field}"}, status=400)
-                
+
                 # Traitement spécial pour observations (liste)
                 if 'observations' in data:
                     audit.observations = data['observations']
-                
+
                 # Vérification de cohérence des dates
                 if audit.date_debut > audit.date_fin:
+                    log_action(
+                        user=user,
+                        action_type='modification', # Will map to 'modification_audit'
+                        description=f"Tentative de modification de l'audit {audit.nom}: dates incohérentes",
+                        details=f"Date début ({audit.date_debut}) > Date fin ({audit.date_fin})",
+                        statut="Échoué"
+                    )
                     return JsonResponse({"error": "La date de début ne peut pas être postérieure à la date de fin"}, status=400)
-                
+
                 audit.save()
-                
+
                 # Identifier les changements pour le log
+                # This part is good, captures differences
                 changes = {
-                    k: f"{old_data[k]} → {getattr(audit, k)}" 
-                    for k in old_data 
-                    if old_data[k] != getattr(audit, k)
+                    k: f"{old_data[k]} → {getattr(audit, k).isoformat() if isinstance(getattr(audit, k), datetime.datetime) else getattr(audit, k)}"
+                    for k in old_data
+                    if old_data[k] != (getattr(audit, k).isoformat() if isinstance(getattr(audit, k), datetime.datetime) else getattr(audit, k))
                 }
-                
-                # Log de modification
+                # Handle observations specifically if they are a list of objects or complex type
+                if 'observations' in data and old_data['observations'] != audit.observations:
+                     changes['observations'] = 'Modifiées' # You might want more detail here
+
+                # Log de modification réussie
                 log_action(
                     user=user,
-                    action_type='modification',
+                    action_type='modification', # Will map to 'modification_audit'
                     description=f"Modification de l'audit {audit.nom}",
-                    details=f"Changements: {changes}",
+                    details=f"ID: {audit.id}, Changements: {json.dumps(changes, default=str)}", # Use json.dumps for changes
                     statut="Terminé"
                 )
-                
+
                 return JsonResponse({
                     "status": "success",
                     "message": "Audit mis à jour avec succès",
@@ -2441,38 +2558,63 @@ def AuditApi(request, id=None):
                         "date_debut": audit.date_debut.isoformat(),
                         "date_fin": audit.date_fin.isoformat(),
                         "statut": audit.statut,
-                        "description": audit.description
+                        "description": audit.description,
+                        "observations": audit.observations # Ensure observations are included in response
                     }
                 })
-                
+
             except json.JSONDecodeError:
                 return JsonResponse({"error": "Données JSON invalides"}, status=400)
+            except ValidationError as e:
+                # Log d'erreur de validation MongoEngine
+                log_action(
+                    user=user,
+                    action_type='modification', # Will map to 'modification_audit'
+                    description=f"Erreur de validation lors de la modification de l'audit {id}",
+                    details=str(e),
+                    statut="Échoué"
+                )
+                return JsonResponse({"error": str(e)}, status=400)
+            except Exception as e:
+                logger.error(f"Error during PUT audit update (ID: {id}): {e}", exc_info=True)
+                return JsonResponse({"error": f"Erreur serveur lors de la mise à jour de l'audit: {str(e)}"}, status=500)
 
         except DoesNotExist:
-            # Log d'erreur
+            # Log d'erreur pour audit non trouvé
             log_action(
                 user=user,
-                action_type='modification',
+                action_type='modification', # Will map to 'modification_audit'
                 description="Tentative de modification d'un audit inexistant",
                 details=f"ID: {id}",
                 statut="Échoué"
             )
             return JsonResponse({"error": "Audit non trouvé"}, status=404)
-        except ValidationError as e:
-            return JsonResponse({"error": str(e)}, status=400)
+        except ValidationError: # For invalid ID format in URL
+            log_action(
+                user=user,
+                action_type='modification', # Will map to 'modification_audit'
+                description="Tentative de modification avec un ID invalide",
+                details=f"ID: {id}",
+                statut="Échoué"
+            )
+            return JsonResponse({"error": "ID d'audit invalide"}, status=400)
+        except Exception as e:
+            logger.error(f"Error retrieving audit for PUT (ID: {id}): {e}", exc_info=True)
+            return JsonResponse({"error": f"Erreur serveur lors de la récupération de l'audit pour la mise à jour: {str(e)}"}, status=500)
 
+    # --- DELETE ---
     elif request.method == 'DELETE':
         if not id or id == 'undefined':
             return JsonResponse({"error": "ID d'audit requis"}, status=400)
-            
+
         try:
             audit = AuditFinancier.objects.get(id=id)
             audit_name = audit.nom  # Sauvegarde du nom avant suppression
-            
-            # Log de suppression avant de supprimer l'audit
+
+            # Log de suppression réussie (before deletion for safety)
             log_action(
                 user=user,
-                action_type='suppression',
+                action_type='suppression', # Will map to 'suppression_audit'
                 description=f"Suppression de l'audit",
                 details=f"Nom: {audit_name} | ID: {id}",
                 statut="Terminé"
@@ -2482,17 +2624,31 @@ def AuditApi(request, id=None):
             return JsonResponse({"status": "success", "message": "Audit supprimé avec succès"})
 
         except DoesNotExist:
-            # Log d'erreur
+            # Log d'erreur pour audit non trouvé
             log_action(
                 user=user,
-                action_type='suppression',
+                action_type='suppression', # Will map to 'suppression_audit'
                 description="Tentative de suppression d'un audit inexistant",
                 details=f"ID: {id}",
                 statut="Échoué"
             )
             return JsonResponse({"error": "Audit non trouvé"}, status=404)
+        except ValidationError: # For invalid ID format in URL
+            log_action(
+                user=user,
+                action_type='suppression', # Will map to 'suppression_audit'
+                description="Tentative de suppression avec un ID invalide",
+                details=f"ID: {id}",
+                statut="Échoué"
+            )
+            return JsonResponse({"error": "ID d'audit invalide"}, status=400)
+        except Exception as e:
+            logger.error(f"Error during DELETE audit (ID: {id}): {e}", exc_info=True)
+            return JsonResponse({"error": f"Erreur serveur lors de la suppression de l'audit: {str(e)}"}, status=500)
 
+    # --- Method Not Allowed ---
     return JsonResponse({"error": "Méthode non autorisée"}, status=405)
+
 logger = logging.getLogger(__name__)
 @csrf_exempt
 def CompteApi(request, id=None):
@@ -2652,6 +2808,18 @@ def safe_date(value):
 
     logger.warning(f"safe_date: Impossible de parser la date '{value}' avec les formats connus. Retourne None.")
     return None
+def serialize_datetime_objects(obj):
+    """
+    Convertit récursivement les objets datetime.datetime et datetime.date
+    en chaînes ISO 8601 pour la sérialisation JSON.
+    """
+    if isinstance(obj, (datetime.datetime, datetime.date)):
+        return obj.isoformat()
+    if isinstance(obj, list):
+        return [serialize_datetime_objects(elem) for elem in obj]
+    if isinstance(obj, dict):
+        return {k: serialize_datetime_objects(v) for k, v in obj.items()}
+    return obj
 
 @method_decorator(csrf_exempt, name='dispatch')
 class FactureAPIView(View):
@@ -2667,9 +2835,10 @@ class FactureAPIView(View):
             # Assurez-vous que settings.JWT_SECRET_KEY est défini dans votre settings.py
             # et que 'jwt' est importé
             # import jwt # Assurez-vous que jwt est importé si utilisé
-            # return jwt.decode(token, settings.JWT_SECRET_KEY, algorithms=['HS256'])
+            # decoded_token = jwt.decode(token, settings.JWT_SECRET_KEY, algorithms=['HS256'])
+            # return decoded_token.get('user_id') # Ou un objet User réel si vous le récupérez de la BD
             # Pour l'exemple, nous retournons un utilisateur factice
-            return {"user": "debug_user"} 
+            return {"user": "debug_user_id"}
         except Exception as e:
             logger.error(f"Erreur d'authentification: {str(e)}", exc_info=True)
             return None
@@ -2685,27 +2854,26 @@ class FactureAPIView(View):
                 facture = Facture.objects.get(id=ObjectId(id))
                 response_data = {
                     'id': str(facture.id),
-                    'numero': facture.numero,
-                    'montant_total': safe_float(facture.montant_total), # Utiliser safe_float pour la cohérence
-                    'montant_ht': safe_float(getattr(facture, 'montant_ht', None)),
-                    'montant_tva': safe_float(getattr(facture, 'montant_tva', None)),
-                    'net_a_payer': safe_float(getattr(facture, 'net_a_payer', None)),
-                    'taux_tva': safe_float(getattr(facture, 'taux_tva', None)),
-                    'mode_reglement': safe_str(getattr(facture, 'mode_reglement', None)),
-                    'reference_paiement': safe_str(getattr(facture, 'reference_paiement', None)),
-                    # Correction ici pour le GET d'une seule facture
-                    'date_emission': facture.date_emission.isoformat() if facture.date_emission else None,
-                    'date_echeance': getattr(facture, 'date_echeance', None).isoformat() if getattr(facture, 'date_echeance', None) else None,
-                    'emetteur': safe_str(facture.emetteur),
-                    'client': safe_str(getattr(facture, 'client', None)), # Utilise le champ 'client' du modèle
-                    'destinataire': safe_str(facture.destinataire), # Utilise le champ 'destinataire' du modèle
-                    'devise': safe_str(getattr(facture, 'devise', 'TND')),
+                    'numero': safe_str(facture.numero), # Lisez depuis facture.numero
+                    'montant_total': safe_float(facture.montant_total), # Lisez depuis facture.montant_total
+                    'montant_ht': safe_float(facture.montant_ht), # Lisez depuis facture.montant_ht
+                    'montant_tva': safe_float(facture.montant_tva), # Lisez depuis facture.montant_tva
+                    'net_a_payer': safe_float(facture.net_a_payer), # Lisez depuis facture.net_a_payer
+                    'taux_tva': safe_float(facture.taux_tva), # Lisez depuis facture.taux_tva
+                    'mode_reglement': safe_str(facture.mode_reglement), # Lisez depuis facture.mode_reglement
+                    'reference_paiement': safe_str(facture.reference_paiement), # <-- Lisez depuis facture.reference_paiement
+                    'date_emission': facture.date_emission.isoformat() if facture.date_emission else None, # <-- Lisez depuis facture.date_emission
+                    'date_echeance': facture.date_echeance.isoformat() if facture.date_echeance else None, # <-- Lisez depuis facture.date_echeance
+                    'emetteur': safe_str(facture.emetteur), # Lisez depuis facture.emetteur
+                    'client': safe_str(facture.client), # Lisez depuis facture.client
+                    'destinataire': safe_str(facture.destinataire), # Lisez depuis facture.destinataire
+                    'devise': safe_str(facture.devise), # Lisez depuis facture.devise
                     'fichier_url': request.build_absolute_uri(f'/api/factures/{facture.id}/download/') if facture.fichier else None,
-                    # Correction ici pour le GET d'une seule facture
                     'filename': getattr(facture.fichier, 'filename', None) if facture.fichier else None,
-                    'date_import': facture.date_import.isoformat() if hasattr(facture, 'date_import') and facture.date_import else None,
-                    'type': safe_str(getattr(facture, 'type', 'facture')),
-                    'confiance_extraction': safe_float(getattr(facture, 'confiance_extraction', None))
+                    'date_import': facture.date_import.isoformat() if facture.date_import else None,
+                    'type': safe_str(facture.type), # Lisez depuis facture.type
+                    'confiance_extraction': safe_float(facture.confiance_extraction), # Lisez depuis facture.confiance_extraction
+                    'extracted_data': serialize_datetime_objects(facture.extracted_data)
                 }
                 logger.debug(f"GET (ID): Retourne la facture {id}: {json.dumps(response_data, indent=2)}")
                 return JsonResponse(response_data)
@@ -2719,32 +2887,31 @@ class FactureAPIView(View):
 
                 data_list = []
                 for f in factures:
-                    # Logs détaillés pour chaque facture lors du GET
                     logger.debug(f"GET - Facture ID: {str(f.id)}, Numéro: {f.numero}, Date Em.: {f.date_emission}, Client: {getattr(f, 'client', 'N/A')}")
-                    logger.debug(f"GET - Montants: Total={f.montant_total}, HT={getattr(f, 'montant_ht', None)}, TVA={getattr(f, 'montant_tva', None)}, Net={getattr(f, 'net_a_payer', None)}")
+                    logger.debug(f"GET - Montants: Total={f.montant_total}, HT={f.montant_ht}, TVA={f.montant_tva}, Net={f.net_a_payer}") # <-- Utilisez f.montant_ht et f.montant_tva
 
                     data_list.append({
                         'id': str(f.id),
-                        'numero': safe_str(f.numero),
-                        'montant_total': safe_float(f.montant_total),
-                        'montant_ht': safe_float(getattr(f, 'montant_ht', None)),
-                        'montant_tva': safe_float(getattr(f, 'montant_tva', None)),
-                        'net_a_payer': safe_float(getattr(f, 'net_a_payer', None)),
-                        'mode_reglement': safe_str(getattr(f, 'mode_reglement', None)),
-                        # Ici aussi, si facture.date_emission est None, cela renverra None
-                        'date_emission': f.date_emission.isoformat() if f.date_emission else None, 
-                        'date_echeance': getattr(f, 'date_echeance', None).isoformat() if getattr(f, 'date_echeance', None) else None,
-                        'emetteur': safe_str(f.emetteur),
-                        'client': safe_str(getattr(f, 'client', None)), # Retourne le champ 'client'
-                        'destinataire': safe_str(f.destinataire), # Retourne le champ 'destinataire'
+                        'numero': safe_str(f.numero), # Lisez directement
+                        'montant_total': safe_float(f.montant_total), # Lisez directement
+                        'montant_ht': safe_float(f.montant_ht), # Lisez directement
+                        'montant_tva': safe_float(f.montant_tva), # Lisez directement
+                        'net_a_payer': safe_float(f.net_a_payer), # Lisez directement
+                        'mode_reglement': safe_str(f.mode_reglement), # Lisez directement
+                        'reference_paiement': safe_str(f.reference_paiement), # <-- Lisez directement ici
+                        'date_emission': f.date_emission.isoformat() if f.date_emission else None, # <-- Lisez directement ici
+                        'date_echeance': f.date_echeance.isoformat() if f.date_echeance else None, # <-- Lisez directement ici
+                        'emetteur': safe_str(f.emetteur), # Lisez directement
+                        'client': safe_str(f.client), # Lisez directement
+                        'destinataire': safe_str(f.destinataire), # Lisez directement
                         'fichier_url': request.build_absolute_uri(f'/api/factures/{f.id}/download/') if f.fichier else None,
                         'filename': getattr(f.fichier, 'filename', None) if f.fichier else None,
                         'date_import': f.date_import.isoformat() if hasattr(f, 'date_import') and f.date_import else None,
-                        'type': safe_str(getattr(f, 'type', 'facture')),
-                        'devise': safe_str(getattr(f, 'devise', 'TND')),
-                        'confiance_extraction': safe_float(getattr(f, 'confiance_extraction', None))
+                        'type': safe_str(f.type), # Lisez directement
+                        'devise': safe_str(f.devise), # Lisez directement
+                        'confiance_extraction': safe_float(f.confiance_extraction), # Lisez directement
+                        'extracted_data': serialize_datetime_objects(f.extracted_data)
                     })
-
                 logger.info(f"GET - Retourne {len(data_list)} factures sur {total} au total (page {page}).")
                 return JsonResponse({
                     'total': total,
@@ -2760,13 +2927,14 @@ class FactureAPIView(View):
             logger.error(f"Erreur lors de la récupération des factures: {str(e)}", exc_info=True)
             return JsonResponse({'error': 'Erreur serveur interne lors du GET'}, status=500)
 
-
     def post(self, request):
         """Créer une nouvelle facture"""
         # L'authentification est commentée pour faciliter le test, à décommenter en production
         # user = self._authenticate(request)
         # if not user:
         #     return JsonResponse({'error': 'Non autorisé'}, status=401)
+
+        extracted_data_for_model = {}
 
         try:
             if 'fichier' not in request.FILES:
@@ -2779,7 +2947,7 @@ class FactureAPIView(View):
                 logger.error(f"POST - Type de fichier invalide: {fichier.name}. Seuls les PDF sont acceptés.")
                 return JsonResponse({'error': 'Seuls les fichiers PDF sont acceptés'}, status=400)
 
-            if fichier.size > 10 * 1024 * 1024: 
+            if fichier.size > 10 * 1024 * 1024:
                 logger.error(f"POST - Fichier trop volumineux: {fichier.size} octets. Max 10MB.")
                 return JsonResponse({'error': 'Fichier trop volumineux (max 10MB)'}, status=400)
 
@@ -2797,9 +2965,9 @@ class FactureAPIView(View):
             # --- LOGIQUE D'EXTRACTION AUTOMATIQUE (si pas de métadonnées du frontend) ---
             if not metadata:
                 try:
-                    fichier.seek(0) # Remettre le curseur au début du fichier
+                    fichier.seek(0)
                     response = requests.post(
-                        'http://localhost:5000/api/extract-document', # Assurez-vous que l'URL est correcte pour votre service Flask
+                        'http://localhost:5000/api/extract-document',
                         files={'file': (fichier.name, fichier, 'application/pdf')},
                         data={'type': 'invoice'},
                         timeout=30
@@ -2808,7 +2976,7 @@ class FactureAPIView(View):
                     if response.status_code == 200:
                         result = response.json()
                         if result.get('success') and result.get('data'):
-                            metadata = result['data'] # Utilisez les données extraites comme métadonnées
+                            metadata = result['data']
                             logger.info(f"POST - Données extraites automatiquement (brutes): {metadata}")
                         else:
                             logger.warning(f"POST - Extraction automatique n'a pas retourné de données valides: {response.text}")
@@ -2819,163 +2987,154 @@ class FactureAPIView(View):
                 except Exception as e:
                     logger.warning(f"POST - Échec général extraction automatique: {str(e)}", exc_info=True)
 
-            # NOUVEAU LOG : LES MÉTA-DONNÉES COMPLÈTES AVANT TRAITEMENT
             logger.info(f"POST - Métadonnées COMPLÈTES reçues (frontend ou extraction): {json.dumps(metadata, indent=2)}")
 
+            # --- Nettoyage et validation des métadonnées AVEC LES FONCTIONS safe_ et stockage dans extracted_data_for_model ---
 
-            # --- Nettoyage et validation des métadonnées AVEC LES FONCTIONS safe_ ---
-            cleaned_metadata = {}
-
-            # Numéro de facture: prioriser le frontend, sinon extraction, sinon UUID
             numero_from_frontend = metadata.get('numero')
             if numero_from_frontend:
-                cleaned_metadata['numero'] = safe_str(numero_from_frontend)
-            elif metadata.get('numero_facture'): # Fallback si le service d'extraction utilise 'numero_facture'
-                cleaned_metadata['numero'] = safe_str(metadata.get('numero_facture'))
+                extracted_data_for_model['numero'] = safe_str(numero_from_frontend)
+            elif metadata.get('numero_facture'):
+                extracted_data_for_model['numero'] = safe_str(metadata.get('numero_facture'))
             else:
-                cleaned_metadata['numero'] = f"FAC-{uuid.uuid4().hex[:6].upper()}"
-                logger.warning(f"POST - Aucun numéro de facture valide trouvé, génération d'un UUID: {cleaned_metadata['numero']}")
+                extracted_data_for_model['numero'] = f"FAC-{uuid.uuid4().hex[:6].upper()}"
+                logger.warning(f"POST - Aucun numéro de facture valide trouvé, génération d'un UUID: {extracted_data_for_model['numero']}")
 
-            # Gestion de l'émetteur, destinataire et client
-            cleaned_metadata['emetteur'] = safe_str(metadata.get('emetteur') or metadata.get('fournisseur'))
+            extracted_data_for_model['emetteur'] = safe_str(metadata.get('emetteur') or metadata.get('fournisseur'))
+            extracted_data_for_model['client'] = safe_str(metadata.get('client') or metadata.get('destinataire'))
+            extracted_data_for_model['destinataire'] = safe_str(metadata.get('destinataire') or extracted_data_for_model['client'])
 
-            # Le champ 'client' dans le modèle Django doit correspondre à ce que le frontend attend
-            # On privilégie 'client' si le frontend l'envoie, sinon 'destinataire' (qui peut être le client aussi)
-            cleaned_metadata['client'] = safe_str(metadata.get('client') or metadata.get('destinataire'))
-            # 'destinataire' peut être le même que 'client' ou une autre valeur si votre modèle le permet
-            cleaned_metadata['destinataire'] = safe_str(metadata.get('destinataire') or cleaned_metadata['client'])
+            extracted_data_for_model['mode_reglement'] = safe_str(metadata.get('mode_reglement'))
+            extracted_data_for_model['reference_paiement'] = safe_str(metadata.get('reference_paiement'))
+            extracted_data_for_model['devise'] = safe_str(metadata.get('devise', 'TND'))
+            extracted_data_for_model['type'] = safe_str(metadata.get('type', 'facture'))
+            extracted_data_for_model['confiance_extraction'] = safe_float(metadata.get('confiance_extraction'))
 
+            extracted_data_for_model['montant_total'] = safe_float(metadata.get('montant_total'))
+            extracted_data_for_model['montant_ht'] = safe_float(metadata.get('montant_ht'))
+            extracted_data_for_model['montant_tva'] = safe_float(metadata.get('montant_tva'))
+            extracted_data_for_model['net_a_payer'] = safe_float(metadata.get('net_a_payer'))
+            extracted_data_for_model['taux_tva'] = safe_float(metadata.get('taux_tva'))
 
-            cleaned_metadata['mode_reglement'] = safe_str(metadata.get('mode_reglement'))
-            cleaned_metadata['reference_paiement'] = safe_str(metadata.get('reference_paiement'))
-            cleaned_metadata['devise'] = safe_str(metadata.get('devise', 'TND'))
-            cleaned_metadata['type'] = safe_str(metadata.get('type', 'facture'))
-            cleaned_metadata['confiance_extraction'] = safe_float(metadata.get('confiance_extraction'))
+            if extracted_data_for_model['montant_total'] is None and \
+               (extracted_data_for_model['montant_ht'] is not None and extracted_data_for_model['montant_ht'] > 0) and \
+               (extracted_data_for_model['montant_tva'] is not None and extracted_data_for_model['montant_tva'] > 0):
+                extracted_data_for_model['montant_total'] = round(extracted_data_for_model['montant_ht'] + extracted_data_for_model['montant_tva'], 2)
+                logger.info(f"POST - Montant total calculé: {extracted_data_for_model['montant_total']}")
 
-            # Champs numériques
-            cleaned_metadata['montant_total'] = safe_float(metadata.get('montant_total'))
-            cleaned_metadata['montant_ht'] = safe_float(metadata.get('montant_ht'))
-            cleaned_metadata['montant_tva'] = safe_float(metadata.get('montant_tva'))
-            cleaned_metadata['net_a_payer'] = safe_float(metadata.get('net_a_payer'))
-            cleaned_metadata['taux_tva'] = safe_float(metadata.get('taux_tva'))
+            if extracted_data_for_model['net_a_payer'] is None and \
+               extracted_data_for_model['montant_total'] is not None and extracted_data_for_model['montant_total'] > 0:
+                extracted_data_for_model['net_a_payer'] = extracted_data_for_model['montant_total']
+                logger.info(f"POST - Net à payer ajusté: {extracted_data_for_model['net_a_payer']}")
 
-            # Calculs automatiques si des montants sont manquants ou nuls
-            if cleaned_metadata['montant_total'] is None and \
-               (cleaned_metadata['montant_ht'] is not None and cleaned_metadata['montant_ht'] > 0) and \
-               (cleaned_metadata['montant_tva'] is not None and cleaned_metadata['montant_tva'] > 0):
-                cleaned_metadata['montant_total'] = round(cleaned_metadata['montant_ht'] + cleaned_metadata['montant_tva'], 2)
-                logger.info(f"POST - Montant total calculé: {cleaned_metadata['montant_total']}")
-
-            if cleaned_metadata['net_a_payer'] is None and \
-               cleaned_metadata['montant_total'] is not None and cleaned_metadata['montant_total'] > 0:
-                cleaned_metadata['net_a_payer'] = cleaned_metadata['montant_total']
-                logger.info(f"POST - Net à payer ajusté: {cleaned_metadata['net_a_payer']}")
-
-            # Champs de date - LOGIQUE CRITIQUE POUR LA DATE D'ÉMISSION
-            # Capture des dates brutes pour le logging
+            # --- GESTION DE date_emission ---
             raw_date_emission_from_metadata = metadata.get('date_emission')
-            raw_date_from_metadata = metadata.get('date') # Ce pourrait être la date problématique
+            raw_date_from_metadata = metadata.get('date') # Si votre extracteur utilise 'date'
 
-            logger.info(f"POST - Raw metadata date_emission: '{raw_date_emission_from_metadata}'")
-            logger.info(f"POST - Raw metadata date: '{raw_date_from_metadata}'")
+            logger.info(f"POST - Métadonnées brutes pour dates: date_emission='{raw_date_emission_from_metadata}', date='{raw_date_from_metadata}'")
 
-            # Prioriser 'date_emission' si présent, sinon 'date'
-            date_value_to_parse = raw_date_emission_from_metadata or raw_date_from_metadata
+            date_value_to_parse_emission = raw_date_emission_from_metadata or raw_date_from_metadata
+            parsed_date_emission = safe_date(date_value_to_parse_emission)
+            logger.info(f"POST - Résultat de safe_date pour date_emission: {parsed_date_emission} (Type: {type(parsed_date_emission).__name__ if parsed_date_emission else 'NoneType'})")
 
-            parsed_date_emission = safe_date(date_value_to_parse)
-            parsed_date_echeance = safe_date(metadata.get('date_echeance'))
-
-            # Traitement des fuseaux horaires si votre modèle utilise DateTimeField et USE_TZ est True
-            # Et si la date a été parsée avec succès
-            if parsed_date_emission: # Vérifier si une date a été parsée
+            if parsed_date_emission:
+                dt_object_naive = datetime.datetime.combine(parsed_date_emission, datetime.time.min)
                 if settings.USE_TZ:
-                    # Convertir l'objet date en datetime à minuit, puis le rendre aware
-                    dt_object_naive = datetime.datetime.combine(parsed_date_emission, datetime.time.min)
-                    # Rendre l'objet datetime aware du fuseau horaire local (TIME_ZONE de Django)
-                    cleaned_metadata['date_emission'] = timezone.make_aware(dt_object_naive, timezone.get_current_timezone()) # Utilise le fuseau horaire configuré dans settings
-                    logger.info(f"POST - Date émission aware (après make_aware): {cleaned_metadata['date_emission']}")
+                    extracted_data_for_model['date_emission'] = timezone.make_aware(dt_object_naive, timezone.get_current_timezone())
+                    logger.info(f"POST - Date émission aware (après make_aware): {extracted_data_for_model['date_emission']}")
                 else:
-                    # Si USE_TZ est False, stocker simplement l'objet datetime.date (ou le convertir en datetime naïf)
-                    cleaned_metadata['date_emission'] = parsed_date_emission # C'est déjà un datetime.date
-                    logger.info(f"POST - Date émission naïve (USE_TZ=False): {cleaned_metadata['date_emission']}")
+                    extracted_data_for_model['date_emission'] = dt_object_naive
+                    logger.info(f"POST - Date émission naïve (USE_TZ=False, converted to datetime): {extracted_data_for_model['date_emission']}")
             else:
-                cleaned_metadata['date_emission'] = None
+                extracted_data_for_model['date_emission'] = None
                 logger.warning("POST - Aucune date d'émission valide après parsing ou source manquante.")
 
+            # --- GESTION DE date_echeance (elle fonctionne déjà, mais pour la cohérence) ---
+            parsed_date_echeance = safe_date(metadata.get('date_echeance'))
+            logger.info(f"POST - Résultat de safe_date pour date_echeance: {parsed_date_echeance} (Type: {type(parsed_date_echeance).__name__ if parsed_date_echeance else 'NoneType'})")
+
             if parsed_date_echeance:
+                dt_object_naive = datetime.datetime.combine(parsed_date_echeance, datetime.time.min)
                 if settings.USE_TZ:
-                    dt_object_naive = datetime.datetime.combine(parsed_date_echeance, datetime.time.min)
-                    cleaned_metadata['date_echeance'] = timezone.make_aware(dt_object_naive, timezone.get_current_timezone())
-                    logger.info(f"POST - Date échéance aware (après make_aware): {cleaned_metadata['date_echeance']}")
+                    extracted_data_for_model['date_echeance'] = timezone.make_aware(dt_object_naive, timezone.get_current_timezone())
+                    logger.info(f"POST - Date échéance aware (après make_aware): {extracted_data_for_model['date_echeance']}")
                 else:
-                    cleaned_metadata['date_echeance'] = parsed_date_echeance
-                    logger.info(f"POST - Date échéance naïve (USE_TZ=False): {cleaned_metadata['date_echeance']}")
+                    extracted_data_for_model['date_echeance'] = dt_object_naive
+                    logger.info(f"POST - Date échéance naïve (USE_TZ=False, converted to datetime): {extracted_data_for_model['date_echeance']}")
             else:
-                cleaned_metadata['date_echeance'] = None
+                extracted_data_for_model['date_echeance'] = None
                 logger.warning("POST - Aucune date d'échéance valide après parsing ou source manquante.")
 
+            if 'lignes_facture' in metadata:
+                extracted_data_for_model['lignes_facture'] = metadata['lignes_facture']
 
-            # >>> LOG TRÈS IMPORTANT AVANT LA CRÉATION DE LA FACTURE <<<<
-            logger.info(f"POST - Métadonnées nettoyées finales (avant création Facture): {cleaned_metadata}")
+            # Log final de extracted_data_for_model AVANT l'assignation au modèle Facture
+            logger.info(f"POST - Contenu de 'extracted_data_for_model' avant création Facture: {json.dumps(extracted_data_for_model, indent=2, default=str)}")
 
-            # Création de la facture
             try:
                 facture = Facture(
-                    numero=cleaned_metadata['numero'],
-                    montant_total=cleaned_metadata['montant_total'],
-                    montant_ht=cleaned_metadata['montant_ht'],
-                    montant_tva=cleaned_metadata['montant_tva'],
-                    net_a_payer=cleaned_metadata['net_a_payer'],
-                    taux_tva=cleaned_metadata['taux_tva'],
-                    mode_reglement=cleaned_metadata['mode_reglement'],
-                    reference_paiement=cleaned_metadata['reference_paiement'],
-                    # Les dates doivent être des objets datetime.date ou datetime.datetime (aware ou naive)
-                    date_emission=cleaned_metadata['date_emission'], 
-                    date_echeance=cleaned_metadata['date_echeance'],
-                    emetteur=cleaned_metadata['emetteur'],
-                    client=cleaned_metadata['client'], 
-                    destinataire=cleaned_metadata['destinataire'], 
-                    devise=cleaned_metadata['devise'],
-                    type=cleaned_metadata['type'],
-                    confiance_extraction=cleaned_metadata['confiance_extraction'],
-                    date_import=datetime.datetime.now() # date_import peut être laissé tel quel, c'est une date interne
+                    fichier=fichier,
+                    date_import=datetime.datetime.now(),
+                    extracted_data=extracted_data_for_model,
+                    numero=extracted_data_for_model.get('numero'),
+                    montant_total=extracted_data_for_model.get('montant_total'),
+                    montant_ht=extracted_data_for_model.get('montant_ht'),
+                    montant_tva=extracted_data_for_model.get('montant_tva'),
+                    date_emission=extracted_data_for_model.get('date_emission'), # <-- Assurez-vous que cette ligne est bien présente
+                    date_echeance=extracted_data_for_model.get('date_echeance'), # <-- Assurez-vous que cette ligne est bien présente
+                    emetteur=extracted_data_for_model.get('emetteur'),
+                    client=extracted_data_for_model.get('client'),
+                    destinataire=extracted_data_for_model.get('destinataire'),
+                    net_a_payer=extracted_data_for_model.get('net_a_payer'),
+                    devise=extracted_data_for_model.get('devise'),
+                    reference_paiement=extracted_data_for_model.get('reference_paiement'),
+                    mode_reglement=extracted_data_for_model.get('mode_reglement'),
+                    # user=user, # Décommentez et assignez l'utilisateur ici si l'authentification est active
                 )
 
-                # NOUVEAU LOG : L'OBJET DATE_EMISSION DANS LA FACTURE AVANT SAUVEGARDE
+                # Log final de la date d'émission sur l'objet facture AVANT la sauvegarde
                 logger.info(f"POST - FINAL avant sauvegarde: facture.date_emission={facture.date_emission}, type={type(facture.date_emission).__name__}, tzinfo={getattr(facture.date_emission, 'tzinfo', 'Naïf')}")
 
-                # Sauvegarde du fichier dans GridFS via MongoEngine FileField
-                fichier.seek(0) # Remettre le curseur au début du fichier
-                facture.fichier.put(fichier, content_type='application/pdf', filename=fichier.name)
                 facture.save()
 
                 logger.info(f"POST - Facture créée avec succès: ID {str(facture.id)}, Numéro {facture.numero}")
 
+            except NotUniqueError as e:
+                logger.error(f"POST - Erreur de clé unique lors de la sauvegarde: {str(e)}", exc_info=True)
+                return JsonResponse({
+                    'error': 'Le numéro de facture existe déjà.',
+                    'details': f"Le numéro de facture '{extracted_data_for_model.get('numero')}' est déjà utilisé."
+                }, status=409)
+
             except Exception as e:
                 logger.error(f"POST - Erreur lors de la création/sauvegarde de la facture dans MongoDB: {str(e)}", exc_info=True)
-                raise # Rélève l'exception pour être capturée par le outer try-except
+                raise
 
-            # Retour de la réponse JSON après succès
+            # --- Réponse POST : Lisez directement depuis facture.champs pour la cohérence ---
+            # NOTE: Dans votre code initial, la réponse POST lisait encore de facture.extracted_data.get(),
+            # ce qui est incohérent avec le reste. Il est préférable de lire directement de facture.champs.
             response_data = {
                 'id': str(facture.id),
-                'numero': safe_str(facture.numero),
-                'montant_total': safe_float(facture.montant_total),
-                'montant_ht': safe_float(facture.montant_ht),
-                'montant_tva': safe_float(facture.montant_tva),
-                'net_a_payer': safe_float(facture.net_a_payer),
-                'mode_reglement': safe_str(facture.mode_reglement),
-                'reference_paiement': safe_str(getattr(facture, 'reference_paiement', None)),
-                'date_emission': facture.date_emission.isoformat() if facture.date_emission else None,
-                'date_echeance': facture.date_echeance.isoformat() if facture.date_echeance else None,
-                'emetteur': safe_str(facture.emetteur),
-                'client': safe_str(getattr(facture, 'client', None)), 
-                'destinataire': safe_str(facture.destinataire), 
-                'devise': safe_str(getattr(facture, 'devise', 'TND')),
-                'type': safe_str(getattr(facture, 'type', 'facture')),
-                'confiance_extraction': safe_float(getattr(facture, 'confiance_extraction', None)),
+                'numero': safe_str(facture.numero), # Lire directement
+                'montant_total': safe_float(facture.montant_total), # Lire directement
+                'montant_ht': safe_float(facture.montant_ht), # Lire directement
+                'montant_tva': safe_float(facture.montant_tva), # Lire directement
+                'net_a_payer': safe_float(facture.net_a_payer), # Lire directement
+                'mode_reglement': safe_str(facture.mode_reglement), # Lire directement
+                'reference_paiement': safe_str(facture.reference_paiement), # Lire directement
+                'date_emission': facture.date_emission.isoformat() if facture.date_emission else None, # Lire directement
+                'date_echeance': facture.date_echeance.isoformat() if facture.date_echeance else None, # Lire directement
+                'emetteur': safe_str(facture.emetteur), # Lire directement
+                'client': safe_str(facture.client), # Lire directement
+                'destinataire': safe_str(facture.destinataire), # Lire directement
+                'devise': safe_str(facture.devise), # Lire directement
+                'type': safe_str(facture.type), # Lire directement
+                'confiance_extraction': safe_float(facture.confiance_extraction), # Lire directement
                 'fichier_url': request.build_absolute_uri(f'/api/factures/{facture.id}/download/') if facture.fichier else None,
-                'filename': fichier.name, # filename est le nom du fichier original
-                'date_import': facture.date_import.isoformat() if facture.date_import else None
+                'filename': getattr(facture.fichier, 'filename', None), # filename est déjà sur l'objet fichier
+                'date_import': facture.date_import.isoformat() if facture.date_import else None,
+                # Appliquer la fonction de sérialisation récursive ici pour extracted_data
+                'extracted_data': serialize_datetime_objects(facture.extracted_data)
             }
             logger.info(f"POST - Réponse succès: {json.dumps(response_data, indent=2)}")
             return JsonResponse(response_data, status=201)
@@ -2986,7 +3145,7 @@ class FactureAPIView(View):
         except Exception as e:
             logger.error(f"POST - Erreur générale lors de la création de la facture: {str(e)}", exc_info=True)
             return JsonResponse({
-                'error': 'Erreur serveur interne lors du POST', 
+                'error': 'Erreur serveur interne lors du POST',
                 'details': str(e) if settings.DEBUG else 'Une erreur inattendue est survenue.'
             }, status=500)
 
@@ -3004,7 +3163,6 @@ class FactureAPIView(View):
             facture = Facture.objects.get(id=ObjectId(id))
             # Supprimer le fichier associé également
             if facture.fichier:
-                # Utiliser getattr pour accéder au nom de fichier de manière sécurisée
                 logger.info(f"DELETE - Tentative de suppression du fichier de facture '{getattr(facture.fichier, 'filename', 'nom inconnu')}' (ID: {facture.id}).")
                 facture.fichier.delete()
                 logger.info(f"DELETE - Fichier de facture '{getattr(facture.fichier, 'filename', 'nom inconnu')}' supprimé avec succès.")
@@ -3021,6 +3179,7 @@ class FactureAPIView(View):
         except Exception as e:
             logger.error(f"DELETE - Erreur générale lors de la suppression de la facture ID {id}: {str(e)}", exc_info=True)
             return JsonResponse({'error': 'Erreur serveur interne lors du DELETE'}, status=500)
+
 
 
 @csrf_exempt
@@ -3043,6 +3202,7 @@ def download_facture(request, id):
     except Exception as e:
         logger.error(f"Erreur téléchargement: {str(e)}")
         return JsonResponse({'error': str(e)}, status=500)
+
 
 
 
@@ -3073,56 +3233,54 @@ class ReleveAPIView(View):
             return None
 
     def _format_operations(self, operations):
-        # Configuration de la locale pour le format numérique français
-        # Utilisez 'fr_FR.UTF-8' pour Linux/macOS ou 'fra_fra' pour Windows
-        # Attention: locale.setlocale n'est pas thread-safe, pour une API multi-threadée,
-        # il est préférable d'utiliser une fonction de parsing explicite ou de le gérer via un middleware
-        # Pour le débogage, c'est acceptable.
-        try:
-            locale.setlocale(locale.LC_NUMERIC, 'fr_FR.UTF-8') # Pour Linux/macOS
-        except locale.Error:
-            try:
-                locale.setlocale(locale.LC_NUMERIC, 'fra_fra') # Pour Windows
-            except locale.Error:
-                logger.warning("Could not set locale for French numeric format. Ensure correct locale is installed on your system.")
-                # Si la locale ne peut pas être définie, on peut toujours tenter un nettoyage manuel.
-
+        """
+        Formate et nettoie les données des opérations pour s'assurer qu'elles sont des nombres à virgule flottante
+        et que les dates sont des objets datetime.
+        """
         formatted_operations = []
+        
+        logger.debug(f"[_format_operations] Operations brutes reçues : {operations}")
+
         for op in operations:
             if isinstance(op, dict):
-                # Fonction utilitaire pour nettoyer et convertir les nombres
-                def parse_french_float(value):
+                def safe_float_round(value):
                     if value is None:
                         return 0.0
                     try:
-                        # Supprime les espaces de milliers, remplace la virgule par un point
+                        if isinstance(value, (int, float)):
+                            return round(float(value), 2)
                         s_value = str(value).replace(' ', '').replace(',', '.')
-                        return float(s_value)
+                        return round(float(s_value), 2)
                     except ValueError:
-                        logger.error(f"Failed to parse numeric value: '{value}'. Returning 0.0")
+                        logger.error(f"[_format_operations] Failed to parse/convert numeric value: '{value}'. Returning 0.0")
                         return 0.0
 
-                credit = parse_french_float(op.get('credit'))
-                debit = parse_french_float(op.get('debit'))
-                solde = parse_french_float(op.get('solde'))
+                credit = safe_float_round(op.get('credit'))
+                debit = safe_float_round(op.get('debit'))
+                solde = safe_float_round(op.get('solde')) 
                 
-                montant = credit - debit # Montant unifié (crédit positif, débit négatif)
-                
+                montant = round(credit - debit, 2)
+
                 op_date_str = op.get('date', '')
                 formatted_date = None
                 if op_date_str:
                     try:
-                        # Tente de parser les formats de date courants
-                        if '/' in op_date_str:
+                        if isinstance(op_date_str, datetime.datetime):
+                            formatted_date = op_date_str 
+                        elif 'T' in op_date_str and ('+' in op_date_str or 'Z' in op_date_str):
+                            formatted_date = datetime.datetime.fromisoformat(op_date_str.replace('Z', '+00:00'))
+                        elif '/' in op_date_str:
                             formatted_date = datetime.datetime.strptime(op_date_str, "%d/%m/%Y")
-                        elif '-' in op_date_str and len(op_date_str.split('-')[0]) == 4: # Suppose AAAA-MM-JJ
+                        elif '-' in op_date_str and len(op_date_str.split('-')[0]) == 4:
                             formatted_date = datetime.datetime.strptime(op_date_str, "%Y-%m-%d")
-                        elif '-' in op_date_str and len(op_date_str.split('-')[0]) <= 2: # Suppose JJ-MM-AAAA
+                        elif '-' in op_date_str and len(op_date_str.split('-')[0]) <= 2:
                             formatted_date = datetime.datetime.strptime(op_date_str, "%d-%m-%Y")
                         else:
-                            logger.warning(f"Unrecognized date format for operation: '{op_date_str}'. Skipping date conversion.")
-                    except ValueError:
-                        logger.error(f"Date conversion error for operation: '{op_date_str}'. Expected formats like 'DD/MM/YYYY' or 'YYYY-MM-DD'.", exc_info=True)
+                            logger.warning(f"[_format_operations] Unrecognized date format for operation: '{op_date_str}'. Skipping date conversion.")
+                            formatted_date = None
+                    except (ValueError, TypeError):
+                        logger.error(f"[_format_operations] Date conversion error for operation: '{op_date_str}'. Expected formats like 'DD/MM/YYYY', 'YYYY-MM-DD' or ISO.", exc_info=True)
+                        formatted_date = None
 
                 formatted_op = {
                     'date': formatted_date, 
@@ -3138,13 +3296,14 @@ class ReleveAPIView(View):
                 }
 
                 if formatted_op['date'] is None:
-                    logger.error(f"Operation skipped: 'date' is required but missing or invalid. Raw op: {op}")
+                    logger.error(f"[_format_operations] Operation skipped: 'date' is required but missing or invalid. Raw op: {op}")
                     continue 
                 if not formatted_op['libelle']:
-                    logger.warning(f"Operation: 'libelle' is required but missing. Using empty string. Raw op: {op}")
+                    logger.warning(f"[_format_operations] Operation: 'libelle' is required but missing. Using empty string. Raw op: {op}")
 
                 formatted_operations.append(formatted_op)
         
+        logger.debug(f"[_format_operations] Operations formatées envoyées : {formatted_operations}")
         return formatted_operations
 
     def get(self, request, id=None):
@@ -3157,19 +3316,20 @@ class ReleveAPIView(View):
             if id:
                 releve = Banque.objects.get(id=ObjectId(id)) 
                 
-                metadata = releve.metadata or {} # Assurez-vous que metadata est toujours un dictionnaire
+                # Assurez-vous que extracted_data est un dictionnaire par défaut s'il est None
+                # pour éviter les erreurs de .get()
+                extracted_data = releve.extracted_data or {} 
                 
                 data = {
                     'id': str(releve.id),
-                    # Accédez au nom du fichier via l'attribut .filename de l'objet GridFSProxy
                     'nom_fichier': releve.fichier.filename if releve.fichier else None, 
                     'date_import': releve.date_import.isoformat() if releve.date_import else None,
                     
-                    'metadata': {
+                    'metadata': { # Cela devrait refléter ce qui a été stocké, souvent extracted_data
                         'nom': releve.nom, 
                         'numero_compte': releve.numero_compte,
                         'titulaire': releve.titulaire, 
-                        'banque': releve.nom, # Mappe 'banque' sur le champ 'nom' du modèle
+                        'banque': releve.nom, 
                         'iban': releve.iban, 
                         'bic': releve.bic,
                         'numero': releve.numero,
@@ -3184,10 +3344,13 @@ class ReleveAPIView(View):
                         'total_credits': releve.total_credits,
                         'total_debits': releve.total_debits,
                         
+                        # AJOUTER LA DEVISE ICI EN LA RÉCUPÉRANT DE extracted_data
+                        'devise': extracted_data.get('devise', 'DH'), # Valeur par défaut 'DH' si non trouvée
+                        
                         'operations': [op.to_mongo() for op in releve.operations] if releve.operations else [],
                         
-                        'client': releve.titulaire, # Mappe 'client' sur le champ 'titulaire'
-                        'emetteur': metadata.get('emetteur'), 
+                        'client': releve.titulaire, 
+                        'emetteur': extracted_data.get('emetteur'), 
                         'nom_titulaire': releve.titulaire,
                     },
                     
@@ -3213,11 +3376,12 @@ class ReleveAPIView(View):
                         )
                     except ValueError:
                         logger.warning(f"Malformed date filter: date_debut={date_debut_str}, date_fin={date_fin_str}")
-                        pass # Continue sans filtrer par date si les dates sont mal formées
+                        pass 
                 
                 releves = []
                 for releve in queryset.order_by('-date_import'):
-                    metadata = releve.metadata or {} 
+                    # Assurez-vous que extracted_data est un dictionnaire par défaut
+                    extracted_data = releve.extracted_data or {} 
                     
                     releve_data = {
                         'id': str(releve.id),
@@ -3244,10 +3408,13 @@ class ReleveAPIView(View):
                             'total_credits': releve.total_credits,
                             'total_debits': releve.total_debits,
                             
+                            # AJOUTER LA DEVISE ICI EN LA RÉCUPÉRANT DE extracted_data
+                            'devise': extracted_data.get('devise', 'DH'), # Valeur par défaut 'DH' si non trouvée
+                            
                             'operations': [op.to_mongo() for op in releve.operations] if releve.operations else [], 
                             
                             'client': releve.titulaire, 
-                            'emetteur': metadata.get('emetteur'),
+                            'emetteur': extracted_data.get('emetteur'),
                             'nom_titulaire': releve.titulaire,
                         },
                         
@@ -3258,7 +3425,7 @@ class ReleveAPIView(View):
                 
                 return JsonResponse(releves, safe=False)
             
-        except Banque.DoesNotExist: # Exception spécifique à MongoEngine
+        except Banque.DoesNotExist: 
             return JsonResponse({'error': 'Bank statement not found'}, status=404)
         except Exception as e:
             logger.error(f"GET error: {str(e)}", exc_info=True)
@@ -3269,76 +3436,64 @@ class ReleveAPIView(View):
         user_payload = self._authenticate(request)
         if not user_payload:
             return JsonResponse({'error': 'Unauthorized'}, status=401)
-        releve_data = {}   
+        
+        extracted_data_for_model = {}
+        
         try:
             if 'fichier' not in request.FILES:
                 return JsonResponse({'error': 'No file provided'}, status=400)
             
-            # Récupère l'objet UploadedFile qui contient le contenu binaire du fichier
             fichier = request.FILES['fichier'] 
             
             if not fichier.name.lower().endswith('.pdf'):
                 return JsonResponse({'error': 'Only PDF files are accepted'}, status=400)
             
-            if fichier.size > 10 * 1024 * 1024: # Limite de 10 Mo
+            if fichier.size > 10 * 1024 * 1024: 
                 return JsonResponse({'error': 'File too large (max 10MB)'}, status=400)
 
+            # --- ETAPE CLÉ : L'EXTRACTION OCR DU PDF ---
+            # Le texte du PDF doit être extrait et passé à extract_bank_statement_data.
+            # C'est l'étape que vous devez gérer avec une bibliothèque comme pdfminer.six ou un service OCR.
+            # Pour l'exemple, supposons que 'raw_text_from_pdf' est déjà disponible.
+            
+            # Exemple conceptuel pour obtenir le texte (vous devez l'adapter à votre implémentation OCR)
+            # from pdfminer.high_level import extract_text # Exemple pour PDF texte
+            # from io import BytesIO
+            # pdf_content = fichier.read()
+            # raw_text_from_pdf = extract_text(BytesIO(pdf_content))
+            
+            # Si votre frontend envoie déjà les métadonnées pré-extraites, c'est ce que vous utilisez.
             metadata_str = request.POST.get('metadata', '{}')
             try:
+                # Ici, `metadata` contient les données déjà extraites par `extract_bank_statement_data`
+                # (probablement depuis une étape frontend ou un autre microservice).
                 metadata = json.loads(metadata_str)
-                # --- LOG DE DÉBOGAGE CRUCIAL ---
-                logger.debug(f"DEBUG: Metadata received from request (POST): {metadata}") 
+                logger.debug(f"[POST] Metadata reçu dans la requête (JSON): {metadata}") 
             except json.JSONDecodeError:
-                logger.error(f"Invalid metadata format in POST: {metadata_str}")
+                logger.error(f"[POST] Format de métadonnées invalide dans POST: {metadata_str}")
                 return JsonResponse({'error': 'Invalid metadata format'}, status=400)
-                # AJOUTEZ LA LIGNE SUIVANTE ICI :
-             #Ajoutez cette ligne tout en haut du fichier si elle n'y est pas déjà
-            logger.debug(f"DEBUG_RAW_OPERATIONS: {metadata.get('operations', [])}")
             
-            releve_data['operations'] = self._format_operations(metadata.get('operations', []))
-            # Récupérez les données clés avec des valeurs de secours.
-            # C'est ici que vous définissez ce qui sera stocké dans les champs principaux.
+            # --- Remplir extracted_data_for_model ---
             bank_name = metadata.get('banque', metadata.get('nom', 'Unknown Bank'))
             account_number = metadata.get('numero_compte', metadata.get('iban', 'N/A'))
             account_holder = metadata.get('titulaire', metadata.get('client', metadata.get('nom_titulaire', 'Unknown Holder')))
             
-            # --- LOG DE DÉBOGAGE POUR LES VALEURS PRINCIPALES ---
-            logger.debug(f"DEBUG: Processed bank_name: '{bank_name}', account_holder: '{account_holder}'")
-
-            # Validez les champs obligatoires du modèle
-            # Si ces champs sont vides ici, c'est que l'extraction n'a pas mis les bonnes données dans 'metadata'
-            fields_to_validate = {
-                'nom': bank_name,
-                'numero_compte': account_number,
-                'titulaire': account_holder,
-                'operations': metadata.get('operations') 
-            }
-            missing_fields = []
-            for field, value in fields_to_validate.items():
-                # Vérifie si la valeur est vide, ou une de vos valeurs par défaut si l'extraction a échoué
-                if not value or value == 'N/A' or value == 'Unknown Bank' or value == 'Unknown Holder':
-                    missing_fields.append(field)
-                elif field == 'operations' and (not isinstance(value, list) or len(value) == 0):
-                    missing_fields.append(f"{field} (empty list or not a list)")
-
-            if missing_fields:
-                logger.error(f"POST validation failed: Missing or invalid fields: {', '.join(missing_fields)}. Received metadata: {metadata}")
-                return JsonResponse({
-                    'error': f'Required fields missing or invalid: {", ".join(missing_fields)}. Operations are essential for reconciliation.',
-                    'missing_fields': missing_fields
-                }, status=400)
-
-            # Préparez les données pour l'objet MongoEngine Banque
-            releve_data = {
-                'fichier': fichier, # <<<<< MODIFICATION CLÉ : Passez l'objet UploadedFile directement ici
-                'nom': bank_name,
-                'numero_compte': account_number,
-                'titulaire': account_holder,
-                'metadata': metadata, # Stockez toutes les métadonnées brutes extraites (DictField)
-                'date_import': datetime.datetime.now(), 
-            }
+            extracted_data_for_model['banque'] = bank_name
+            extracted_data_for_model['nom'] = bank_name 
+            extracted_data_for_model['numero_compte'] = account_number
+            extracted_data_for_model['titulaire'] = account_holder
+            extracted_data_for_model['iban'] = metadata.get('iban')
+            extracted_data_for_model['bic'] = metadata.get('bic')
+            extracted_data_for_model['periode'] = metadata.get('periode')
             
-            # Ajoutez les champs numériques et de date avec une conversion sécurisée
+            # Récupération de la devise directement depuis le metadata reçu (qui vient de extract_bank_statement_data)
+            extracted_data_for_model['devise'] = metadata.get('devise', 'DH') # Assurez-vous que c'est là
+
+            # C'est ici que les opérations sont formatées.
+            extracted_data_for_model['operations'] = self._format_operations(metadata.get('operations', []))
+            
+            logger.debug(f"[POST] Opérations formatées pour le modèle : {extracted_data_for_model.get('operations', [])}")
+
             numerical_fields = ['solde_initial', 'solde_final', 'total_credits', 'total_debits']
             date_fields = ['date_debut', 'date_fin']
             
@@ -3346,44 +3501,81 @@ class ReleveAPIView(View):
                 val = metadata.get(field)
                 if val is not None:
                     try:
-                        releve_data[field] = float(val)
+                        if isinstance(val, str):
+                            extracted_data_for_model[field] = float(val.replace(' ', '').replace(',', '.'))
+                        else:
+                            extracted_data_for_model[field] = float(val)
+                        extracted_data_for_model[field] = round(extracted_data_for_model[field], 2)
                     except (ValueError, TypeError):
-                        logger.warning(f"Float conversion failed for {field}: {val}. Stored as None.")
-                        releve_data[field] = None 
+                        logger.warning(f"[POST] Float conversion failed for {field}: {val}. Stored as None in extracted_data.")
+                        extracted_data_for_model[field] = None 
 
             for field in date_fields:
                 val = metadata.get(field)
                 if val is not None and isinstance(val, str):
                     try:
-                        releve_data[field] = datetime.datetime.strptime(val, "%Y-%m-%d") 
+                        if '/' in val:
+                            extracted_data_for_model[field] = datetime.datetime.strptime(val, "%d/%m/%Y")
+                        elif '-' in val and len(val.split('-')[0]) == 4:
+                            extracted_data_for_model[field] = datetime.datetime.strptime(val, "%Y-%m-%d")
+                        elif '-' in val and len(val.split('-')[0]) <= 2:
+                            extracted_data_for_model[field] = datetime.datetime.strptime(val, "%d-%m-%Y")
+                        else:
+                            logger.warning(f"[POST] Unrecognized date format for {field}: '{val}'. Storing as None in extracted_data.")
+                            extracted_data_for_model[field] = None
                     except ValueError:
-                        logger.warning(f"Invalid date format for {field}: {val}. Stored as None.")
-                        releve_data[field] = None 
+                        logger.warning(f"[POST] Invalid date format for {field}: {val}. Stored as None in extracted_data.")
+                        extracted_data_for_model[field] = None 
 
-            # Formatez les opérations et assignez-les au champ 'operations' du modèle
-            releve_data['operations'] = self._format_operations(metadata.get('operations', []))
+            # Validation des champs importants
+            fields_to_validate = {
+                'banque': extracted_data_for_model.get('banque'),
+                'numero_compte': extracted_data_for_model.get('numero_compte'),
+                'titulaire': extracted_data_for_model.get('titulaire'),
+                'operations': extracted_data_for_model.get('operations') 
+            }
+            missing_fields = []
+            for field, value in fields_to_validate.items():
+                if not value or value == 'N/A' or value == 'Unknown Bank' or value == 'Unknown Holder':
+                    missing_fields.append(field)
+                elif field == 'operations' and (not isinstance(value, list) or len(value) == 0):
+                    missing_fields.append(f"{field} (empty list or not a list)")
 
-            # Ajoutez d'autres champs de modèle directs si présents dans les métadonnées
-            if metadata.get('iban') is not None:
-                releve_data['iban'] = metadata.get('iban')
-            if metadata.get('bic') is not None:
-                releve_data['bic'] = metadata.get('bic')
-            if metadata.get('periode') is not None:
-                releve_data['periode'] = metadata.get('periode')
+            if missing_fields:
+                logger.error(f"[POST] Validation échouée: Champs manquants/invalides dans extracted_data: {', '.join(missing_fields)}. Données extraites: {extracted_data_for_model}")
+                return JsonResponse({
+                    'error': f'Required fields missing or invalid: {", ".join(missing_fields)}. Operations are essential for reconciliation.',
+                    'missing_fields': missing_fields
+                }, status=400)
 
-            # --- LOG DE DÉBOGAGE AVANT LA SAUVEGARDE ---
-            # Ceci vous montrera les données exactes qui vont être enregistrées dans le document principal
-            logger.debug(f"DEBUG: releve_data prepared for Banque model: {releve_data.keys()}")
-            logger.debug(f"DEBUG: releve_data['nom']: {releve_data.get('nom')}, releve_data['titulaire']: {releve_data.get('titulaire')}")
-
-            # Créez et sauvegardez l'objet Banque
-            releve = Banque(**releve_data)
-            releve.save() # Le fichier PDF sera écrit dans GridFS ici, et les autres champs dans le document
-
-            # Journalisation finale après sauvegarde
-            logger.info(f"Statement successfully created with ID: {releve.id}. Bank: '{releve.nom}', Holder: '{releve.titulaire}'. {len(releve.operations)} operations saved.")
+            # Préparer les données pour l'objet MongoEngine Banque
+            releve_model_data = {
+                'fichier': fichier,
+                'nom': extracted_data_for_model.get('banque'), 
+                'numero_compte': extracted_data_for_model.get('numero_compte'), 
+                'titulaire': extracted_data_for_model.get('titulaire'), 
+                'date_import': datetime.datetime.now(),
+                'extracted_data': extracted_data_for_model, 
+                'operations': extracted_data_for_model.get('operations', []), 
+                'iban': extracted_data_for_model.get('iban'),
+                'bic': extracted_data_for_model.get('bic'),
+                'periode': extracted_data_for_model.get('periode'),
+                'solde_initial': extracted_data_for_model.get('solde_initial'),
+                'solde_final': extracted_data_for_model.get('solde_final'),
+                'total_credits': extracted_data_for_model.get('total_credits'),
+                'total_debits': extracted_data_for_model.get('total_debits'),
+                'date_debut': extracted_data_for_model.get('date_debut'),
+                'date_fin': extracted_data_for_model.get('date_fin'),
+            }
             
-            # Préparez la réponse pour le frontend
+            logger.debug(f"[POST] Données du modèle 'Banque' préparées: {releve_model_data.keys()}")
+            logger.debug(f"[POST] Nombre d'opérations avant sauvegarde: {len(releve_model_data['operations'])}")
+
+            releve = Banque(**releve_model_data)
+            releve.save()
+
+            logger.info(f"Statement créé avec succès avec ID: {releve.id}. Banque: '{releve.nom}', Titulaire: '{releve.titulaire}'. {len(releve.operations)} opérations sauvegardées.")
+            
             response_data = {
                 'id': str(releve.id),
                 'nom': releve.nom, 
@@ -3393,13 +3585,14 @@ class ReleveAPIView(View):
                 'nom_fichier': releve.fichier.filename if releve.fichier else None, 
                 'operations': [op.to_mongo() for op in releve.operations] if releve.operations else [], 
                 'downloadUrl': request.build_absolute_uri(f'/api/banques/{releve.id}/download/'),
-                'banque': releve.nom 
+                'banque': releve.nom,
+                'extracted_data': releve.extracted_data # Incluez toutes les données extraites
             }
             
             return JsonResponse(response_data, status=201)
             
         except Exception as e:
-            logger.error(f"POST error: {str(e)}", exc_info=True)
+            logger.error(f"[POST] Erreur durant la création: {str(e)}", exc_info=True)
             return JsonResponse({
                 'error': f'Error during creation: {str(e)}',
                 'traceback': traceback.format_exc() if settings.DEBUG else None
@@ -3417,7 +3610,7 @@ class ReleveAPIView(View):
                 
             releve = Banque.objects.get(id=ObjectId(id))
             releve_nom = releve.nom if releve.nom else str(releve.id)
-            releve.delete() # Ceci supprimera le document et le fichier associé dans GridFS
+            releve.delete() 
             
             logger.info(f"Statement '{releve_nom}' (ID: {id}) deleted by {user_payload.get('email', 'unknown')}")
             return JsonResponse({'message': 'Bank statement successfully deleted'})
@@ -3427,7 +3620,6 @@ class ReleveAPIView(View):
         except Exception as e:
             logger.error(f"DELETE error: {str(e)}", exc_info=True)
             return JsonResponse({'error': f'Error during deletion: {str(e)}'}, status=500)
-
 @csrf_exempt
 def download_releve(request, id):
     try:
@@ -3727,15 +3919,86 @@ def users_stats(request):
         return JsonResponse({'status': False, 'error': 'Méthode non autorisée'}, status=405)
     
     try:
-        # Total counts - Notez les parenthèses après count
-        facture_count = Facture.objects().count()
-        releve_count = Banque.objects().count()
-        rapport_count = Rapport.objects().count()
+        # Total counts
+        facture_count = Facture.objects.count()
+        releve_count = Banque.objects.count()
+        rapport_count = Rapport.objects.count()
         
-        # New factures in last 30 days using created_at field
-        last_month = datetime.datetime.now() - datetime.timedelta(days=30)
-        new_factures = Facture.objects(created_at__gte=last_month).count()
-        new_rapports = Rapport.objects(created_at__gte=last_month).count()
+        # Tâches automatisées (exemple: rapprochements effectués)
+        # Ici, 'rapprochement_count' est le même que 'rapport_count' si 'Rapport' représente les rapprochements
+        rapprochement_count = Rapport.objects.count() 
+        
+        # Estimation de l'économie d'heures (vous pouvez ajuster la logique ici)
+        economie_heures = rapprochement_count * 2 # Estimation: 2h économisées par rapprochement
+
+        # --- NOUVEAU: Statistiques Validé/Ajusté (uniquement pour Rapport) ---
+        # Compter les Rapports (rapprochements) avec statut 'validé'
+        validated_items_count = Rapport.objects(statut='Validé').count()
+        # Compter les Rapports (rapprochements) avec statut 'ajusté'
+        adjusted_items_count = Rapport.objects(statut='Ajusté').count()
+        
+        # Activités récentes (les 5 dernières)
+        all_recent_activities = []
+        
+        # Ajout des dernières factures
+        # Assurez-vous que 'created_at' existe sur votre modèle Facture et est un champ de date/heure
+        for facture in Facture.objects.order_by('-created_at')[:2]:
+            all_recent_activities.append({
+                'type': 'facture',
+                'id': str(facture.id),
+                'title': f'Nouvelle facture #{facture.numero if hasattr(facture, "numero") else facture.id}', 
+                # Si Facture n'a pas de champ 'statut', vous pouvez mettre une valeur par défaut ou l'inférer
+                'status': 'complet', # Ou une autre valeur pertinente si Facture est juste "complète" ou "traitée"
+                'date': facture.created_at.isoformat(),
+                'icon': 'FaFileInvoice',
+                'color': 'blue'
+            })
+        
+        # Ajout des derniers rapprochements (Rapport)
+        # Assurez-vous que 'date_generation' existe sur votre modèle Rapport et est un champ de date/heure
+        for rapprochement in Rapport.objects.order_by('-date_generation')[:2]:
+            all_recent_activities.append({
+                'type': 'rapprochement',
+                'id': str(rapprochement.id),
+                'title': f'Rapprochement #{str(rapprochement.id)}', 
+                'status': rapprochement.statut if hasattr(rapprochement, 'statut') else 'indéfini', 
+                'date': rapprochement.date_generation.isoformat(),
+                'icon': 'FaClipboardCheck',
+                'color': 'green' # Ou 'orange' si c'est plus approprié pour les rapprochements
+            })
+        
+        # Ordonner toutes les activités par date et prendre les 5 plus récentes
+        all_recent_activities.sort(key=lambda x: x['date'], reverse=True)
+        recent_activities = all_recent_activities[:5]
+        
+        # Statistiques mensuelles pour les graphiques
+        now = datetime.datetime.now()
+        months_stats = []
+        for i in range(5, -1, -1): # Les 6 derniers mois
+            month = now - datetime.timedelta(days=30*i)
+            start = month.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+            
+            # Calcul correct de la fin du mois
+            if start.month == 12:
+                end = start.replace(year=start.year + 1, month=1, day=1) - datetime.timedelta(days=1)
+            else:
+                end = start.replace(month=start.month + 1, day=1) - datetime.timedelta(days=1)
+            
+            # S'assurer que la fin du mois courant ne dépasse pas la date actuelle
+            if i == 0: # Pour le mois en cours
+                end = now 
+            
+            # Utilisez le format de requête MongoEngine pour les dates
+            monthly_factures = Facture.objects(created_at__gte=start, created_at__lte=end).count()
+            # Pour les rapprochements, on utilise le champ 'date_generation' et le filtre de statut 'valide'
+            # Si vous voulez compter tous les rapprochements sans distinction de statut ici, supprimez le filtre 'statut'
+            monthly_rapprochements = Rapport.objects(date_generation__gte=start, date_generation__lte=end).count() 
+            
+            months_stats.append({
+                'month': start.strftime('%b %Y'),
+                'factures': monthly_factures,
+                'rapprochements': monthly_rapprochements
+            })
         
         return JsonResponse({
             'status': True,
@@ -3743,16 +4006,21 @@ def users_stats(request):
                 'stats': {
                     'facture': facture_count,
                     'releve': releve_count,
-                    'newFactures': new_factures,
                     'rapport': rapport_count,
-                    'newRapports': new_rapports
+                    'taches_automatisees': rapprochement_count, 
+                    'economie_heures': economie_heures,
+                    'validated_items': validated_items_count, # <-- NOUVEAU (uniquement basé sur Rapport)
+                    'adjusted_items': adjusted_items_count,   # <-- NOUVEAU (uniquement basé sur Rapport)
+                    'recent_activities': recent_activities,
+                    'months_stats': months_stats
                 }
             }
         })
     except Exception as e:
-        logger.error(f"Error in user_stats: {str(e)}")
+        logger.error(f"Error in users_stats: {str(e)}")
         return JsonResponse({'status': False, 'error': str(e)}, status=500)
 
+    
 from django.http import JsonResponse
 from django.db.models import Q
 
@@ -3826,26 +4094,72 @@ def search_users(request):
 
 
 
-@csrf_exempt
+@api_view(['GET'])
+@permission_classes([AllowAny])
+# @csrf_exempt # Keep this if you need to disable CSRF protection for this view
 def admin_actions_list(request):
     if request.method == 'GET':
-        actions = ActionLog.objects.all().order_by('-date_action')  # Utilise date_action pour le tri
-        data = {
-            'actions': [{
+        actions = ActionLog.objects.all().order_by('-date_action')
+        data_actions = []
+
+        for action in actions:
+            user_data = {
+                'username': 'Système',  # Default if no user or user not found
+                'email': '',
+                'role': '',
+            }
+            audit_id = None
+
+            # Handle the user dereferencing directly within a try-except
+            try:
+                # Attempt to get the user object. This is where DoesNotExist can be raised.
+                # If action.user is a ReferenceField, accessing it will trigger dereferencing.
+                user_obj = action.user
+                if user_obj: # Check if the user object was successfully loaded and is not None
+                    user_data['username'] = user_obj.username
+                    user_data['email'] = user_obj.email
+                    user_data['role'] = user_obj.role
+                # else: user_data remains its default values ('Système', '', '')
+
+            except DoesNotExist:
+                # This catches the error if the referenced user document doesn't exist
+                print(f"Warning: User with ID referenced by ActionLog {action.id} does not exist. DBRef was: {action._data.get('user')}")
+                # user_data remains its default values
+            except Exception as e:
+                # Catch any other unexpected errors during user dereferencing
+                print(f"Warning: Unexpected error dereferencing user for ActionLog {action.id}: {e}")
+                # user_data remains its default values
+
+            # Handle audit dereferencing (similar robust approach)
+            try:
+                if action.audit:
+                    # Attempt to get the audit object. Accessing .id might trigger dereferencing.
+                    # Or, more safely, just get the ID from the raw DBRef if you only need the ID.
+                    audit_id = str(action.audit.id)
+            except DoesNotExist:
+                print(f"Warning: Audit with ID referenced by ActionLog {action.id} does not exist.")
+                audit_id = None # Set to None if audit is missing
+            except Exception as e:
+                print(f"Warning: Unexpected error dereferencing audit for ActionLog {action.id}: {e}")
+                audit_id = None
+
+            data_actions.append({
                 'id': str(action.id),
-                'username': action.user.username if action.user else 'Système',
-                'email': action.user.email if action.user else '',
-                'role': action.user.role if action.user else '',
+                'username': user_data['username'],
+                'email': user_data['email'],
+                'role': user_data['role'],
                 'action_type': action.type_action,
                 'description': action.description,
-                'timestamp': action.date_action.isoformat(), # Utilise date_action ici
+                'timestamp': action.date_action.isoformat(),
                 'details': action.details,
-                'audit': str(action.audit.id) if action.audit else None # Convertit l'ID de l'audit en string
-            } for action in actions]
-        }
+                'audit': audit_id,
+            })
+
+        data = {'actions': data_actions}
         return JsonResponse(data)
     else:
         return JsonResponse({'error': 'Méthode non autorisée'}, status=405)
+
 @csrf_exempt  # Retirez si vous gérez le CSRF token côté frontend
 def get_notifications(request):
     if request.method == 'GET':

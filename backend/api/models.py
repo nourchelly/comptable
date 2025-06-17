@@ -296,35 +296,36 @@ class AuditFinancier(Document):
     ]
     
     nom = fields.StringField(required=True, max_length=100)
-    user = fields.ReferenceField(CustomUser , required=False, sparse=True)
+    user = fields.ReferenceField(CustomUser, required=False, sparse=True)
     type = fields.StringField(choices=TYPE_CHOICES, required=True)
     responsable = fields.StringField(required=True, max_length=100)
     date_debut = fields.DateTimeField(required=True)
-    date_fin = fields.DateTimeField(required=True)
+    date_fin = fields.DateTimeField(required=True)  # Note: J'ai corrigé le nom du champ (date_fin au lieu de date_fin)
     statut = fields.StringField(choices=STATUT_CHOICES, default='Planifié')
     priorite = fields.StringField(choices=PRIORITE_CHOICES, default='Moyenne')
-    description = fields.StringField()
-    observations = fields.ListField(fields.StringField())
+    description = fields.StringField(default='')  # Assure une valeur par défaut
+    observations = fields.ListField(fields.StringField(), default=list)
+    derniere_modification = fields.DateTimeField()
 
     meta = {
-    'collection': 'audit_financiers',
-    'indexes': [
-        'nom',
-        'type',
-        'statut',
-        'priorite',
-        {'fields': ['date_debut', 'date_fin'], 'name': 'date_range_idx'},
-        {'fields': ['user'], 'name': 'user_idx', 'sparse': True}
-    ]
-}
+        'collection': 'audit_financiers',
+        'indexes': [
+            'nom',
+            'type',
+            'statut',
+            'priorite',
+            {'fields': ['date_debut', 'date_fin'], 'name': 'date_range_idx'},
+            {'fields': ['user'], 'name': 'user_idx', 'sparse': True}
+        ]
+    }
+
     def clean(self):
         """Validation personnalisée"""
-        # Met à jour le champ derniere_modification à chaque sauvegarde
         self.derniere_modification = timezone.now()
         
-        # Vérification de la cohérence des dates
         if self.date_debut and self.date_fin and self.date_debut > self.date_fin:
             raise ValidationError("La date de début ne peut pas être postérieure à la date de fin")
+
     def __str__(self):
         return f"{self.nom} ({self.type}) - {self.statut}"
     
@@ -350,20 +351,30 @@ class Compte(Document):
  
 class ActionLog(Document):
     TYPES_ACTION = [
-        ('ajout', 'Ajouter'),
-        ('modification', 'Modifier'),
-        ('suppression', 'Supprimer'),
-        ('consultation', 'Consulter'),
+        ('ajout', 'Ajouter (Générique)'), # Vous pouvez garder les génériques si vous voulez
+        ('modification', 'Modifier (Générique)'),
+        ('suppression', 'Supprimer (Générique)'),
+        ('consultation', 'Consulter (Générique)'),
         ('connexion', 'Connexion'),
         ('déconnexion', 'Déconnexion'),
-        ('creation', 'Création '),  
+        ('creation', 'Création (Générique)'),
+
+        # Spécifiques aux Factures
+        ('ajout_facture', 'Ajout Facture'),
+        ('modification_facture', 'Modification Facture'),
+        ('suppression_facture', 'Suppression Facture'),
+        ('consultation_facture', 'Consultation Facture'),
+        ('consultation_liste_factures', 'Consultation Liste Factures'), # Pour la liste des factures
+
+        # Spécifiques aux Audits (déjà inclus)
         ('creation_audit', 'Création Audit'),
         ('modification_audit', 'Modification Audit'),
         ('suppression_audit', 'Suppression Audit'),
         ('consultation_audit', 'Consultation Audit'),
-        ('consultation_liste_audits', 'Consultation Liste Audits')       # Ajouté
+        ('consultation_liste_audits', 'Consultation Liste Audits'),
+    ]       # Ajouté
 
-    ]
+    
     STATUT_CHOICES = ("Terminé", "Échoué")
 
     user = fields.ReferenceField(CustomUser, reverse_delete_rule=CASCADE)
@@ -430,6 +441,7 @@ class OperationBancaire(EmbeddedDocument):
 from mongoengine import Document, FileField, DictField, ListField, EmbeddedDocumentField, StringField, FloatField, DateTimeField
 
 class Banque(Document):
+    user = ReferenceField('CustomUser', required=False) 
     # Champs obligatoires
     nom = fields.StringField(required=True, max_length=100)
     numero_compte = fields.StringField(required=True)
@@ -460,7 +472,8 @@ class Banque(Document):
     # C'est ici que la liste des opérations est stockée
     operations = fields.ListField(fields.EmbeddedDocumentField(OperationBancaire))
     metadata = fields.DictField()
-    
+    extracted_data = DictField(default=dict) # Pour stocker les données structurées (banque, numero_compte, operations, etc.)
+    full_text = StringField(default="")
     # Champs système
     created_at = fields.DateTimeField(default=datetime.datetime.now)
     date_import = fields.DateTimeField(default=datetime.datetime.now)
@@ -523,7 +536,8 @@ class Facture(Document):
     
     
       # Alternative si vous n'utilisez pas LigneFacture
-    
+    extracted_data = DictField(default=dict) # Pour stocker les données structurées (banque, numero_compte, operations, etc.)
+    full_text = StringField(default="")
     fichier = fields.FileField()
     metadata = fields.DictField()
     rapport_id = fields.StringField(required=False)
@@ -567,7 +581,7 @@ class Facture(Document):
         return None
 class Rapport(Document):
     """Modèle pour stocker les rapports de réconciliation générés"""
-    
+    user = ReferenceField('CustomUser', required=False) 
     # Références aux documents liés
     facture = ReferenceField('Facture', required=True)
     banque = ReferenceField('Banque', reverse_delete_rule=NULLIFY)
@@ -578,7 +592,7 @@ class Rapport(Document):
     date_generation = DateTimeField(default=datetime.datetime.now)
     date_creation = DateTimeField(default=datetime.datetime.now)  # Ajouté
     derniere_maj = DateTimeField(default=datetime.datetime.now)   # Ajouté
-    statut = StringField(choices=['complet', 'incomplet', 'anomalie', 'validé'], required=True)
+    statut = StringField(choices=['complet', 'incomplet', 'anomalie', 'Validé', 'Ajusté'], required=True)
     
     # Contenu du rapport
     resume_facture = DictField(required=True)
@@ -590,7 +604,7 @@ class Rapport(Document):
     statement_data = DictField()    # Ajouté
     verification_result = DictField()  # Ajouté
     
-    anomalies = ListField(StringField())
+    anomalies = ListField(StringField(), default=list) # Changed from StringField to ListField of StringField
     recommendations = ListField(StringField())
     created_at = DateTimeField(default=datetime.datetime.now)
     analyse_texte = StringField()

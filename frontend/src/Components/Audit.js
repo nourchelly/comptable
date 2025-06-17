@@ -99,70 +99,50 @@ const PlanificationAudits = () => {
   };
 
   // Soumission du formulaire
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    try {
-      // Validation des dates
-      if (!formData.date_debut || !formData.date_fin) {
-        throw new Error("Les dates sont requises");
-      }
-
-      // Convertir les dates en format ISO
-      const dataToSend = {
-        ...formData,
-        date_debut: new Date(formData.date_debut).toISOString(),
-        date_fin: new Date(formData.date_fin).toISOString()
-      };
-
-      console.log("Données envoyées:", dataToSend);
-
-      let response;
-      if (editingId) {
-        // Mise à jour d'un audit existant
-        response = await axios.put(
-          `http://127.0.0.1:8000/api/audit/${editingId}/`, 
-          dataToSend,
-          { withCredentials: true }
-        );
-        
-        console.log("Réponse PUT:", response.data);
-        
-        // Correction : Utiliser response.data.audit
-        setAudits(audits.map(audit => 
-          audit.id === editingId ? response.data.audit : audit
-        ));
-        toast.success("Audit mis à jour avec succès !");
-      } else {
-        // Création d'un nouvel audit
-        response = await axios.post(
-          'http://127.0.0.1:8000/api/audit/', 
-          dataToSend,
-          { withCredentials: true }
-        );
-        
-        console.log("Réponse POST:", response.data);
-        
-        // Correction : Si le backend est corrigé, utiliser response.data.audit
-        // Sinon, recharger la liste complète
-        if (response.data.audit) {
-          setAudits([...audits, response.data.audit]);
-        } else {
-          // Alternative : recharger tous les audits
-          await fetchAudits();
-        }
-        toast.success("Audit créé avec succès !");
-      }
-
-      resetForm();
-    } catch (error) {
-      const errorMessage = error.response?.data?.error || 
-                         error.response?.data?.message || 
-                         error.message ||
-                         "Erreur lors de l'opération";
-      toast.error(errorMessage);
-      console.error("Erreur:", error.response?.data || error.message);
+const handleSubmit = async (e) => {
+  e.preventDefault();
+  try {
+    // Validation
+    if (!formData.date_debut || !formData.date_fin) {
+      throw new Error("Les dates sont requises");
     }
-  };
+
+    // Formatage plus simple des dates
+    const dataToSend = {
+      ...formData,
+      date_debut: formData.date_debut, // Ne pas convertir en ISO
+      date_fin: formData.date_fin      // Laisser tel quel
+    };
+
+    console.log("Données envoyées:", dataToSend);
+
+    let response;
+    if (editingId) {
+      response = await axios.put(
+        `http://127.0.0.1:8000/api/audit/${editingId}/`, 
+        dataToSend,
+        { withCredentials: true }
+      );
+    } else {
+      response = await axios.post(
+        'http://127.0.0.1:8000/api/audit/', 
+        dataToSend,
+        { withCredentials: true }
+      );
+    }
+
+    console.log("Réponse du serveur:", response.data);
+    
+    // Recharger la liste dans tous les cas
+    await fetchAudits();
+    toast.success(editingId ? "Audit mis à jour !" : "Audit créé !");
+    resetForm();
+    
+  } catch (error) {
+    console.error("Erreur détaillée:", error);
+    toast.error(error.response?.data?.detail || "Erreur lors de l'enregistrement");
+  }
+};
 
   // Réinitialisation du formulaire
   const resetForm = () => {
@@ -536,37 +516,36 @@ const PlanificationAudits = () => {
               <table className="min-w-full divide-y divide-gray-200">
                 <thead className="bg-gray-50">
                   <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Nom</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Type</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Responsable</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Dates</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Statut</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Description</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                    <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Nom</th>
+                    <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Type</th>
+                    <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Responsable</th>
+                    <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Dates</th>
+                    <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Statut</th>
+                    <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Description</th>
+                    <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
                   {filteredAudits.map((audit) => (
                     <tr key={audit.id} className="hover:bg-gray-50">
-                      <td className="px-6 py-4 whitespace-nowrap font-medium text-gray-900">
+                      <td className="px-6 py-4 whitespace-nowrap font-medium text-gray-900 text-center">
                         {audit.nom}
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-gray-500">{audit.type}</td>
-                      <td className="px-6 py-4 whitespace-nowrap text-gray-500 flex items-center">
-                        <FaUserTie className="mr-2 text-blue-500" />
-                        {audit.responsable}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-gray-500">
-                        <div className="flex items-center">
-                          <FaCalendarAlt className="mr-2 text-green-500" />
-                          <div>
-                            <div>{formatDate(audit.date_debut)}</div>
-                            <div className="text-xs text-gray-400">au</div>
-                            <div>{formatDate(audit.date_fin)}</div>
-                          </div>
+                      <td className="px-6 py-4 whitespace-nowrap text-gray-500 text-center">{audit.type}</td>
+                      <td className="px-6 py-4 whitespace-nowrap text-gray-500 text-center">
+                        <div className="flex items-center justify-center">
+                          <FaUserTie className="mr-2 text-blue-500" />
+                          {audit.responsable}
                         </div>
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
+                      <td className="px-6 py-4 whitespace-nowrap text-gray-500 text-center">
+                        <div className="flex flex-col items-center">
+                          <div>{formatDate(audit.date_debut)}</div>
+                          <div className="text-xs text-gray-400">au</div>
+                          <div>{formatDate(audit.date_fin)}</div>
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-center">
                         <span className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${
                           audit.statut === "Planifié" ? "bg-blue-100 text-blue-800" :
                           audit.statut === "En cours" ? "bg-yellow-100 text-yellow-800" :
@@ -576,7 +555,7 @@ const PlanificationAudits = () => {
                           {audit.statut}
                         </span>
                       </td>
-                      <td className="px-6 py-4 max-w-xs">
+                      <td className="px-6 py-4 max-w-xs text-center">
                         <div className="text-sm text-gray-900">
                           {audit.description ? (
                             <div className="truncate" title={audit.description}>
@@ -589,19 +568,21 @@ const PlanificationAudits = () => {
                           )}
                         </div>
                       </td>
-                      <td className="py-3 px-4 flex gap-2">
-                        <button
-                          onClick={() => handleEdit(audit)}
-                          className="text-blue-500 hover:text-blue-700"
-                        >
-                          ✏️
-                        </button>
-                        <button
-                          onClick={() => handleDelete(audit.id)}
-                          className="text-red-500 hover:text-red-700"
-                        >
-                          🗑️
-                        </button>
+                      <td className="px-6 py-4 whitespace-nowrap text-center">
+                        <div className="flex justify-center gap-2">
+                          <button
+                            onClick={() => handleEdit(audit)}
+                            className="text-blue-500 hover:text-blue-700"
+                          >
+                            ✏️
+                          </button>
+                          <button
+                            onClick={() => handleDelete(audit.id)}
+                            className="text-red-500 hover:text-red-700"
+                          >
+                            🗑️
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))}

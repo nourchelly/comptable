@@ -20,8 +20,7 @@ import {
   FaCalendarAlt,
   FaUser,
   FaCalendarCheck,
-  FaSignInAlt,
-  FaIdCard
+  FaSignInAlt
 } from "react-icons/fa";
 import { GiMoneyStack } from "react-icons/gi";
 import { useNavigate, Link } from "react-router-dom";
@@ -34,9 +33,7 @@ const ProfilDirecteur = () => {
         nom_complet: '',
         telephone: '',
         date_naissance: '',
-        matricule: '',
         sexe: '',
-        last_login: '',
         date_creation: '',
         role: '',
         departement: '',
@@ -50,7 +47,6 @@ const ProfilDirecteur = () => {
         nom_complet: '',
         telephone: '',
         date_naissance: '',
-        matricule: '',
         sexe: '',
         departement: '',
         specialite: ''
@@ -93,7 +89,6 @@ const ProfilDirecteur = () => {
                     date_naissance: profileData.date_naissance 
                         ? new Date(profileData.date_naissance).toISOString().split('T')[0] 
                         : '',
-                    matricule: profileData.matricule || '',
                     sexe: profileData.sexe || '',
                     departement: profileData.departement || '',
                     specialite: profileData.specialite || ''
@@ -105,9 +100,7 @@ const ProfilDirecteur = () => {
                     nom_complet: profileData.nom_complet || null,
                     telephone: profileData.telephone || null,
                     date_naissance: profileData.date_naissance || null,
-                    matricule: profileData.matricule || null,
                     sexe: profileData.sexe || null,
-                    last_login: profileData.last_login || 'Non spécifié',
                     date_creation: profileData.date_joined || 'Non spécifié',
                     role: profileData.role || 'Directeur',
                     departement: profileData.departement || null,
@@ -165,7 +158,6 @@ const ProfilDirecteur = () => {
                 nom_complet: formData.nom_complet,
                 telephone: formData.telephone,
                 date_naissance: formData.date_naissance,
-                matricule: formData.matricule,
                 sexe: formData.sexe,
                 departement: formData.departement,
                 specialite: formData.specialite
@@ -195,7 +187,6 @@ const ProfilDirecteur = () => {
                     nom_complet: newProfileData.nom_complet || null,
                     telephone: newProfileData.telephone || null,
                     date_naissance: newProfileData.date_naissance || null,
-                    matricule: newProfileData.matricule || null,
                     sexe: newProfileData.sexe || null,
                     departement: newProfileData.departement || null,
                     specialite: newProfileData.specialite || null
@@ -212,8 +203,6 @@ const ProfilDirecteur = () => {
                     setError(err.response.data.error || "Données invalides");
                 } else if (err.response.status === 403) {
                     setError("Vous n'avez pas la permission de modifier ce profil");
-                } else if (err.response.status === 409) {
-                    setError("Ce matricule est déjà utilisé par un autre utilisateur");
                 } else {
                     setError(err.response.data.error || "Erreur lors de la mise à jour du profil");
                 }
@@ -306,16 +295,6 @@ const ProfilDirecteur = () => {
                                     <p className="mt-2 text-indigo-100 text-sm bg-indigo-500/80 px-4 py-1 rounded-full inline-block">
                                         Directeur Financier
                                     </p>
-                                    
-                                    {/* Dernière connexion */}
-                                    <div className="mt-4 text-indigo-200 text-sm">
-                                        <p>Dernière connexion :</p>
-                                        <p className="font-medium">
-                                            {profile.last_login 
-                                                ? new Date(profile.last_login).toLocaleString('fr-FR') 
-                                                : 'Non disponible'}
-                                        </p>
-                                    </div>
                                 </div>
                                 
                                 {/* Boutons d'action */}
@@ -384,17 +363,6 @@ const ProfilDirecteur = () => {
                                         </p>
                                     </div>
                                     
-                                    {/* Matricule */}
-                                    <div className="bg-gray-50 p-4 rounded-lg hover:shadow-md transition">
-                                        <div className="flex items-center mb-2">
-                                            <FaIdCard className="text-indigo-500 mr-3" />
-                                            <h3 className="text-sm font-medium text-gray-500">Matricule</h3>
-                                        </div>
-                                        <p className="text-lg font-semibold text-gray-900 pl-9">
-                                            {profile.matricule || 'Non spécifié'}
-                                        </p>
-                                    </div>
-                                    
                                     {/* Date de naissance */}
                                     <div className="bg-gray-50 p-4 rounded-lg hover:shadow-md transition">
                                         <div className="flex items-center mb-2">
@@ -452,7 +420,7 @@ const ProfilDirecteur = () => {
                                     </span>
                                 </h2>
                                 
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                <div className="grid grid-cols-1 md:grid-cols-1 gap-6">
                                     <div className="bg-gray-50 p-4 rounded-lg hover:shadow-md transition">
                                         <div className="flex items-center mb-2">
                                             <FaCalendarCheck className="text-green-500 mr-3" />
@@ -461,18 +429,6 @@ const ProfilDirecteur = () => {
                                         <p className="text-lg font-semibold text-gray-900 pl-9">
                                             {profile.date_creation 
                                                 ? new Date(profile.date_creation).toLocaleDateString('fr-FR') 
-                                                : 'Non spécifié'}
-                                        </p>
-                                    </div>
-                                    
-                                    <div className="bg-gray-50 p-4 rounded-lg hover:shadow-md transition">
-                                        <div className="flex items-center mb-2">
-                                            <FaSignInAlt className="text-blue-500 mr-3" />
-                                            <h3 className="text-sm font-medium text-gray-500">Dernière connexion</h3>
-                                        </div>
-                                        <p className="text-lg font-semibold text-gray-900 pl-9">
-                                            {profile.last_login 
-                                                ? new Date(profile.last_login).toLocaleString('fr-FR') 
                                                 : 'Non spécifié'}
                                         </p>
                                     </div>
@@ -636,17 +592,6 @@ const ProfilDirecteur = () => {
                                 
                                 {/* Colonne droite */}
                                 <div className="space-y-5">
-                                    <div>
-                                        <label className="block text-sm font-medium text-gray-700 mb-2">Matricule</label>
-                                        <input
-                                            type="text"
-                                            name="matricule"
-                                            value={formData.matricule}
-                                            onChange={(e) => setFormData({...formData, matricule: e.target.value})}
-                                            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition"
-                                        />
-                                    </div>
-                                    
                                     <div>
                                         <label className="block text-sm font-medium text-gray-700 mb-2">Sexe</label>
                                         <select
